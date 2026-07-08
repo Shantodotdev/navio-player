@@ -22,15 +22,76 @@ pub struct AppState {
 }
 
 /// Tauri command to retrieve the active streaming server port.
-///
-/// # Arguments
-/// * `state` - The managed application state.
-///
-/// # Returns
-/// The TCP port number.
 #[tauri::command]
 fn get_stream_port(state: tauri::State<'_, AppState>) -> u16 {
   state.stream_port
+}
+
+/// Tauri command to retrieve the user's media library catalog.
+#[tauri::command]
+fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryDb, String> {
+  library::load_db(&app_handle)
+}
+
+/// Tauri command to save user's media library catalog (tracks, scanned folders, playlists).
+#[tauri::command]
+fn save_library(app_handle: tauri::AppHandle, db: library::LibraryDb) -> Result<(), String> {
+  library::save_db(&app_handle, &db)
+}
+
+/// Tauri command to recursively scan a local directory and merge it with the database.
+/// Runs the heavy I/O scan in a background thread pool to keep the UI fluid.
+#[tauri::command]
+async fn scan_folder(
+  folder_path: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<library::LibraryDb, String> {
+  let path = PathBuf::from(&folder_path);
+  if !path.exists() {
+    return Err("Selected folder does not exist.".to_string());
+  }
+
+  // 1. Authorize this folder path in the streaming server's allowlist
+  {
+    let mut allowed = state.allowed_directories.lock().unwrap();
+    allowed.insert(path.clone());
+  }
+
+  // 2. Load the current database state
+  let mut db = library::load_db(&app_handle)?;
+
+  // Add the path to the scanned directories catalog if not already present
+  let canonical_path = path.to_string_lossy().to_string();
+  if !db.scanned_directories.contains(&canonical_path) {
+    db.scanned_directories.push(canonical_path);
+  }
+
+  // 3. Scan the folder recursively in a blocking worker thread pool to keep UI responsive
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|e| e.to_string())?;
+  let scanned_items = tokio::task::spawn_blocking(move || {
+    let allowed_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm"];
+    library::scan_dir_recursive(&path, &cache_dir, &allowed_extensions)
+  })
+  .await
+  .map_err(|e| e.to_string())?;
+
+  // 4. Merge scanned tracks (update metadata if path is already indexed, otherwise append)
+  for new_item in scanned_items {
+    if let Some(pos) = db.tracks.iter().position(|t| t.path == new_item.path) {
+      db.tracks[pos] = new_item;
+    } else {
+      db.tracks.push(new_item);
+    }
+  }
+
+  // 5. Write the updated catalog state to disk
+  library::save_db(&app_handle, &db)?;
+
+  Ok(db)
 }
 
 /// Main entrypoint that boots the Tauri application shell.
@@ -72,9 +133,26 @@ pub fn run() {
             .build(),
         )?;
       }
+
+      // Bootstrap Phase: Load previous catalog from disk and authorize directories for streaming.
+      // This ensures that previously indexed music/video files are playable immediately on launch.
+      let app_handle = app.handle().clone();
+      let state = app.state::<AppState>();
+      if let Ok(db) = library::load_db(&app_handle) {
+        let mut allowed = state.allowed_directories.lock().unwrap();
+        for dir in db.scanned_directories {
+          allowed.insert(PathBuf::from(dir));
+        }
+      }
+
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![get_stream_port])
+    .invoke_handler(tauri::generate_handler![
+      get_stream_port,
+      get_library,
+      save_library,
+      scan_folder
+    ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application");
 
