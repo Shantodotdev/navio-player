@@ -1,10 +1,11 @@
+mod library;
 mod server;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
 use tauri::{Manager, RunEvent};
+use tokio::sync::oneshot;
 
 /// Global state managed by the Tauri application.
 /// Available to frontend commands via Tauri's State Manager.
@@ -12,10 +13,10 @@ pub struct AppState {
   /// Set of directories allowed for file streaming.
   /// Scanned folders are added here to authorize file accesses.
   pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,
-  
+
   /// The port on which our local media streaming server is running.
   pub stream_port: u16,
-  
+
   /// Trigger to gracefully terminate the streaming server when the application exits.
   pub shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 }
@@ -37,7 +38,7 @@ fn get_stream_port(state: tauri::State<'_, AppState>) -> u16 {
 pub fn run() {
   // Create shared directories registry
   let allowed_directories = Arc::new(Mutex::new(HashSet::new()));
-  
+
   // Setup oneshot channel for server graceful shutdown
   let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
@@ -48,9 +49,9 @@ pub fn run() {
   // Start the server and block until it binds to a dynamic port.
   // We block synchronously during application bootstrap so the port is immediately
   // available when the Tauri window loads and queries it.
-  let port = tauri::async_runtime::block_on(async {
-    server::start_server(server_state, shutdown_rx).await
-  }).expect("Failed to initialize stream server");
+  let port =
+    tauri::async_runtime::block_on(async { server::start_server(server_state, shutdown_rx).await })
+      .expect("Failed to initialize stream server");
 
   let app_state = AppState {
     allowed_directories,

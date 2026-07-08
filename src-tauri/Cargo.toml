@@ -25,7 +25,7 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 lofty = "0.21"
 mp4 = "0.14"
-matroska = "0.19"
+matroska = "0.30"
 axum = { version = "0.7", features = ["tokio"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }
 tokio = { version = "1", features = ["full"] }
