@@ -1,0 +1,309 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { useState } from 'react'
+import { usePlayerStore } from '../store/playerStore'
+import type { Track } from '../store/playerStore'
+import {
+  FolderPlus,
+  Search,
+  Play,
+  Music,
+  Film,
+  Trash2,
+  RefreshCcw,
+} from 'lucide-react'
+
+export const Route = createFileRoute('/library')({
+  component: LibraryView,
+})
+
+// Mock scanned library to demonstrate UI searches and filtering
+const MOCK_LIBRARY: Track[] = [
+  {
+    id: 'lib-1',
+    name: 'Lost in the Echo.mp3',
+    path: 'D:\\Music\\Linkin Park\\Lost in the Echo.mp3',
+    title: 'Lost in the Echo',
+    artist: 'Linkin Park',
+    album: 'Living Things',
+    duration_secs: 205,
+    media_type: 'audio',
+  },
+  {
+    id: 'lib-2',
+    name: 'Starlight.mp3',
+    path: 'D:\\Music\\Muse\\Starlight.mp3',
+    title: 'Starlight',
+    artist: 'Muse',
+    album: 'Black Holes and Revelations',
+    duration_secs: 240,
+    media_type: 'audio',
+  },
+  {
+    id: 'lib-3',
+    name: 'Introductory Video.mp4',
+    path: 'C:\\Videos\\Ardio\\Intro.mp4',
+    title: 'Introductory Video',
+    artist: 'Ardio Team',
+    album: 'Promotional',
+    duration_secs: 120,
+    media_type: 'video',
+  },
+  {
+    id: 'lib-4',
+    name: 'Numb.mp3',
+    path: 'D:\\Music\\Linkin Park\\Numb.mp3',
+    title: 'Numb',
+    artist: 'Linkin Park',
+    album: 'Meteora',
+    duration_secs: 187,
+    media_type: 'audio',
+  },
+  {
+    id: 'lib-5',
+    name: 'Inception Trailer.mp4',
+    path: 'C:\\Videos\\Ardio\\Inception.mp4',
+    title: 'Inception Trailer',
+    artist: 'Warner Bros.',
+    album: 'Trailers',
+    duration_secs: 154,
+    media_type: 'video',
+  },
+]
+
+const MOCK_FOLDERS = [
+  'D:\\Music\\Linkin Park',
+  'D:\\Music\\Muse',
+  'C:\\Videos\\Ardio',
+]
+
+function LibraryView() {
+  const { playTrack } = usePlayerStore()
+  const [tracks, setTracks] = useState<Track[]>(MOCK_LIBRARY)
+  const [scannedDirs, setScannedDirs] = useState<string[]>(MOCK_FOLDERS)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterType, setFilterType] = useState<'all' | 'audio' | 'video'>('all')
+
+  // Deleting a directory automatically filters out any tracks starting with its path
+  const handleDeleteFolder = (folder: string) => {
+    setScannedDirs((prev) => prev.filter((d) => d !== folder))
+    setTracks((prev) => prev.filter((t) => !t.path.startsWith(folder)))
+  }
+
+  const filteredTracks = tracks.filter((t) => {
+    const query = searchQuery.toLowerCase()
+    const matchesSearch =
+      t.name.toLowerCase().includes(query) ||
+      (t.title && t.title.toLowerCase().includes(query)) ||
+      (t.artist && t.artist.toLowerCase().includes(query)) ||
+      (t.album && t.album.toLowerCase().includes(query))
+
+    const matchesFilter = filterType === 'all' || t.media_type === filterType
+    return matchesSearch && matchesFilter
+  })
+
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400">
+      {/* Top Header Section */}
+      <div className="flex justify-between items-center mb-20">
+        <div>
+          <h1 className="text-4xl font-medium text-zinc-200 tracking-tight">
+            Media library
+          </h1>
+        </div>
+
+        <div className="flex gap-3">
+          <button className="flex items-center gap-2 px-4.5 py-2.5 bg-card-bg hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-base transition-all text-zinc-400 hover:text-zinc-200 font-medium cursor-pointer">
+            <RefreshCcw size={16} />
+            <span>Rescan all</span>
+          </button>
+          <button className="flex items-center gap-2 px-4.5 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer">
+            <FolderPlus size={16} />
+            <span>Add folder</span>
+          </button>
+        </div>
+      </div>
+
+      {tracks.length === 0 ? (
+        // Large Elegant Empty State Panel
+        <div className="flex flex-col items-center justify-center py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-8">
+          <div className="p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
+            <FolderPlus size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-medium text-zinc-200">Your media library is empty</h2>
+            <p className="text-sm text-zinc-400 max-w-md leading-relaxed font-medium">
+              Select "Add folder" above to index your local directory folders and start cataloging your music and videos.
+            </p>
+          </div>
+        </div>
+      ) : (
+        // Normal Scanned folders list + Search & Filters + Tracks Table
+        <>
+          {/* Scanned Folder List card */}
+          <div className="bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 mb-10">
+            <h2 className="text-base font-medium text-zinc-400 mb-3.5">
+              Scanned directories
+            </h2>
+            <div className="flex flex-wrap gap-2.5">
+              {scannedDirs.map((dir) => (
+                <div
+                  key={dir}
+                  className="flex items-center gap-2.5 bg-black/40 border border-white/5 px-3.5 py-2.5 rounded-xl text-sm text-zinc-400 font-medium group"
+                >
+                  <span className="text-zinc-400">{dir}</span>
+                  <button
+                    onClick={() => handleDeleteFolder(dir)}
+                    className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+              {scannedDirs.length === 0 && (
+                <span className="text-sm text-zinc-500 italic">
+                  No scanned folders yet. Add one above to begin scanning.
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Filters & Search */}
+          <div className="flex flex-col sm:flex-row gap-4 items-center mb-3">
+            {/* Search */}
+            <div className="w-full sm:flex-1 relative">
+              <Search
+                size={18}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+              />
+              <input
+                type="text"
+                placeholder="Search titles, artists, albums, or file paths..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full bg-black/40 border border-white/5 rounded-lg py-2.5 pl-11 pr-4 text-base focus:outline-none focus:border-brand/40 text-zinc-200 placeholder-zinc-550 font-light"
+              />
+            </div>
+
+            {/* Filter Categories */}
+            <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 shrink-0 self-stretch sm:self-auto font-medium">
+              <FilterButton
+                active={filterType === 'all'}
+                onClick={() => setFilterType('all')}
+              >
+                All
+              </FilterButton>
+              <FilterButton
+                active={filterType === 'audio'}
+                onClick={() => setFilterType('audio')}
+              >
+                Audio
+              </FilterButton>
+              <FilterButton
+                active={filterType === 'video'}
+                onClick={() => setFilterType('video')}
+              >
+                Video
+              </FilterButton>
+            </div>
+          </div>
+
+          {/* Tracks Table list */}
+          <div className="bg-panel-bg/20 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-left text-base font-medium">
+                <thead>
+                  <tr className="border-b border-white/5 text-zinc-450 text-sm bg-white/1">
+                    <th className="p-4 w-12 text-center">Play</th>
+                    <th className="p-4">Title</th>
+                    <th className="p-4">Artist</th>
+                    <th className="p-4">Album</th>
+                    <th className="p-4 w-24">Type</th>
+                    <th className="p-4 w-24">Length</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-zinc-400">
+                  {filteredTracks.map((track) => (
+                    <tr
+                      key={track.id}
+                      className="hover:bg-white/1 group transition-all duration-150 cursor-pointer"
+                      onDoubleClick={() => playTrack(track, filteredTracks)}
+                    >
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => playTrack(track, filteredTracks)}
+                          className="w-8 h-8 bg-brand/20 text-brand-light group-hover:bg-brand group-hover:text-zinc-200 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer"
+                        >
+                          <Play
+                            size={12}
+                            fill="currentColor"
+                            className="translate-x-[0.5px]"
+                          />
+                        </button>
+                      </td>
+                      <td className="p-4 text-zinc-300 font-medium text-base">
+                        {track.title || track.name}
+                      </td>
+                      <td className="p-4 text-zinc-400 text-sm">{track.artist || '—'}</td>
+                      <td className="p-4 text-zinc-400 text-sm">{track.album || '—'}</td>
+                      <td className="p-4">
+                        <span className="flex items-center gap-1.5 text-sm text-zinc-400 font-medium lowercase">
+                          {track.media_type === 'video' ? (
+                            <Film size={15} className="text-brand-light" />
+                          ) : (
+                            <Music size={15} className="text-brand-light" />
+                          )}
+                          <span>{track.media_type}</span>
+                        </span>
+                      </td>
+                      <td className="p-4 text-zinc-400 text-sm">
+                        {formatDuration(track.duration_secs)}
+                      </td>
+                    </tr>
+                  ))}
+                  {filteredTracks.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan={6}
+                        className="p-12 text-center text-zinc-500 italic"
+                      >
+                        No files found matching search criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+interface FilterButtonProps {
+  active: boolean
+  children: string
+  onClick: () => void
+}
+
+function FilterButton({ active, children, onClick }: FilterButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer ${
+        active
+          ? 'bg-brand text-zinc-200 shadow shadow-brand-glow'
+          : 'text-zinc-400 hover:text-zinc-200'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function formatDuration(secs: number): string {
+  if (!secs || isNaN(secs)) return '0:00'
+  const m = Math.floor(secs / 60)
+  const s = Math.floor(secs % 60)
+  return `${m}:${s < 10 ? '0' : ''}${s}`
+}
