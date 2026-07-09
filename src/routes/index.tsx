@@ -10,7 +10,7 @@ import {
   ListMusic,
 } from "lucide-react";
 import { usePlayerStore } from "../store/playerStore";
-import type { Track } from "../store/playerStore";
+import { useLibrary } from "../hooks/useLibrary";
 
 export const Route = createFileRoute("/")({
   component: DashboardView,
@@ -18,48 +18,7 @@ export const Route = createFileRoute("/")({
 
 function DashboardView() {
   const { playTrack } = usePlayerStore();
-
-  // Library summary statistics
-  const stats = {
-    audioCount: 142,
-    videoCount: 28,
-    playlistCount: 6,
-    scannedFolders: 4,
-  };
-
-  // Mock recently played / quick-play track items
-  const recentTracks: Track[] = [
-    {
-      id: "rec-1",
-      name: "Numb.mp3",
-      path: "",
-      title: "Numb",
-      artist: "Linkin Park",
-      album: "Meteora",
-      duration_secs: 187,
-      media_type: "audio",
-    },
-    {
-      id: "rec-2",
-      name: "Starlight.mp3",
-      path: "",
-      title: "Starlight",
-      artist: "Muse",
-      album: "Black Holes and Revelations",
-      duration_secs: 240,
-      media_type: "audio",
-    },
-    {
-      id: "rec-3",
-      name: "Interstellar Soundtrack.mp4",
-      path: "",
-      title: "No Time For Caution",
-      artist: "Hans Zimmer",
-      album: "Interstellar OST",
-      duration_secs: 242,
-      media_type: "video",
-    },
-  ];
+  const { stats, recentTracks } = useLibrary();
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto font-medium select-none">
