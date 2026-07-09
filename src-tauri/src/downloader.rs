@@ -11,12 +11,122 @@
 
 use crate::library;
 use crate::AppState;
+use sha2::{Digest, Sha256};
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
+
+const YTDLP_VERSION: &str = "2026.07.04";
+const MIN_NODE_JS_RUNTIME_MAJOR: u32 = 22;
+const MAX_YTDLP_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_FFMPEG_ZIP_BYTES: u64 = 128 * 1024 * 1024;
+
+#[cfg(windows)]
+const YTDLP_SHA256: &str = "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8";
+#[cfg(not(windows))]
+const YTDLP_SHA256: &str = "495be29ff4d9d4e9be7eabdfef225221e5d5282e77f2f505abc6dca80349f3fd";
+
+#[cfg(target_os = "windows")]
+const FFMPEG_ZIP_SHA256: &str = "d1124593b7453fc54dd90ca3819dc82c22ffa957937f33dd650082f1a495b10e";
+#[cfg(target_os = "macos")]
+const FFMPEG_ZIP_SHA256: &str = "e08c670fcbdc2e627aa4c0d0c5ee1ef20e82378af2f14e4e7ae421a148bd49af";
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+const FFMPEG_ZIP_SHA256: &str = "4348301b0d5e18174925e2022da1823aebbdb07282bbe9adb64b2485e1ef2df7";
+
+fn sha256_hex(bytes: &[u8]) -> String {
+  let mut hasher = Sha256::new();
+  hasher.update(bytes);
+  format!("{:x}", hasher.finalize())
+}
+
+async fn download_verified_bytes(
+  url: &str,
+  expected_sha256: &str,
+  max_bytes: u64,
+) -> Result<Vec<u8>, String> {
+  let response = reqwest::get(url)
+    .await
+    .map_err(|e| format!("Failed to fetch {}: {}", url, e))?
+    .error_for_status()
+    .map_err(|e| format!("Unexpected response while fetching {}: {}", url, e))?;
+
+  if let Some(content_len) = response.content_length() {
+    if content_len > max_bytes {
+      return Err(format!(
+        "Refusing {} byte download from {}; limit is {} bytes",
+        content_len, url, max_bytes
+      ));
+    }
+  }
+
+  let bytes = response
+    .bytes()
+    .await
+    .map_err(|e| format!("Failed to read release data stream: {}", e))?;
+
+  if bytes.len() as u64 > max_bytes {
+    return Err(format!(
+      "Refusing {} byte download from {}; limit is {} bytes",
+      bytes.len(),
+      url,
+      max_bytes
+    ));
+  }
+
+  let actual_sha256 = sha256_hex(&bytes);
+  if actual_sha256 != expected_sha256 {
+    return Err(format!(
+      "Downloaded artifact hash mismatch. Expected {}, got {}",
+      expected_sha256, actual_sha256
+    ));
+  }
+
+  Ok(bytes.to_vec())
+}
+
+fn write_verified_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+  let tmp_path = path.with_extension("tmp");
+  fs::write(&tmp_path, bytes)
+    .map_err(|e| format!("Failed to write temporary file {:?}: {}", tmp_path, e))?;
+  fs::rename(&tmp_path, path)
+    .map_err(|e| format!("Failed to install verified file {:?}: {}", path, e))?;
+  Ok(())
+}
+
+fn file_matches_sha256(path: &Path, expected_sha256: &str) -> bool {
+  fs::read(path)
+    .map(|bytes| sha256_hex(&bytes) == expected_sha256)
+    .unwrap_or(false)
+}
+
+fn parse_node_major(version: &str) -> Option<u32> {
+  version
+    .trim()
+    .strip_prefix('v')
+    .unwrap_or_else(|| version.trim())
+    .split('.')
+    .next()
+    .and_then(|major| major.parse::<u32>().ok())
+}
+
+async fn detect_node_js_runtime() -> bool {
+  let Ok(output) = Command::new("node").arg("--version").output().await else {
+    return false;
+  };
+
+  if !output.status.success() {
+    return false;
+  }
+
+  let version = String::from_utf8_lossy(&output.stdout);
+  parse_node_major(&version)
+    .map(|major| major >= MIN_NODE_JS_RUNTIME_MAJOR)
+    .unwrap_or(false)
+}
 
 /// Payload struct representing a single download progress update broadcasted to the React frontend.
 #[derive(serde::Serialize, Clone, Debug)]
@@ -39,6 +149,23 @@ pub struct DownloadPayload {
   pub status: String,
 }
 
+fn emit_download_progress(app_handle: &AppHandle, payload: DownloadPayload) {
+  println!(
+    "[Navio Event] emit download-progress | id={} status={} progress={:.1}% title=\"{}\" speed=\"{}\" eta=\"{}\" size=\"{}\"",
+    payload.id,
+    payload.status,
+    payload.progress,
+    payload.title,
+    payload.speed,
+    payload.eta,
+    payload.size
+  );
+
+  if let Err(err) = app_handle.emit("download-progress", payload) {
+    eprintln!("[Navio Event] failed to emit download-progress: {}", err);
+  }
+}
+
 /// Verifies if `yt-dlp` is installed in the local AppData binary bin directory.
 /// If the binary is missing, it downloads it on-demand from the official GitHub releases.
 ///
@@ -57,16 +184,26 @@ async fn ensure_ytdlp_installed(
   let bin_dir = app_data.join("bin");
 
   if !bin_dir.exists() {
-    std::fs::create_dir_all(&bin_dir)
+    fs::create_dir_all(&bin_dir)
       .map_err(|e| format!("Failed to create bin folder directory: {}", e))?;
   }
 
   // Use platform-specific binary extension (.exe on Windows, extensionless on Unix)
-  let exe_name = if cfg!(windows) { "yt-dlp.exe" } else { "yt-dlp" };
+  let exe_name = if cfg!(windows) {
+    "yt-dlp.exe"
+  } else {
+    "yt-dlp"
+  };
   let ytdlp_path = bin_dir.join(exe_name);
 
-  // If not present, download the binary from the latest official GitHub release
-  if !ytdlp_path.exists() {
+  let needs_install = !ytdlp_path.exists() || !file_matches_sha256(&ytdlp_path, YTDLP_SHA256);
+  println!(
+    "[Navio Downloader] yt-dlp verification | path={:?} needs_install={}",
+    ytdlp_path, needs_install
+  );
+
+  // If not present or hash-mismatched, download the pinned binary release.
+  if needs_install {
     // Notify the UI that setup is starting
     let setup_payload = DownloadPayload {
       id: download_id.to_string(),
@@ -78,40 +215,43 @@ async fn ensure_ytdlp_installed(
       size: "—".to_string(),
       status: "downloading".to_string(),
     };
-    let _ = app_handle.emit("download-progress", setup_payload);
+    emit_download_progress(app_handle, setup_payload);
 
     let download_url = if cfg!(windows) {
-      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
+      format!(
+        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp.exe",
+        YTDLP_VERSION
+      )
     } else {
-      "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp"
+      format!(
+        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp",
+        YTDLP_VERSION
+      )
     };
 
-    println!("[Navio Downloader] Fetching yt-dlp tool from: {}", download_url);
+    println!(
+      "[Navio Downloader] Fetching yt-dlp tool from: {}",
+      download_url
+    );
 
-    let response = reqwest::get(download_url)
-      .await
-      .map_err(|e| format!("Failed to fetch yt-dlp release: {}", e))?;
-
-    let bytes = response
-      .bytes()
-      .await
-      .map_err(|e| format!("Failed to read release data stream: {}", e))?;
-
-    std::fs::write(&ytdlp_path, bytes)
-      .map_err(|e| format!("Failed to save yt-dlp executable: {}", e))?;
+    let bytes = download_verified_bytes(&download_url, YTDLP_SHA256, MAX_YTDLP_BYTES).await?;
+    write_verified_file(&ytdlp_path, &bytes)?;
 
     // Mark the binary as executable on Unix systems (macOS, Linux)
     #[cfg(unix)]
     {
       use std::os::unix::fs::PermissionsExt;
-      let mut perms = std::fs::metadata(&ytdlp_path)
+      let mut perms = fs::metadata(&ytdlp_path)
         .map_err(|e| e.to_string())?
         .permissions();
       perms.set_mode(0o755);
-      std::fs::set_permissions(&ytdlp_path, perms).map_err(|e| e.to_string())?;
+      fs::set_permissions(&ytdlp_path, perms).map_err(|e| e.to_string())?;
     }
 
-    println!("[Navio Downloader] yt-dlp installed successfully at: {:?}", ytdlp_path);
+    println!(
+      "[Navio Downloader] yt-dlp installed successfully at: {:?}",
+      ytdlp_path
+    );
   }
 
   Ok(ytdlp_path)
@@ -135,16 +275,29 @@ async fn ensure_ffmpeg_installed(
   let bin_dir = app_data.join("bin");
 
   if !bin_dir.exists() {
-    std::fs::create_dir_all(&bin_dir)
+    fs::create_dir_all(&bin_dir)
       .map_err(|e| format!("Failed to create bin folder directory: {}", e))?;
   }
 
   // Use platform-specific binary extension (.exe on Windows, extensionless on Unix)
-  let exe_name = if cfg!(windows) { "ffmpeg.exe" } else { "ffmpeg" };
+  let exe_name = if cfg!(windows) {
+    "ffmpeg.exe"
+  } else {
+    "ffmpeg"
+  };
   let ffmpeg_path = bin_dir.join(exe_name);
+  let ffmpeg_marker_path = bin_dir.join("ffmpeg.zip.sha256");
+  let is_verified_install = ffmpeg_path.exists()
+    && fs::read_to_string(&ffmpeg_marker_path)
+      .map(|hash| hash.trim() == FFMPEG_ZIP_SHA256)
+      .unwrap_or(false);
+  println!(
+    "[Navio Downloader] ffmpeg verification | path={:?} verified={}",
+    ffmpeg_path, is_verified_install
+  );
 
-  // If not present, download the compressed binary archive and extract it
-  if !ffmpeg_path.exists() {
+  // If not present or not installed from the pinned archive, verify and extract it.
+  if !is_verified_install {
     // Notify the UI that setup is starting
     let setup_payload = DownloadPayload {
       id: download_id.to_string(),
@@ -156,7 +309,7 @@ async fn ensure_ffmpeg_installed(
       size: "—".to_string(),
       status: "downloading".to_string(),
     };
-    let _ = app_handle.emit("download-progress", setup_payload);
+    emit_download_progress(app_handle, setup_payload);
 
     let ffmpeg_url = if cfg!(target_os = "windows") {
       "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-win-64.zip"
@@ -170,22 +323,14 @@ async fn ensure_ffmpeg_installed(
 
     let zip_path = bin_dir.join("ffmpeg.zip");
 
-    let response = reqwest::get(ffmpeg_url)
-      .await
-      .map_err(|e| format!("Failed to fetch ffmpeg release: {}", e))?;
-
-    let bytes = response
-      .bytes()
-      .await
-      .map_err(|e| format!("Failed to read zip stream: {}", e))?;
-
-    std::fs::write(&zip_path, bytes)
-      .map_err(|e| format!("Failed to save ffmpeg zip: {}", e))?;
+    let bytes =
+      download_verified_bytes(ffmpeg_url, FFMPEG_ZIP_SHA256, MAX_FFMPEG_ZIP_BYTES).await?;
+    write_verified_file(&zip_path, &bytes)?;
 
     // Unzip the prebuilt archive using the zip crate
-    let zip_file = std::fs::File::open(&zip_path).map_err(|e| e.to_string())?;
-    let mut archive = zip::ZipArchive::new(zip_file)
-      .map_err(|e| format!("Failed to open zip archive: {}", e))?;
+    let zip_file = fs::File::open(&zip_path).map_err(|e| e.to_string())?;
+    let mut archive =
+      zip::ZipArchive::new(zip_file).map_err(|e| format!("Failed to open zip archive: {}", e))?;
 
     for i in 0..archive.len() {
       let mut file = archive.by_index(i).map_err(|e| e.to_string())?;
@@ -196,28 +341,33 @@ async fn ensure_ffmpeg_installed(
 
       // Extract files, skipping directories
       if !(*file.name()).ends_with('/') {
-        let mut outfile = std::fs::File::create(&outpath)
-          .map_err(|e| format!("Failed to create output file: {}", e))?;
+        let mut outfile =
+          fs::File::create(&outpath).map_err(|e| format!("Failed to create output file: {}", e))?;
         std::io::copy(&mut file, &mut outfile)
           .map_err(|e| format!("Failed to extract file: {}", e))?;
       }
     }
 
     // Clean up temporary zip file
-    let _ = std::fs::remove_file(zip_path);
+    let _ = fs::remove_file(zip_path);
+    fs::write(&ffmpeg_marker_path, FFMPEG_ZIP_SHA256)
+      .map_err(|e| format!("Failed to save ffmpeg verification marker: {}", e))?;
 
     // Mark the binary as executable on Unix systems (macOS, Linux)
     #[cfg(unix)]
     {
       use std::os::unix::fs::PermissionsExt;
-      let mut perms = std::fs::metadata(&ffmpeg_path)
+      let mut perms = fs::metadata(&ffmpeg_path)
         .map_err(|e| e.to_string())?
         .permissions();
       perms.set_mode(0o755);
-      std::fs::set_permissions(&ffmpeg_path, perms).map_err(|e| e.to_string())?;
+      fs::set_permissions(&ffmpeg_path, perms).map_err(|e| e.to_string())?;
     }
 
-    println!("[Navio Downloader] ffmpeg installed successfully at: {:?}", ffmpeg_path);
+    println!(
+      "[Navio Downloader] ffmpeg installed successfully at: {:?}",
+      ffmpeg_path
+    );
   }
 
   Ok(ffmpeg_path)
@@ -240,6 +390,11 @@ pub async fn start_download(
   app_handle: AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+  println!(
+    "[Navio Command] start_download | id={} format={} url={}",
+    id, format, url
+  );
+
   // 1. Resolve and create the system Downloads/Navio Player folder path
   let download_dir = app_handle
     .path()
@@ -248,20 +403,32 @@ pub async fn start_download(
     .join("Navio Player");
 
   if !download_dir.exists() {
-    std::fs::create_dir_all(&download_dir)
+    fs::create_dir_all(&download_dir)
       .map_err(|e| format!("Failed to create download folder: {}", e))?;
+    println!(
+      "[Navio Downloader] Created download directory: {:?}",
+      download_dir
+    );
   }
 
   // Register folder path in Axum stream server allowed directories list
   {
     let mut allowed = state.allowed_directories.lock().unwrap();
     allowed.insert(download_dir.clone());
+    println!(
+      "[Navio Downloader] Allowed download directory for streaming: {:?}",
+      download_dir
+    );
   }
 
   // Sync folder path into the database index directories if not already present
   if let Ok(mut db) = library::load_db(&app_handle) {
     let download_dir_str = download_dir.to_string_lossy().to_string();
     if !db.scanned_directories.contains(&download_dir_str) {
+      println!(
+        "[Navio Downloader] Adding download directory to library DB: {}",
+        download_dir_str
+      );
       db.scanned_directories.push(download_dir_str.clone());
       let mut allowed = state.allowed_directories.lock().unwrap();
       allowed.insert(download_dir.clone());
@@ -271,6 +438,10 @@ pub async fn start_download(
       if let Some(ref mut watcher) = *watcher_opt {
         use notify::Watcher;
         let _ = watcher.watch(&download_dir, notify::RecursiveMode::Recursive);
+        println!(
+          "[Navio Downloader] Watcher subscribed to download directory: {:?}",
+          download_dir
+        );
       }
 
       let _ = library::save_db(&app_handle, &db);
@@ -280,6 +451,8 @@ pub async fn start_download(
   // Spawn download worker thread asynchronously
   let app_handle_clone = app_handle.clone();
   tauri::async_runtime::spawn(async move {
+    println!("[Navio Downloader] Worker started | id={}", id);
+
     // 2. Fetch yt-dlp binary (if missing)
     let ytdlp_path = match ensure_ytdlp_installed(&app_handle_clone, &id).await {
       Ok(p) => p,
@@ -294,10 +467,11 @@ pub async fn start_download(
           size: "—".to_string(),
           status: "failed".to_string(),
         };
-        let _ = app_handle_clone.emit("download-progress", err_payload);
+        emit_download_progress(&app_handle_clone, err_payload);
         return;
       }
     };
+    println!("[Navio Downloader] yt-dlp ready | path={:?}", ytdlp_path);
 
     // 3. Fetch ffmpeg binary (if missing)
     let _ffmpeg_path = match ensure_ffmpeg_installed(&app_handle_clone, &id).await {
@@ -313,16 +487,29 @@ pub async fn start_download(
           size: "—".to_string(),
           status: "failed".to_string(),
         };
-        let _ = app_handle_clone.emit("download-progress", err_payload);
+        emit_download_progress(&app_handle_clone, err_payload);
         return;
       }
     };
+    println!("[Navio Downloader] ffmpeg ready | path={:?}", _ffmpeg_path);
 
     // 4. Configure subprocess command arguments
     let output_template = download_dir.join("%(title)s.%(ext)s");
     let bin_dir = app_handle_clone.path().app_data_dir().unwrap().join("bin");
+    let use_node_js_runtime = detect_node_js_runtime().await;
 
     let mut cmd = Command::new(ytdlp_path);
+
+    if use_node_js_runtime {
+      println!("[Navio Downloader] Node.js runtime detected; enabling yt-dlp JS runtime support");
+      cmd.arg("--js-runtimes").arg("node");
+    } else {
+      eprintln!(
+        "[yt-dlp setup] Node.js {}+ was not found; YouTube downloads may fail without an external JS runtime",
+        MIN_NODE_JS_RUNTIME_MAJOR
+      );
+    }
+
     cmd
       .arg(&url)
       .arg("-f")
@@ -333,7 +520,6 @@ pub async fn start_download(
       .arg(bin_dir.to_string_lossy().to_string())
       .arg("--merge-output-format")
       .arg("webm")
-      .arg("--no-warnings")
       .stdout(Stdio::piped())
       .stderr(Stdio::piped());
 
@@ -351,10 +537,11 @@ pub async fn start_download(
           size: "—".to_string(),
           status: "failed".to_string(),
         };
-        let _ = app_handle_clone.emit("download-progress", err_payload);
+        emit_download_progress(&app_handle_clone, err_payload);
         return;
       }
     };
+    println!("[Navio Downloader] yt-dlp process spawned | id={}", id);
 
     // Capture standard input/output streams
     let stdout = child
@@ -400,6 +587,8 @@ pub async fn start_download(
 
     // Read subprocess stdout line by line
     while let Ok(Some(line)) = reader.next_line().await {
+      println!("[yt-dlp stdout] {}", line);
+
       let mut payload_update = false;
       let mut progress = 0.0;
       let mut size = "—".to_string();
@@ -455,13 +644,17 @@ pub async fn start_download(
           size,
           status: "downloading".to_string(),
         };
-        let _ = app_handle_clone.emit("download-progress", tick);
+        emit_download_progress(&app_handle_clone, tick);
       }
     }
 
     // Wait for subprocess to exit
     let status_code = child.wait().await;
     let success = status_code.map(|s| s.success()).unwrap_or(false);
+    println!(
+      "[Navio Downloader] yt-dlp process exited | id={} success={}",
+      id, success
+    );
 
     if success {
       // Index the download folder to find the new track immediately
@@ -473,6 +666,11 @@ pub async fn start_download(
       })
       .await
       .unwrap_or_default();
+      println!(
+        "[Navio Downloader] Post-download library scan completed | id={} items={}",
+        id,
+        scanned_items.len()
+      );
 
       if let Ok(mut db) = library::load_db(&app_handle_clone) {
         for new_item in scanned_items {
@@ -483,10 +681,20 @@ pub async fn start_download(
           }
         }
         let _ = library::save_db(&app_handle_clone, &db);
+        println!(
+          "[Navio Downloader] Library DB updated after download | id={}",
+          id
+        );
       }
 
       // Notify database change globally to force reload frontend catalog
-      let _ = app_handle_clone.emit("library-updated", ());
+      println!(
+        "[Navio Event] emit library-updated | source=downloader id={}",
+        id
+      );
+      if let Err(err) = app_handle_clone.emit("library-updated", ()) {
+        eprintln!("[Navio Event] failed to emit library-updated: {}", err);
+      }
 
       // Emit final completion payload
       let success_payload = DownloadPayload {
@@ -499,7 +707,7 @@ pub async fn start_download(
         size: "".to_string(),
         status: "completed".to_string(),
       };
-      let _ = app_handle_clone.emit("download-progress", success_payload);
+      emit_download_progress(&app_handle_clone, success_payload);
     } else {
       // Retrieve the last line captured from the stderr thread
       let err_msg = {
@@ -522,9 +730,10 @@ pub async fn start_download(
         size: "—".to_string(),
         status: "failed".to_string(),
       };
-      let _ = app_handle_clone.emit("download-progress", fail_payload);
+      emit_download_progress(&app_handle_clone, fail_payload);
     }
   });
 
+  println!("[Navio Command] start_download accepted | worker queued");
   Ok(())
 }
