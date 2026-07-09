@@ -1,10 +1,10 @@
-# Ardio: Modern Media Player & Downloader
+# Navio Player: Modern Media Player & Downloader
 
-**Ardio** is a state-of-the-art desktop media player and playlist downloader designed to be the modern successor to traditional players like VLC. Built for speed, privacy, and visual elegance, Ardio runs entirely on your local machine with no login or accounts required.
+**Navio Player** is a state-of-the-art desktop media player and playlist downloader designed to be the modern successor to traditional players like VLC. Built for speed, privacy, and visual elegance, Navio Player runs entirely on your local machine with no login or accounts required.
 
 ## Key Features
 
-- 🎬 **Universal Playback**: A premium, custom-styled media player powered by **Vidstack** for both audio tracks and video streams.
+- 🎬 **Universal Playback**: A premium, custom-styled media player for both audio tracks and video streams.
 - 📂 **Local Library Scanning**: Automatically scans your folders for music and videos, extracting metadata and organizing them into a unified catalog.
 - 📋 **Custom Playlists**: Create and manage custom, user-defined local playlists stored securely on your desktop.
 - 📥 **Integrated Downloader**: Downloads videos, audio-only tracks, and entire playlists from YouTube (and thousands of other sites) using a self-updating backend utility inspired by `yt-dlp`.
@@ -14,13 +14,13 @@
 
 ## Architecture Overview
 
-Ardio operates via two cooperative layers:
+Navio Player operates via two cooperative layers:
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │               Frontend (TanStack Start SPA)             │
 │  - React UI & Sidebar Navigation                        │
-│  - Vidstack Player (Media Controller)                   │
+│  - Unified Background Player (Media Controller)         │
 ├───────────────────────────┬─────────────────────────────┤
 │   Tauri IPC / Commands    │   Local HTTP Stream Server  │
 │  - Trigger scans          │  - Serves media over HTTP   │
@@ -30,16 +30,16 @@ Ardio operates via two cooperative layers:
 │                   Rust Backend (Tauri)                  │
 │  - Directory Scanner & Lofty Tag Extractor              │
 │  - Dynamic yt-dlp downloader manager                    │
-│  - AppData library.json local database                  │
+│  - AppData navio-player/library.json database           │
 └─────────────────────────────────────────────────────────┘
 ```
 
-### 1. Frontend (Vite + React + Vidstack)
+### 1. Frontend (Vite + React)
 
 The frontend runs as a static Single Page Application (SPA) inside the Tauri WebView.
 
 - **SPA Routing**: Managed client-side by TanStack Router.
-- **Media Player**: Powered by **Vidstack**, styled with custom design tokens.
+- **Media Player**: Unified background video element, styled with custom design tokens.
 - **Entrypoint**: TanStack Start compiles to `dist/client/_shell.html`, which a custom Vite plugin (`tauriSpaPlugin`) duplicates as `index.html` for Tauri's entrypoint.
 
 ### 2. Rust Backend & Streaming Server
@@ -47,8 +47,8 @@ The frontend runs as a static Single Page Application (SPA) inside the Tauri Web
 The Rust backend performs security-checked file actions and system access.
 
 - **Local HTTP Stream Server**: Running on a dynamic localhost port (via `axum`), it streams local files securely with full HTTP Range request support to allow smooth seeking and scrubbing on both audio and video files.
-- **JSON Local Database**: Scanned folders, tracks, and playlists are stored in a file-based JSON database at `$APPDATA/ardio/library.json` managed via Rust IPC commands.
-- **Dynamic yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust downloads it dynamically to `$APPDATA/ardio/bin/` on first launch. This allows users to auto-update the downloader (via `yt-dlp -U`) whenever platforms change their algorithms, without requiring a complete app reinstall.
+- **JSON Local Database**: Scanned folders, tracks, and playlists are stored in a file-based JSON database at `$APPDATA/navio-player/library.json` managed via Rust IPC commands.
+- **Dynamic yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust downloads it dynamically to `$APPDATA/navio-player/bin/` on first launch. This allows users to auto-update the downloader (via `yt-dlp -U`) whenever platforms change their algorithms, without requiring a complete app reinstall.
 
 ---
 

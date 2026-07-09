@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Ardio",
+  "productName": "Navio Player",
   "version": "0.1.0",
-  "identifier": "com.ardio.dev",
+  "identifier": "com.navioplayer.com",
   "build": {
     "frontendDist": "../dist/client",
     "devUrl": "http://localhost:3000",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Ardio",
+        "title": "Navio Player",
         "width": 1024,
         "height": 728,
         "resizable": true,

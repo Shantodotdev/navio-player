@@ -1,5 +1,5 @@
 {
-  "name": "ardio",
+  "name": "navio-player",
   "private": true,
   "type": "module",
   "imports": {

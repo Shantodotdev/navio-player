@@ -142,7 +142,7 @@ fn process_changed_paths(
     app_handle
       .emit("library-updated", ())
       .map_err(|e| e.to_string())?;
-    println!("[Ardio Watcher] Database synced and 'library-updated' broadcasted.");
+    println!("[Navio Watcher] Database synced and 'library-updated' broadcasted.");
   }
 
   Ok(())

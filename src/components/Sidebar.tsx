@@ -15,10 +15,10 @@ export function Sidebar() {
       {/* Brand Logo */}
       <div className="flex items-center gap-3 mb-8">
         <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center font-medium text-zinc-200 shadow-lg shadow-brand-glow">
-          A
+          N
         </div>
         <span className="text-xl font-medium tracking-wide bg-linear-to-r from-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-          Ardio
+          Navio
         </span>
       </div>
 

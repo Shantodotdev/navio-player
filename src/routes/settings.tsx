@@ -17,7 +17,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsView() {
   const [downloadPath, setDownloadPath] = useState(
-    "C:\\Users\\Default\\Downloads\\Ardio",
+    "C:\\Users\\Default\\Downloads\\Navio Player",
   );
   const [defaultVolume, setDefaultVolume] = useState(80);
   const [hardwareAccel, setHardwareAccel] = useState(true);
@@ -41,7 +41,7 @@ function SettingsView() {
           <SettingsTab icon={<Download size={18} />}>
             Downloader config
           </SettingsTab>
-          <SettingsTab icon={<Info size={18} />}>About ardio</SettingsTab>
+          <SettingsTab icon={<Info size={18} />}>About Navio</SettingsTab>
         </div>
 
         {/* Configurations Panes */}
@@ -153,7 +153,7 @@ function SettingsView() {
             <div className="flex items-center gap-2 border-b border-white/5 pb-3.5">
               <Info size={20} className="text-brand-light" />
               <h2 className="text-lg font-medium text-zinc-200">
-                About ardio player
+                About Navio Player
               </h2>
             </div>
 
@@ -179,7 +179,7 @@ function SettingsView() {
                   className="text-brand-light mt-0.5 shrink-0"
                 />
                 <p className="text-sm text-zinc-500 leading-relaxed font-medium">
-                  Ardio is developed as a privacy-focused local alternative
+                  Navio Player is developed as a privacy-focused local alternative
                   player. None of your local directories, track lists, or
                   history are synchronized or uploaded to external hosts. All
                   operations remain local to your computer.

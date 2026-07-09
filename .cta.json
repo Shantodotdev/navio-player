@@ -1,5 +1,5 @@
 {
-  "projectName": "ardio",
+  "projectName": "navio-player",
   "mode": "file-router",
   "typescript": true,
   "tailwind": true,

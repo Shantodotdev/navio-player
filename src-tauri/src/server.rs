@@ -56,8 +56,8 @@ pub async fn start_server(
     .port();
 
   // Print startup logs so developers can see the server address in the terminal
-  println!("[Ardio Server] Started local streaming server at http://127.0.0.1:{}", port);
-  println!("[Ardio Server] Hello testing endpoint: http://127.0.0.1:{}/hello", port);
+  println!("[Navio Server] Started local streaming server at http://127.0.0.1:{}", port);
+  println!("[Navio Server] Hello testing endpoint: http://127.0.0.1:{}/hello", port);
 
   // Spawn the server task with a graceful shutdown trigger
   tokio::spawn(async move {
@@ -65,7 +65,7 @@ pub async fn start_server(
       .with_graceful_shutdown(async move {
         // Wait for the shutdown signal from the Tauri lifecycle thread
         let _ = shutdown_rx.await;
-        println!("[Ardio Server] Local streaming server shutting down gracefully.");
+        println!("[Navio Server] Local streaming server shutting down gracefully.");
       })
       .await
       .unwrap();
@@ -76,7 +76,7 @@ pub async fn start_server(
 
 /// Simple testing endpoint to verify that the local HTTP server is running.
 async fn hello_world() -> &'static str {
-  "Hello from Ardio Streaming Server!"
+  "Hello from Navio Streaming Server!"
 }
 
 /// Axum route handler that streams local media files.

@@ -71,7 +71,7 @@ const MOCK_PLAYLISTS: MockPlaylist[] = [
         name: "Introductory Video.mp4",
         path: "",
         title: "Introductory Video",
-        artist: "Ardio Team",
+        artist: "Navio Team",
         album: "Promotional",
         duration_secs: 120,
         media_type: "video",

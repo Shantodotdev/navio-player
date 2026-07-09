@@ -19,7 +19,7 @@ interface LibraryState {
 
   /**
    * Loads the current library catalog state (scanned directories, playlists, and tracks)
-   * from the database file on disk (`$APPDATA/ardio/library.json`).
+   * from the database file on disk (`$APPDATA/navio-player/library.json`).
    * Skips loading if the state is already initialized, unless `force` is set to true.
    *
    * @param force Set true to ignore initialization cache and load fresh from disk.

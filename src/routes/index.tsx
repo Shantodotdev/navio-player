@@ -23,7 +23,7 @@ function DashboardView() {
   return (
     <div className="space-y-8 max-w-5xl mx-auto font-medium select-none">
       <h1 className="text-4xl font-medium text-zinc-200 tracking-tight mb-20">
-        Welcome to <span className="text-brand-light">Ardio</span>
+        Welcome to <span className="text-brand-light">Navio Player</span>
       </h1>
 
       {/* Library Metrics Stats Card Row */}

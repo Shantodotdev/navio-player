@@ -43,7 +43,7 @@ export function Titlebar() {
         className="flex-1 h-full flex items-center gap-2 pl-4 text-3xs font-bold text-gray-500 uppercase tracking-widest cursor-default"
       >
         <div className="w-2 h-2 rounded-full bg-brand pointer-events-none"></div>
-        <span className="pointer-events-none">Ardio Player</span>
+        <span className="pointer-events-none">Navio Player</span>
       </div>
 
       {/* Right side: Control buttons (outside drag region) */}
