@@ -208,9 +208,9 @@ async fn ensure_ytdlp_installed(
     let setup_payload = DownloadPayload {
       id: download_id.to_string(),
       url: "".to_string(),
-      title: "Setting up downloader engine (yt-dlp)...".to_string(),
+      title: "Preparing download support...".to_string(),
       progress: 0.0,
-      speed: "Downloading utility...".to_string(),
+      speed: "One-time setup".to_string(),
       eta: "—".to_string(),
       size: "—".to_string(),
       status: "downloading".to_string(),
@@ -302,9 +302,9 @@ async fn ensure_ffmpeg_installed(
     let setup_payload = DownloadPayload {
       id: download_id.to_string(),
       url: "".to_string(),
-      title: "Downloading ffmpeg merger (one-time setup)...".to_string(),
+      title: "Preparing media processing...".to_string(),
       progress: 0.0,
-      speed: "Downloading media muxer...".to_string(),
+      speed: "One-time setup".to_string(),
       eta: "—".to_string(),
       size: "—".to_string(),
       status: "downloading".to_string(),
@@ -457,10 +457,11 @@ pub async fn start_download(
     let ytdlp_path = match ensure_ytdlp_installed(&app_handle_clone, &id).await {
       Ok(p) => p,
       Err(err) => {
+        eprintln!("[Navio Downloader] Download preparation failed: {}", err);
         let err_payload = DownloadPayload {
           id,
           url,
-          title: format!("Setup error: {}", err),
+          title: "Could not prepare downloads.".to_string(),
           progress: 0.0,
           speed: "0 B/s".to_string(),
           eta: "—".to_string(),
@@ -477,10 +478,11 @@ pub async fn start_download(
     let _ffmpeg_path = match ensure_ffmpeg_installed(&app_handle_clone, &id).await {
       Ok(p) => p,
       Err(err) => {
+        eprintln!("[Navio Downloader] Media processing preparation failed: {}", err);
         let err_payload = DownloadPayload {
           id,
           url,
-          title: format!("ffmpeg setup error: {}", err),
+          title: "Could not prepare media processing.".to_string(),
           progress: 0.0,
           speed: "0 B/s".to_string(),
           eta: "—".to_string(),
@@ -528,10 +530,11 @@ pub async fn start_download(
     let mut child = match cmd.spawn() {
       Ok(c) => c,
       Err(err) => {
+        eprintln!("[Navio Downloader] Could not start download process: {}", err);
         let err_payload = DownloadPayload {
           id,
           url,
-          title: format!("Execution failed: {}", err),
+          title: "Could not start download.".to_string(),
           progress: 0.0,
           speed: "0 B/s".to_string(),
           eta: "—".to_string(),
@@ -725,12 +728,13 @@ pub async fn start_download(
           lock.clone()
         }
       };
+      eprintln!("[Navio Downloader] Download failed: {}", err_msg);
 
       // Emit failed payload with error text
       let fail_payload = DownloadPayload {
         id,
         url,
-        title: format!("Error: {}", err_msg),
+        title: "Download failed.".to_string(),
         progress: 0.0,
         speed: "Failed".to_string(),
         eta: "—".to_string(),

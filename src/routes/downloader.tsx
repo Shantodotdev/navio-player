@@ -109,7 +109,7 @@ function DownloaderView() {
               const newItem: DownloadItem = {
                 id: payload.id,
                 url: payload.url || urlRef.current,
-                title: payload.title || "Media Stream",
+                title: payload.title || "Preparing download...",
                 progress: Math.round(payload.progress),
                 speed: payload.speed,
                 eta: payload.eta,
@@ -150,9 +150,9 @@ function DownloaderView() {
     const newItem: DownloadItem = {
       id: downloadId,
       url: url,
-      title: "Contacting host...",
+      title: "Preparing download...",
       progress: 0,
-      speed: "Connecting...",
+      speed: "Starting...",
       eta: "—",
       status: "downloading",
       format: formatLabel,
@@ -177,8 +177,8 @@ function DownloaderView() {
             ? {
                 ...d,
                 status: "failed",
-                speed: "Failed to spawn",
-                title: String(err),
+                speed: "Failed",
+                title: "Could not start download.",
               }
             : d,
         ),
