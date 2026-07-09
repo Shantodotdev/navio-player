@@ -138,7 +138,7 @@ pub fn scan_dir_recursive(
 }
 
 /// Inspects a media file, reads metadata tags, and wraps them in a `MediaItem` struct.
-fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem> {
+pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem> {
   let path_str = path.to_string_lossy().to_string();
   let filename = path.file_name()?.to_string_lossy().to_string();
   let extension = path.extension()?.to_str()?.to_lowercase();

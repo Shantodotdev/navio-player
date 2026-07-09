@@ -1,5 +1,6 @@
 mod library;
 mod server;
+mod watcher;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -19,6 +20,9 @@ pub struct AppState {
 
   /// Trigger to gracefully terminate the streaming server when the application exits.
   pub shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
+
+  /// Reference to the active recommended file watcher.
+  pub watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
 }
 
 /// Tauri command to retrieve the active streaming server port.
@@ -35,7 +39,26 @@ fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryDb, Strin
 
 /// Tauri command to save user's media library catalog (tracks, scanned folders, playlists).
 #[tauri::command]
-fn save_library(app_handle: tauri::AppHandle, db: library::LibraryDb) -> Result<(), String> {
+fn save_library(
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+  db: library::LibraryDb,
+) -> Result<(), String> {
+  // Dynamically unwatch directories that were removed from the catalog
+  if let Ok(old_db) = library::load_db(&app_handle) {
+    let old_dirs: HashSet<String> = old_db.scanned_directories.into_iter().collect();
+    let new_dirs: HashSet<String> = db.scanned_directories.iter().cloned().collect();
+
+    let mut watcher_opt = state.watcher.lock().unwrap();
+    if let Some(ref mut watcher) = *watcher_opt {
+      use notify::Watcher;
+      for dir in old_dirs.difference(&new_dirs) {
+        let path = PathBuf::from(dir);
+        let _ = watcher.unwatch(&path);
+      }
+    }
+  }
+
   library::save_db(&app_handle, &db)
 }
 
@@ -58,8 +81,23 @@ async fn scan_folder(
     allowed.insert(path.clone());
   }
 
-  // 2. Load the current database state
+  // 2. Register path with directory watcher dynamically
+  {
+    let mut watcher_opt = state.watcher.lock().unwrap();
+    if let Some(ref mut watcher) = *watcher_opt {
+      use notify::Watcher;
+      let _ = watcher.watch(&path, notify::RecursiveMode::Recursive);
+    }
+  }
+
+  // 3. Load the current database state
   let mut db = library::load_db(&app_handle)?;
+
+  // Cleanup: Retain only existing tracks currently present on host disk (removes manually deleted files)
+  db.tracks.retain(|t| {
+    let p = std::path::Path::new(&t.path);
+    p.exists()
+  });
 
   // Add the path to the scanned directories catalog if not already present
   let canonical_path = path.to_string_lossy().to_string();
@@ -67,7 +105,7 @@ async fn scan_folder(
     db.scanned_directories.push(canonical_path);
   }
 
-  // 3. Scan the folder recursively in a blocking worker thread pool to keep UI responsive
+  // 4. Scan the folder recursively in a blocking worker thread pool to keep UI responsive
   let cache_dir = app_handle
     .path()
     .app_cache_dir()
@@ -79,7 +117,7 @@ async fn scan_folder(
   .await
   .map_err(|e| e.to_string())?;
 
-  // 4. Merge scanned tracks (update metadata if path is already indexed, otherwise append)
+  // 5. Merge scanned tracks (update metadata if path is already indexed, otherwise append)
   for new_item in scanned_items {
     if let Some(pos) = db.tracks.iter().position(|t| t.path == new_item.path) {
       db.tracks[pos] = new_item;
@@ -88,7 +126,7 @@ async fn scan_folder(
     }
   }
 
-  // 5. Write the updated catalog state to disk
+  // 6. Write the updated catalog state to disk
   library::save_db(&app_handle, &db)?;
 
   Ok(db)
@@ -118,6 +156,7 @@ pub fn run() {
     allowed_directories,
     stream_port: port,
     shutdown_tx: Mutex::new(Some(shutdown_tx)),
+    watcher: Arc::new(Mutex::new(None)),
   };
 
   // Build the Tauri application context
@@ -144,6 +183,10 @@ pub fn run() {
           allowed.insert(PathBuf::from(dir));
         }
       }
+
+      // Initialize and start the background filesystem event watcher
+      let watcher = watcher::start_watcher(app_handle).expect("Failed to start directory watcher");
+      *state.watcher.lock().unwrap() = Some(watcher);
 
       Ok(())
     })
