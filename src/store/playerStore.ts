@@ -6,9 +6,8 @@ export type Track = {
   path: string;
   name: string;
   title?: string;
-  artist?: string;
-  album?: string;
   duration_secs: number;
+  file_size_bytes?: number;
   media_type: "audio" | "video";
   cover_cache_path?: string;
 };

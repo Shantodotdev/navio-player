@@ -103,10 +103,10 @@ function DashboardView() {
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-base font-medium text-zinc-200 truncate">
-                    {track.title}
+                    {track.title || track.name}
                   </h4>
                   <p className="text-sm text-zinc-400 truncate mt-0.5">
-                    {track.artist || "Unknown Artist"}
+                    {track.media_type}
                   </p>
                 </div>
               </div>

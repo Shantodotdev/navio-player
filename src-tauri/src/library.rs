@@ -19,12 +19,11 @@ pub struct MediaItem {
   pub name: String,
   /// Title extracted from audio tags (if available).
   pub title: Option<String>,
-  /// Artist extracted from audio tags (if available).
-  pub artist: Option<String>,
-  /// Album name extracted from audio tags (if available).
-  pub album: Option<String>,
   /// Track or video duration in seconds.
   pub duration_secs: f64,
+  /// File size in bytes.
+  #[serde(default)]
+  pub file_size_bytes: u64,
   /// Media type: "audio" or "video".
   pub media_type: String,
   /// Path to extracted cover art file in AppData cache (if available).
@@ -78,8 +77,18 @@ pub fn load_db(app_handle: &tauri::AppHandle) -> Result<LibraryDb, String> {
   let file = fs::File::open(db_path).map_err(|e| format!("Failed to open database file: {}", e))?;
   let reader = std::io::BufReader::new(file);
 
-  let db =
+  let mut db: LibraryDb =
     serde_json::from_reader(reader).map_err(|e| format!("Failed to parse database JSON: {}", e))?;
+
+  for track in &mut db.tracks {
+    if track.file_size_bytes == 0 {
+      if let Ok(metadata) = fs::metadata(&track.path) {
+        if metadata.is_file() {
+          track.file_size_bytes = metadata.len();
+        }
+      }
+    }
+  }
 
   Ok(db)
 }
@@ -142,6 +151,7 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
   let path_str = path.to_string_lossy().to_string();
   let filename = path.file_name()?.to_string_lossy().to_string();
   let extension = path.extension()?.to_str()?.to_lowercase();
+  let file_size_bytes = fs::metadata(path).ok()?.len();
 
   let audio_extensions = ["mp3", "m4a", "flac", "ogg", "wav"];
   let video_extensions = ["mp4", "mkv", "webm", "avi", "mov"];
@@ -156,8 +166,6 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
 
   let id = Uuid::new_v4().to_string();
   let mut title = None;
-  let mut artist = None;
-  let mut album = None;
   let mut duration_secs = 0.0;
   let mut cover_cache_path = None;
 
@@ -173,8 +181,6 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
         .or_else(|| tagged_file.first_tag())
       {
         title = tag.title().map(|s| s.to_string());
-        artist = tag.artist().map(|s| s.to_string());
-        album = tag.album().map(|s| s.to_string());
 
         // Extract artwork bytes if present
         if let Some(picture) = tag.pictures().first() {
@@ -209,9 +215,8 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
     path: path_str,
     name: filename,
     title,
-    artist,
-    album,
     duration_secs,
+    file_size_bytes,
     media_type: media_type.to_string(),
     cover_cache_path,
   })

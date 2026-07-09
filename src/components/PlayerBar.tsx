@@ -140,9 +140,7 @@ export function PlayerBar() {
               : "No track playing"}
           </span>
           <span className="text-xs text-zinc-400 truncate mt-0.5 font-medium">
-            {currentTrack
-              ? currentTrack.artist || "Unknown Artist"
-              : "Select a file to play"}
+            {currentTrack ? currentTrack.media_type : "Select a file to play"}
           </span>
         </div>
       </div>

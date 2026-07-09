@@ -28,8 +28,7 @@ function LibraryView() {
     const matchesSearch =
       t.name.toLowerCase().includes(query) ||
       (t.title && t.title.toLowerCase().includes(query)) ||
-      (t.artist && t.artist.toLowerCase().includes(query)) ||
-      (t.album && t.album.toLowerCase().includes(query))
+      t.path.toLowerCase().includes(query)
 
     const matchesFilter = filterType === 'all' || t.media_type === filterType
     return matchesSearch && matchesFilter
@@ -113,7 +112,7 @@ function LibraryView() {
               />
               <input
                 type="text"
-                placeholder="Search titles, artists, albums, or file paths..."
+                placeholder="Search titles, filenames, or file paths..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full bg-black/40 border border-white/5 rounded-lg py-2.5 pl-11 pr-4 text-base focus:outline-none focus:border-brand/40 text-zinc-200 placeholder-zinc-550 font-light"
@@ -151,9 +150,8 @@ function LibraryView() {
                   <tr className="border-b border-white/5 text-zinc-450 text-sm bg-white/1">
                     <th className="p-4 w-12 text-center">Play</th>
                     <th className="p-4">Title</th>
-                    <th className="p-4">Artist</th>
-                    <th className="p-4">Album</th>
                     <th className="p-4 w-24">Type</th>
+                    <th className="p-4 w-24">Size</th>
                     <th className="p-4 w-24">Length</th>
                   </tr>
                 </thead>
@@ -179,8 +177,6 @@ function LibraryView() {
                       <td className="p-4 text-zinc-300 font-medium text-base">
                         {track.title || track.name}
                       </td>
-                      <td className="p-4 text-zinc-400 text-sm">{track.artist || '—'}</td>
-                      <td className="p-4 text-zinc-400 text-sm">{track.album || '—'}</td>
                       <td className="p-4">
                         <span className="flex items-center gap-1.5 text-sm text-zinc-400 font-medium lowercase">
                           {track.media_type === 'video' ? (
@@ -192,6 +188,9 @@ function LibraryView() {
                         </span>
                       </td>
                       <td className="p-4 text-zinc-400 text-sm">
+                        {formatFileSize(track.file_size_bytes)}
+                      </td>
+                      <td className="p-4 text-zinc-400 text-sm">
                         {formatDuration(track.duration_secs)}
                       </td>
                     </tr>
@@ -199,7 +198,7 @@ function LibraryView() {
                   {filteredTracks.length === 0 && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={5}
                         className="p-12 text-center text-zinc-500 italic"
                       >
                         No files found matching search criteria.
@@ -242,4 +241,21 @@ function formatDuration(secs: number): string {
   const m = Math.floor(secs / 60)
   const s = Math.floor(secs % 60)
   return `${m}:${s < 10 ? '0' : ''}${s}`
+}
+
+function formatFileSize(bytes?: number): string {
+  if (bytes === undefined || bytes === null || Number.isNaN(bytes)) return '—'
+  if (bytes === 0) return '0 B'
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let unitIndex = 0
+
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024
+    unitIndex += 1
+  }
+
+  const precision = size >= 10 || unitIndex === 0 ? 0 : 1
+  return `${size.toFixed(precision)} ${units[unitIndex]}`
 }

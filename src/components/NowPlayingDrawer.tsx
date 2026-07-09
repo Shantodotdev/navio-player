@@ -27,8 +27,6 @@ export function NowPlayingDrawer() {
       name: "Lost in the Echo.mp3",
       path: "",
       title: "Lost in the Echo",
-      artist: "Linkin Park",
-      album: "Living Things",
       duration_secs: 205,
       media_type: "audio",
     },
@@ -37,8 +35,6 @@ export function NowPlayingDrawer() {
       name: "Starlight.mp3",
       path: "",
       title: "Starlight",
-      artist: "Muse",
-      album: "Black Holes and Revelations",
       duration_secs: 240,
       media_type: "audio",
     },
@@ -168,11 +164,7 @@ export function NowPlayingDrawer() {
               {activeTrack.title || activeTrack.name}
             </h3>
             <p className="text-sm text-zinc-400 truncate font-medium">
-              {activeTrack.artist || "Unknown Artist"}{" "}
-              <span className="text-zinc-700 px-1.5">•</span>{" "}
-              <span className="text-zinc-500">
-                {activeTrack.album || "Unknown Album"}
-              </span>
+              {activeTrack.media_type}
             </p>
           </div>
         </div>
@@ -218,7 +210,7 @@ export function NowPlayingDrawer() {
                       {track.title || track.name}
                     </span>
                     <span className="text-3xs text-zinc-500 truncate mt-0.5">
-                      {track.artist || "Unknown Artist"}
+                      {track.media_type}
                     </span>
                   </div>
 
