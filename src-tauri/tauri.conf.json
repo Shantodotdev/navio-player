@@ -13,10 +13,11 @@
     "windows": [
       {
         "title": "Ardio",
-        "width": 800,
-        "height": 600,
+        "width": 1024,
+        "height": 728,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false
       }
     ],
     "security": {
