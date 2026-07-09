@@ -25,6 +25,8 @@ interface PlayerState {
   isPlaying: boolean;
   /// Active dynamic HTTP streaming port retrieved from Rust.
   streamPort: number;
+  /// Per-run token required by the local stream server.
+  streamToken: string;
   /// Playback time in seconds.
   currentTime: number;
   /// App-wide volume percentage (0 - 100).
@@ -49,6 +51,8 @@ interface PlayerState {
   prevTrack: () => void;
   /// Store the backend streaming server port.
   setStreamPort: (port: number) => void;
+  /// Store the backend streaming server connection settings.
+  setStreamConfig: (config: { port: number; token: string }) => void;
   /// Override the queue list.
   setPlaylist: (tracks: Track[]) => void;
   /// Open/Close the Now Playing right drawer.
@@ -65,16 +69,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   playIndex: -1,
   isPlaying: false,
   streamPort: 0,
+  streamToken: "",
   currentTime: 0,
   volume: 80,
   isDrawerOpen: false,
   mediaElement: null,
 
   playTrack: (track, fromPlaylist = []) => {
-    const { streamPort, mediaElement } = get();
+    const { streamPort, streamToken, mediaElement } = get();
     const list = fromPlaylist.length > 0 ? fromPlaylist : [track];
     const idx = list.findIndex((t) => t.id === track.id);
-    
+
     set({
       playlist: list,
       currentTrack: track,
@@ -84,9 +89,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
 
     if (mediaElement) {
-      const srcUrl = `http://127.0.0.1:${streamPort}/stream/${encodeURIComponent(track.path)}`;
+      const srcUrl = buildStreamUrl(streamPort, streamToken, track.path);
       mediaElement.src = srcUrl;
-      mediaElement.play().catch(err => console.warn("Playback autoplay blocked or failed:", err));
+      mediaElement
+        .play()
+        .catch((err) =>
+          console.warn("Playback autoplay blocked or failed:", err),
+        );
     }
   },
 
@@ -95,7 +104,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ isPlaying: playing });
     if (mediaElement) {
       if (playing) {
-        mediaElement.play().catch(err => console.warn("Play failed:", err));
+        mediaElement.play().catch((err) => console.warn("Play failed:", err));
       } else {
         mediaElement.pause();
       }
@@ -115,7 +124,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   nextTrack: () => {
-    const { playlist, playIndex, streamPort, mediaElement } = get();
+    const { playlist, playIndex, streamPort, streamToken, mediaElement } =
+      get();
     if (playlist.length === 0 || playIndex === -1) return;
     const nextIdx = (playIndex + 1) % playlist.length;
     const track = playlist[nextIdx];
@@ -128,14 +138,17 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
 
     if (mediaElement && track) {
-      const srcUrl = `http://127.0.0.1:${streamPort}/stream/${encodeURIComponent(track.path)}`;
+      const srcUrl = buildStreamUrl(streamPort, streamToken, track.path);
       mediaElement.src = srcUrl;
-      mediaElement.play().catch(err => console.warn("Next track play failed:", err));
+      mediaElement
+        .play()
+        .catch((err) => console.warn("Next track play failed:", err));
     }
   },
 
   prevTrack: () => {
-    const { playlist, playIndex, streamPort, mediaElement } = get();
+    const { playlist, playIndex, streamPort, streamToken, mediaElement } =
+      get();
     if (playlist.length === 0 || playIndex === -1) return;
     const prevIdx = (playIndex - 1 + playlist.length) % playlist.length;
     const track = playlist[prevIdx];
@@ -148,17 +161,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
 
     if (mediaElement && track) {
-      const srcUrl = `http://127.0.0.1:${streamPort}/stream/${encodeURIComponent(track.path)}`;
+      const srcUrl = buildStreamUrl(streamPort, streamToken, track.path);
       mediaElement.src = srcUrl;
-      mediaElement.play().catch(err => console.warn("Prev track play failed:", err));
+      mediaElement
+        .play()
+        .catch((err) => console.warn("Prev track play failed:", err));
     }
   },
 
   setStreamPort: (port) => set({ streamPort: port }),
+  setStreamConfig: ({ port, token }) =>
+    set({ streamPort: port, streamToken: token }),
   setPlaylist: (tracks) => set({ playlist: tracks }),
   setDrawerOpen: (open) => set({ isDrawerOpen: open }),
   toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
-  
+
   setMediaElement: (element) => {
     const { volume } = get();
     if (element) {
@@ -167,3 +184,9 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     set({ mediaElement: element });
   },
 }));
+
+function buildStreamUrl(port: number, token: string, path: string): string {
+  const encodedPath = encodeURIComponent(path);
+  const encodedToken = encodeURIComponent(token);
+  return `http://127.0.0.1:${port}/stream/${encodedPath}?token=${encodedToken}`;
+}

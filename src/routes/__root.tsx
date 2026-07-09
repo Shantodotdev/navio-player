@@ -17,15 +17,17 @@ export const Route = createRootRoute({
 });
 
 export default function Root() {
-  const { setStreamPort } = usePlayerStore();
+  const { setStreamConfig } = usePlayerStore();
 
   useEffect(() => {
     // Initialize tauri client port on client boot
     const initTauri = async () => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
-        const port = await invoke<number>("get_stream_port");
-        setStreamPort(port);
+        const config = await invoke<{ port: number; token: string }>(
+          "get_stream_config",
+        );
+        setStreamConfig(config);
       } catch (err) {
         console.warn(
           "Tauri environment not detected or server port call failed:",
@@ -35,7 +37,7 @@ export default function Root() {
     };
 
     initTauri();
-  }, [setStreamPort]);
+  }, [setStreamConfig]);
 
   return (
     <html lang="en">

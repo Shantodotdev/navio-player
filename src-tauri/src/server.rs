@@ -1,6 +1,6 @@
 use axum::{
   body::Body,
-  extract::{Path, State},
+  extract::{Path, Query, State},
   http::{header, HeaderMap, StatusCode},
   response::Response,
   routing::get,
@@ -8,14 +8,13 @@ use axum::{
 };
 use std::{
   collections::HashSet,
-  path::PathBuf,
+  path::{Path as StdPath, PathBuf},
   sync::{Arc, Mutex},
 };
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 use tokio_util::io::ReaderStream;
-use tower_http::cors::CorsLayer;
 
 /// State shared across the local HTTP streaming server threads.
 #[derive(Clone)]
@@ -23,6 +22,15 @@ pub struct ServerState {
   /// Directories that the user scanned. Only files inside these dirs can be streamed.
   /// This is a security boundary preventing arbitrary local file reads by webview scripts.
   pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,
+
+  /// Per-process bearer token required by stream requests.
+  /// This prevents arbitrary browser origins from reading localhost media URLs.
+  pub stream_token: String,
+}
+
+#[derive(serde::Deserialize)]
+struct StreamQuery {
+  token: String,
 }
 
 /// Spawns a lightweight local HTTP streaming server on a dynamic port.
@@ -40,9 +48,7 @@ pub async fn start_server(
   // Setup the server router
   // We use percent-decoded path parameters to avoid URL segment clashes with file path separators.
   let app = Router::new()
-    .route("/hello", get(hello_world))
     .route("/stream/:file_path", get(stream_file))
-    .layer(CorsLayer::permissive())
     .with_state(state);
 
   // Bind to 127.0.0.1 on a random available port (port 0 requests dynamic allocation)
@@ -60,11 +66,6 @@ pub async fn start_server(
     "[Navio Server] Started local streaming server at http://127.0.0.1:{}",
     port
   );
-  println!(
-    "[Navio Server] Hello testing endpoint: http://127.0.0.1:{}/hello",
-    port
-  );
-
   // Spawn the server task with a graceful shutdown trigger
   tokio::spawn(async move {
     axum::serve(listener, app)
@@ -80,18 +81,17 @@ pub async fn start_server(
   Ok(port)
 }
 
-/// Simple testing endpoint to verify that the local HTTP server is running.
-async fn hello_world() -> &'static str {
-  "Hello from Navio Streaming Server!"
-}
+fn is_path_allowed(path: &StdPath, allowed_directories: &HashSet<PathBuf>) -> bool {
+  let Ok(canonical_path) = path.canonicalize() else {
+    return false;
+  };
 
-fn normalize_path(path: &std::path::Path) -> String {
-  let mut s = path.to_string_lossy().replace('\\', "/").to_lowercase();
-  // Remove UNC prefix if present
-  if s.starts_with("//?/") {
-    s = s[4..].to_string();
-  }
-  s
+  allowed_directories.iter().any(|dir| {
+    dir
+      .canonicalize()
+      .map(|canonical_dir| canonical_path.starts_with(canonical_dir))
+      .unwrap_or(false)
+  })
 }
 
 /// Axum route handler that streams local media files.
@@ -99,27 +99,34 @@ fn normalize_path(path: &std::path::Path) -> String {
 /// players can scrub/seek cleanly without loading entire media files into memory.
 async fn stream_file(
   State(state): State<ServerState>,
+  Query(query): Query<StreamQuery>,
   headers: HeaderMap,
   Path(encoded_path): Path<String>,
 ) -> Result<Response, StatusCode> {
+  println!("[Navio Server] stream request received");
+
+  if query.token != state.stream_token {
+    println!("[Navio Server] stream request rejected: invalid token");
+    return Err(StatusCode::FORBIDDEN);
+  }
+
   // Decode the URL encoded file path
   let decoded_bytes = percent_encoding::percent_decode_str(&encoded_path).collect::<Vec<u8>>();
   let path = PathBuf::from(String::from_utf8(decoded_bytes).map_err(|_| StatusCode::BAD_REQUEST)?);
+  println!("[Navio Server] stream request path decoded: {:?}", path);
+
+  if !path.exists() || !path.is_file() {
+    println!(
+      "[Navio Server] stream request rejected: file not found or not a file: {:?}",
+      path
+    );
+    return Err(StatusCode::NOT_FOUND);
+  }
 
   // SECURITY CHECK: Is the file path within the user's allowed (scanned) directories?
   let is_allowed = {
     let dirs = state.allowed_directories.lock().unwrap();
-    let normalized_path = normalize_path(&path);
-
-    let allowed = dirs.iter().any(|dir| {
-      let normalized_dir = normalize_path(dir);
-      if normalized_path.starts_with(&normalized_dir) {
-        let len = normalized_dir.len();
-        normalized_path.len() == len || normalized_path.chars().nth(len) == Some('/')
-      } else {
-        false
-      }
-    });
+    let allowed = is_path_allowed(&path, &dirs);
 
     if !allowed {
       println!(
@@ -135,10 +142,7 @@ async fn stream_file(
   if !is_allowed {
     return Err(StatusCode::FORBIDDEN);
   }
-
-  if !path.exists() {
-    return Err(StatusCode::NOT_FOUND);
-  }
+  println!("[Navio Server] stream request authorized: {:?}", path);
 
   // Open the file asynchronously
   let file = File::open(&path)
@@ -150,6 +154,15 @@ async fn stream_file(
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
   let file_len = metadata.len();
 
+  if file_len == 0 {
+    println!("[Navio Server] streaming empty file: {:?}", path);
+    return Response::builder()
+      .status(StatusCode::OK)
+      .header(header::CONTENT_LENGTH, 0)
+      .body(Body::empty())
+      .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR);
+  }
+
   // Sniff the file extension to get the correct MIME type (e.g., video/mp4, audio/mpeg)
   let mime_type = mime_guess::from_path(&path)
     .first_or_octet_stream()
@@ -158,6 +171,7 @@ async fn stream_file(
   // Check and parse the HTTP Range Header (e.g. "bytes=1000-5000")
   let (start, end) = if let Some(range_header) = headers.get(header::RANGE) {
     let range_str = range_header.to_str().unwrap_or("");
+    println!("[Navio Server] stream range header: {}", range_str);
     parse_range(range_str, file_len).unwrap_or((0, file_len - 1))
   } else {
     (0, file_len - 1)
@@ -165,6 +179,10 @@ async fn stream_file(
 
   // Basic validation of range values
   if start >= file_len || end >= file_len || start > end {
+    println!(
+      "[Navio Server] stream request rejected: unsatisfiable range {}-{} for len {}",
+      start, end, file_len
+    );
     return Err(StatusCode::RANGE_NOT_SATISFIABLE);
   }
 
@@ -190,6 +208,15 @@ async fn stream_file(
   } else {
     StatusCode::OK // HTTP 200 for full file content
   };
+  println!(
+    "[Navio Server] streaming response | status={} path={:?} bytes={}-{} len={} mime={}",
+    status.as_u16(),
+    path,
+    start,
+    end,
+    file_len,
+    mime_type
+  );
 
   Response::builder()
     .status(status)

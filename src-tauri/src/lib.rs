@@ -19,6 +19,9 @@ pub struct AppState {
   /// The port on which our local media streaming server is running.
   pub stream_port: u16,
 
+  /// Per-process token required by media stream URLs.
+  pub stream_token: String,
+
   /// Trigger to gracefully terminate the streaming server when the application exits.
   pub shutdown_tx: Mutex<Option<oneshot::Sender<()>>>,
 
@@ -26,16 +29,47 @@ pub struct AppState {
   pub watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
 }
 
+#[derive(serde::Serialize)]
+struct StreamConfig {
+  port: u16,
+  token: String,
+}
+
 /// Tauri command to retrieve the active streaming server port.
 #[tauri::command]
 fn get_stream_port(state: tauri::State<'_, AppState>) -> u16 {
+  println!(
+    "[Navio Command] get_stream_port | port={}",
+    state.stream_port
+  );
   state.stream_port
+}
+
+/// Tauri command to retrieve the stream server connection config.
+#[tauri::command]
+fn get_stream_config(state: tauri::State<'_, AppState>) -> StreamConfig {
+  println!(
+    "[Navio Command] get_stream_config | port={} token_present={}",
+    state.stream_port,
+    !state.stream_token.is_empty()
+  );
+  StreamConfig {
+    port: state.stream_port,
+    token: state.stream_token.clone(),
+  }
 }
 
 /// Tauri command to retrieve the user's media library catalog.
 #[tauri::command]
 fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryDb, String> {
-  library::load_db(&app_handle)
+  let db = library::load_db(&app_handle)?;
+  println!(
+    "[Navio Command] get_library | tracks={} playlists={} scanned_dirs={}",
+    db.tracks.len(),
+    db.playlists.len(),
+    db.scanned_directories.len()
+  );
+  Ok(db)
 }
 
 /// Tauri command to save user's media library catalog (tracks, scanned folders, playlists).
@@ -45,6 +79,13 @@ fn save_library(
   state: tauri::State<'_, AppState>,
   db: library::LibraryDb,
 ) -> Result<(), String> {
+  println!(
+    "[Navio Command] save_library | tracks={} playlists={} scanned_dirs={}",
+    db.tracks.len(),
+    db.playlists.len(),
+    db.scanned_directories.len()
+  );
+
   // Dynamically unwatch directories that were removed from the catalog
   if let Ok(old_db) = library::load_db(&app_handle) {
     let old_dirs: HashSet<String> = old_db.scanned_directories.into_iter().collect();
@@ -56,16 +97,24 @@ fn save_library(
       for dir in old_dirs.difference(&new_dirs) {
         let path = PathBuf::from(dir);
         let _ = watcher.unwatch(&path);
+        println!(
+          "[Navio Watcher] Unwatched removed library directory: {:?}",
+          path
+        );
       }
     }
   }
 
-  library::save_db(&app_handle, &db)
+  library::save_db(&app_handle, &db)?;
+  println!("[Navio Command] save_library completed");
+  Ok(())
 }
 
 /// Tauri command to open the Downloads folder inside the system's native file explorer.
 #[tauri::command]
 fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
+  println!("[Navio Command] open_folder");
+
   let download_dir = app_handle
     .path()
     .download_dir()
@@ -75,6 +124,10 @@ fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
   if !download_dir.exists() {
     std::fs::create_dir_all(&download_dir)
       .map_err(|e| format!("Failed to create download folder: {}", e))?;
+    println!(
+      "[Navio Command] Created downloads folder: {:?}",
+      download_dir
+    );
   }
 
   #[cfg(target_os = "windows")]
@@ -99,6 +152,7 @@ fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
       .map_err(|e| e.to_string())?;
   }
 
+  println!("[Navio Command] open_folder launched: {:?}", download_dir);
   Ok(())
 }
 
@@ -110,6 +164,8 @@ async fn scan_folder(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<library::LibraryDb, String> {
+  println!("[Navio Command] scan_folder | folder={}", folder_path);
+
   let path = PathBuf::from(&folder_path);
   if !path.exists() {
     return Err("Selected folder does not exist.".to_string());
@@ -119,6 +175,10 @@ async fn scan_folder(
   {
     let mut allowed = state.allowed_directories.lock().unwrap();
     allowed.insert(path.clone());
+    println!(
+      "[Navio Server] Allowed scanned directory for streaming: {:?}",
+      path
+    );
   }
 
   // Register path with directory watcher dynamically
@@ -127,6 +187,7 @@ async fn scan_folder(
     if let Some(ref mut watcher) = *watcher_opt {
       use notify::Watcher;
       let _ = watcher.watch(&path, notify::RecursiveMode::Recursive);
+      println!("[Navio Watcher] Watching scanned directory: {:?}", path);
     }
   }
 
@@ -156,6 +217,10 @@ async fn scan_folder(
   })
   .await
   .map_err(|e| e.to_string())?;
+  println!(
+    "[Navio Command] scan_folder completed filesystem scan | items={}",
+    scanned_items.len()
+  );
 
   // Merge scanned tracks (update metadata if path is already indexed, otherwise append)
   for new_item in scanned_items {
@@ -168,6 +233,11 @@ async fn scan_folder(
 
   // Write the updated catalog state to disk
   library::save_db(&app_handle, &db)?;
+  println!(
+    "[Navio Command] scan_folder saved library | tracks={} scanned_dirs={}",
+    db.tracks.len(),
+    db.scanned_directories.len()
+  );
 
   Ok(db)
 }
@@ -175,14 +245,19 @@ async fn scan_folder(
 /// Main entrypoint that boots the Tauri application shell.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+  println!("[Navio App] Starting application");
+
   // Create shared directories registry
   let allowed_directories = Arc::new(Mutex::new(HashSet::new()));
+  let stream_token = uuid::Uuid::new_v4().to_string();
+  println!("[Navio Server] Generated per-run stream token");
 
   // Setup oneshot channel for server graceful shutdown
   let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
   let server_state = server::ServerState {
     allowed_directories: allowed_directories.clone(),
+    stream_token: stream_token.clone(),
   };
 
   // Start the server and block until it binds to a dynamic port.
@@ -195,6 +270,7 @@ pub fn run() {
   let app_state = AppState {
     allowed_directories,
     stream_port: port,
+    stream_token,
     shutdown_tx: Mutex::new(Some(shutdown_tx)),
     watcher: Arc::new(Mutex::new(None)),
   };
@@ -206,6 +282,7 @@ pub fn run() {
     .setup(|app| {
       // In development environments, initialize the logger plugin
       if cfg!(debug_assertions) {
+        println!("[Navio App] Installing debug logger plugin");
         app.handle().plugin(
           tauri_plugin_log::Builder::default()
             .level(log::LevelFilter::Info)
@@ -219,19 +296,27 @@ pub fn run() {
       let state = app.state::<AppState>();
       if let Ok(db) = library::load_db(&app_handle) {
         let mut allowed = state.allowed_directories.lock().unwrap();
+        let mut restored_dirs = 0;
         for dir in db.scanned_directories {
           allowed.insert(PathBuf::from(dir));
+          restored_dirs += 1;
         }
+        println!(
+          "[Navio App] Restored stream allowlist from library | dirs={}",
+          restored_dirs
+        );
       }
 
       // Initialize and start the background filesystem event watcher
       let watcher = watcher::start_watcher(app_handle).expect("Failed to start directory watcher");
       *state.watcher.lock().unwrap() = Some(watcher);
+      println!("[Navio Watcher] Watcher started");
 
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![
       get_stream_port,
+      get_stream_config,
       get_library,
       save_library,
       scan_folder,
@@ -244,6 +329,7 @@ pub fn run() {
   // Run the event loop and monitor application lifecycle events
   app.run(|app_handle, event| {
     if let RunEvent::Exit = event {
+      println!("[Navio App] Exit event received");
       // The application is exiting. Trigger the graceful shutdown of the Axum server
       // so it frees the dynamic port cleanly.
       let state = app_handle.state::<AppState>();
