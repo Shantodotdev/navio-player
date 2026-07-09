@@ -134,7 +134,7 @@ function PlaylistsView() {
           return (
             <div
               key={pl.id}
-              className="bg-panel-bg/20 hover:bg-panel-bg/40 border border-white/5 hover:border-brand/20 p-6 flex flex-col justify-between group transition-all duration-300 relative overflow-hidden h-52"
+              className="bg-panel-bg/20 hover:bg-panel-bg/40 border border-white/5 hover:border-brand/20 p-6 flex flex-col justify-between group transition-all duration-300 relative overflow-hidden h-52 rounded-lg"
             >
               {/* Corner Glow Overlay */}
               <div className="absolute -top-12 -right-12 w-24 h-24 bg-brand/5 group-hover:bg-brand/10 filter blur-xl rounded-full transition-all"></div>
