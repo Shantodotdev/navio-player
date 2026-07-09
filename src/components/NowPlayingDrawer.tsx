@@ -18,6 +18,7 @@ export function NowPlayingDrawer() {
 
   const [coverUrl, setCoverUrl] = useState<string>("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  const consecutiveFailures = useRef(0);
 
   // Define some default tracks in case the active play queue is empty
   const mockQueue: Track[] = [
@@ -109,7 +110,10 @@ export function NowPlayingDrawer() {
               onTimeUpdate={(e) => {
                 setCurrentTime(e.currentTarget.currentTime);
               }}
-              onPlay={() => setIsPlaying(true)}
+              onPlay={() => {
+                setIsPlaying(true);
+                consecutiveFailures.current = 0;
+              }}
               onPause={() => setIsPlaying(false)}
               onEnded={nextTrack}
               onError={() => {
@@ -118,7 +122,16 @@ export function NowPlayingDrawer() {
                   activeTrack.path,
                   ". Auto-skipping...",
                 );
-                nextTrack();
+                consecutiveFailures.current += 1;
+                if (consecutiveFailures.current >= activeQueue.length) {
+                  console.warn(
+                    "All tracks in queue failed to play. Stopping playback.",
+                  );
+                  setIsPlaying(false);
+                  consecutiveFailures.current = 0;
+                } else {
+                  nextTrack();
+                }
               }}
             />
 

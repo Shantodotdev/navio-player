@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Select } from "../components/Select";
 import {
   Download,
-  RefreshCcw,
   X,
   Folder,
   AlertTriangle,
@@ -27,72 +26,169 @@ interface DownloadItem {
   size: string;
 }
 
-const MOCK_DOWNLOADS: DownloadItem[] = [
-  {
-    id: "dl-1",
-    url: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
-    title: "Rick Astley - Never Gonna Give You Up (Official Video)",
-    progress: 68,
-    speed: "4.2 MB/s",
-    eta: "0:12",
-    status: "downloading",
-    format: "video (1080p)",
-    size: "32.4 MB",
-  },
-  {
-    id: "dl-2",
-    url: "https://www.youtube.com/watch?v=Starlight",
-    title: "Muse - Starlight (Official Audio)",
-    progress: 100,
-    speed: "0 B/s",
-    eta: "0:00",
-    status: "completed",
-    format: "audio (MP3)",
-    size: "8.4 MB",
-  },
-  {
-    id: "dl-3",
-    url: "https://www.youtube.com/watch?v=failed",
-    title: "Invalid Stream Link or Algorithm Change",
-    progress: 23,
-    speed: "0 B/s",
-    eta: "—",
-    status: "failed",
-    format: "video (720p)",
-    size: "—",
-  },
-];
-
 function DownloaderView() {
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState("bestvideo+bestaudio");
-  const [downloads, setDownloads] = useState<DownloadItem[]>(MOCK_DOWNLOADS);
+  const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "active" | "history">(
     "all",
   );
 
-  const handleStartDownload = (e: React.FormEvent) => {
+  // Load download cards history from localStorage on mount (client-side only)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("navio_downloads");
+      if (saved) {
+        try {
+          setDownloads(JSON.parse(saved));
+        } catch (e) {
+          console.warn("Failed to parse downloads history:", e);
+        }
+      }
+    }
+  }, []);
+
+  // Save download cards history to localStorage on updates
+  useEffect(() => {
+    if (downloads.length > 0) {
+      localStorage.setItem("navio_downloads", JSON.stringify(downloads));
+    }
+  }, [downloads]);
+
+  // Subscribe to live download progress events from the Rust backend
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+
+    const setupListener = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const unlisten = await listen<{
+          id: string;
+          url: string;
+          title: string;
+          progress: number;
+          speed: string;
+          eta: string;
+          size: string;
+          status: "downloading" | "completed" | "failed";
+        }>("download-progress", (event) => {
+          const payload = event.payload;
+
+          setDownloads((prev) => {
+            const idx = prev.findIndex((d) => d.id === payload.id);
+            if (idx !== -1) {
+              const updated = [...prev];
+              updated[idx] = {
+                ...updated[idx],
+                title: payload.title || updated[idx].title,
+                progress: Math.round(payload.progress),
+                speed: payload.speed,
+                eta: payload.eta,
+                size: payload.size !== "—" ? payload.size : updated[idx].size,
+                status: payload.status,
+              };
+              return updated;
+            } else {
+              const formatLabel =
+                format === "bestaudio" ? "audio (MP3)" : "video (1080p)";
+              const newItem: DownloadItem = {
+                id: payload.id,
+                url: payload.url || url,
+                title: payload.title || "Media Stream",
+                progress: Math.round(payload.progress),
+                speed: payload.speed,
+                eta: payload.eta,
+                status: payload.status,
+                format: formatLabel,
+                size: payload.size,
+              };
+              return [newItem, ...prev];
+            }
+          });
+        });
+        unlistenFn = unlisten;
+      } catch (err) {
+        console.warn("Failed to subscribe to download events:", err);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, [format, url]);
+
+  // Start download via backend Tauri command
+  const handleStartDownload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
 
+    const downloadId = `dl-${Date.now()}`;
+    const formatLabel =
+      format === "bestaudio"
+        ? "audio (MP3)"
+        : format.includes("720p")
+          ? "video (720p)"
+          : "video (1080p)";
+
     const newItem: DownloadItem = {
-      id: `dl-${Date.now()}`,
+      id: downloadId,
       url: url,
-      title: url.replace("https://", "").substring(0, 40) + "...",
+      title: "Contacting host...",
       progress: 0,
-      speed: "Waiting...",
+      speed: "Connecting...",
       eta: "—",
       status: "downloading",
-      format: format === "bestaudio" ? "audio (MP3)" : "video (1080p)",
-      size: "Pending...",
+      format: formatLabel,
+      size: "—",
     };
 
     setDownloads((prev) => [newItem, ...prev]);
     setUrl("");
+
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("start_download", {
+        id: downloadId,
+        url,
+        format,
+      });
+    } catch (err) {
+      console.error("Failed to start download:", err);
+      setDownloads((prev) =>
+        prev.map((d) =>
+          d.id === downloadId
+            ? {
+                ...d,
+                status: "failed",
+                speed: "Failed to spawn",
+                title: String(err),
+              }
+            : d,
+        ),
+      );
+    }
   };
 
   const handleDeleteItem = (id: string) => {
-    setDownloads((prev) => prev.filter((item) => item.id !== id));
+    const updated = downloads.filter((item) => item.id !== id);
+    setDownloads(updated);
+    if (updated.length === 0) {
+      localStorage.removeItem("navio_downloads");
+    } else {
+      localStorage.setItem("navio_downloads", JSON.stringify(updated));
+    }
+  };
+
+  // Open the download destination directory in explorer
+  const handleOpenFolder = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_folder");
+    } catch (err) {
+      console.error("Failed to open downloads folder:", err);
+    }
   };
 
   const filteredDownloads = downloads.filter((item) => {
@@ -155,7 +251,7 @@ function DownloaderView() {
       </form>
 
       {/* Tabs & Filters */}
-      <div className="relative z-10 flex justify-between items-center border-b border-white/5 pb-2">
+      <div className="relative z-10 flex justify-between items-center border-b border-white/5 pb-2 mb-6">
         <div className="flex gap-4">
           <TabButton
             active={activeTab === "all"}
@@ -210,8 +306,11 @@ function DownloaderView() {
                 >
                   {item.status}
                 </span>
-                <span className="text-zinc-705">•</span>
-                <span className="text-xs text-zinc-450 truncate max-w-50">
+                <span className="text-zinc-700">•</span>
+                <span
+                  className="text-xs text-zinc-450 truncate max-w-50"
+                  title={item.url}
+                >
                   {item.url}
                 </span>
               </div>
@@ -228,7 +327,7 @@ function DownloaderView() {
                       style={{ width: `${item.progress}%` }}
                     ></div>
                   </div>
-                  <span className="text-xs text-zinc-400 shrink-0 w-10 text-right">
+                  <span className="text-xs text-zinc-400 shrink-0 w-10 text-right font-medium">
                     {item.progress}%
                   </span>
                 </div>
@@ -237,7 +336,7 @@ function DownloaderView() {
 
             {/* Right side diagnostics / actions */}
             <div className="flex items-center gap-6 shrink-0 self-stretch md:self-auto justify-between md:justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
-              <div className="flex gap-4 text-2xs text-zinc-500">
+              <div className="flex gap-4 text-2xs text-zinc-500 font-medium">
                 {item.status === "downloading" && (
                   <>
                     <div className="flex flex-col">
@@ -280,21 +379,24 @@ function DownloaderView() {
               <div className="flex items-center gap-2">
                 {item.status === "completed" && (
                   <>
-                    <button className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer">
+                    <button
+                      title="Play track (Please play from My Library)"
+                      className="p-2 bg-white/5 opacity-50 cursor-not-allowed rounded-lg text-zinc-500"
+                    >
                       <Play size={14} fill="currentColor" />
                     </button>
-                    <button className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer">
+                    <button
+                      onClick={handleOpenFolder}
+                      title="Open Downloads folder"
+                      className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer"
+                    >
                       <Folder size={14} />
                     </button>
                   </>
                 )}
-                {item.status === "failed" && (
-                  <button className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer">
-                    <RefreshCcw size={14} />
-                  </button>
-                )}
                 <button
                   onClick={() => handleDeleteItem(item.id)}
+                  title="Remove from history"
                   className="p-2 bg-white/5 hover:bg-red-950/20 hover:text-red-400 rounded-lg text-zinc-500 transition-colors cursor-pointer"
                 >
                   <X size={14} />
