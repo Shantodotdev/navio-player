@@ -20,9 +20,11 @@ interface LibraryState {
   /**
    * Loads the current library catalog state (scanned directories, playlists, and tracks)
    * from the database file on disk (`$APPDATA/ardio/library.json`).
-   * Skips loading if the state is already initialized.
+   * Skips loading if the state is already initialized, unless `force` is set to true.
+   * 
+   * @param force Set true to ignore initialization cache and load fresh from disk.
    */
-  fetchLibrary: () => Promise<void>;
+  fetchLibrary: (force?: boolean) => Promise<void>;
 
   /**
    * Opens the native OS directory picker. If a directory is selected, this triggers
@@ -54,9 +56,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   isInitialized: false,
   isLoading: false,
 
-  fetchLibrary: async () => {
-    // Prevent redundant load calls if we already fetched it on launch
-    if (get().isInitialized) return;
+  fetchLibrary: async (force = false) => {
+    // Prevent redundant load calls unless force parameter is set to true
+    if (get().isInitialized && !force) return;
     set({ isLoading: true });
     try {
       const { invoke } = await import("@tauri-apps/api/core");

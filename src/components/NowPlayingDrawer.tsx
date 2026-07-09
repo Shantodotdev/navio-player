@@ -112,6 +112,10 @@ export function NowPlayingDrawer() {
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
               onEnded={nextTrack}
+              onError={() => {
+                console.warn("Playback failed for file path:", activeTrack.path, ". Auto-skipping...");
+                nextTrack();
+              }}
             />
 
             {/* Audio Art Elements (shown only when playing audio) */}

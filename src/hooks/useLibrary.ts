@@ -25,6 +25,29 @@ export function useLibrary() {
     fetchLibrary();
   }, [fetchLibrary]);
 
+  // Listen to Tauri background watcher events and trigger database force-refresh
+  useEffect(() => {
+    let unlistenFn: (() => void) | null = null;
+
+    const setupListener = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const unlisten = await listen("library-updated", () => {
+          fetchLibrary(true); // Force reload database state!
+        });
+        unlistenFn = unlisten;
+      } catch (err) {
+        console.warn("Failed to subscribe to library-updated events:", err);
+      }
+    };
+
+    setupListener();
+
+    return () => {
+      if (unlistenFn) unlistenFn();
+    };
+  }, [fetchLibrary]);
+
   // 2. Filter tracks by media type for stats computations
   const audioList = tracks.filter((t) => t.media_type === "audio");
   const videoList = tracks.filter((t) => t.media_type === "video");
