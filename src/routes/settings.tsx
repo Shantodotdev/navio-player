@@ -1,14 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  FolderPlus,
   Settings as SettingsIcon,
   Info,
   Volume2,
-  Download,
   ShieldAlert,
 } from "lucide-react";
-import { Select } from "../components/Select";
 import { Switch } from "../components/Switch";
 
 export const Route = createFileRoute("/settings")({
@@ -16,12 +13,8 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsView() {
-  const [downloadPath, setDownloadPath] = useState(
-    "C:\\Users\\Default\\Downloads\\Navio Player",
-  );
   const [defaultVolume, setDefaultVolume] = useState(80);
   const [hardwareAccel, setHardwareAccel] = useState(true);
-  const [downloadQuality, setDownloadQuality] = useState("bestvideo+bestaudio");
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto font-medium select-none text-zinc-405">
@@ -37,9 +30,6 @@ function SettingsView() {
         <div className="flex flex-col gap-2 md:col-span-1">
           <SettingsTab active icon={<SettingsIcon size={18} />}>
             General settings
-          </SettingsTab>
-          <SettingsTab icon={<Download size={18} />}>
-            Downloader config
           </SettingsTab>
           <SettingsTab icon={<Info size={18} />}>About Navio</SettingsTab>
         </div>
@@ -93,62 +83,7 @@ function SettingsView() {
             </div>
           </div>
 
-          {/* Section 2: Downloader Config */}
-          <div className="relative z-20 bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 space-y-4">
-            <div className="flex items-center gap-2 border-b border-white/5 pb-3.5">
-              <Download size={20} className="text-brand-light" />
-              <h2 className="text-lg font-medium text-zinc-200">
-                YouTube downloader setup
-              </h2>
-            </div>
-
-            <div className="space-y-4">
-              {/* Target folder path */}
-              <div className="flex flex-col gap-2">
-                <label className="text-base text-zinc-400 font-medium">
-                  Download target folder
-                </label>
-                <div className="flex gap-2.5">
-                  <input
-                    type="text"
-                    value={downloadPath}
-                    onChange={(e) => setDownloadPath(e.target.value)}
-                    className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3.5 py-2.5 text-base text-zinc-200 focus:outline-none focus:border-brand/40 font-medium"
-                  />
-                  <button className="flex items-center justify-center p-3 bg-card-bg hover:bg-white/5 border border-white/5 rounded-lg text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">
-                    <FolderPlus size={18} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Target video quality selection */}
-              <div className="flex flex-col gap-2">
-                <label className="text-base text-zinc-400 font-medium">
-                  Default download format
-                </label>
-                <Select
-                  options={[
-                    {
-                      value: "bestvideo+bestaudio",
-                      label: "Highest Quality (Video & Audio)",
-                    },
-                    {
-                      value: "bestvideo[height<=720]+bestaudio",
-                      label: "High Quality (720p Video)",
-                    },
-                    {
-                      value: "bestaudio",
-                      label: "Audio Only (M4A/MP3 Extract)",
-                    },
-                  ]}
-                  value={downloadQuality}
-                  onChange={setDownloadQuality}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section 3: About Card */}
+          {/* Section 2: About Card */}
           <div className="relative z-10 bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 space-y-4">
             <div className="flex items-center gap-2 border-b border-white/5 pb-3.5">
               <Info size={20} className="text-brand-light" />
