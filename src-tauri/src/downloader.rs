@@ -379,7 +379,7 @@ async fn ensure_ffmpeg_installed(
 /// # Arguments
 /// * `id` - Unique identifier for tracking this download session on the UI.
 /// * `url` - Streaming URL of the video/audio to download.
-/// * `format` - Target quality/format code (e.g. "bestvideo+bestaudio" or "bestaudio").
+/// * `format` - Target format mode ("best" lets yt-dlp choose the highest available quality).
 /// * `app_handle` - App context to emit Tauri events.
 /// * `state` - Global AppState to whitelist/watch download folders.
 #[tauri::command]
@@ -513,9 +513,13 @@ pub async fn start_download(
     }
 
     cmd
-      .arg(&url)
-      .arg("-f")
-      .arg(&format)
+      .arg(&url);
+
+    if format != "best" {
+      cmd.arg("-f").arg(&format);
+    }
+
+    cmd
       .arg("-o")
       .arg(output_template.to_string_lossy().to_string())
       .arg("--ffmpeg-location")

@@ -28,7 +28,7 @@ interface DownloadItem {
 
 function DownloaderView() {
   const [url, setUrl] = useState("");
-  const [format, setFormat] = useState("bestvideo+bestaudio");
+  const [format, setFormat] = useState("best");
   const [downloads, setDownloads] = useState<DownloadItem[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "active" | "history">(
     "all",
@@ -100,12 +100,7 @@ function DownloaderView() {
               return updated;
             } else {
               const currentFormat = formatRef.current;
-              const formatLabel =
-                currentFormat === "bestaudio"
-                  ? "audio (MP3)"
-                  : currentFormat.includes("720p")
-                    ? "video (720p)"
-                    : "video (1080p)";
+              const formatLabel = currentFormat === "bestaudio" ? "Audio" : "Video";
               const newItem: DownloadItem = {
                 id: payload.id,
                 url: payload.url || urlRef.current,
@@ -140,12 +135,7 @@ function DownloaderView() {
     if (!url.trim()) return;
 
     const downloadId = `dl-${Date.now()}`;
-    const formatLabel =
-      format === "bestaudio"
-        ? "audio (MP3)"
-        : format.includes("720p")
-          ? "video (720p)"
-          : "video (1080p)";
+    const formatLabel = format === "bestaudio" ? "Audio" : "Video";
 
     const newItem: DownloadItem = {
       id: downloadId,
@@ -243,12 +233,11 @@ function DownloaderView() {
             <div className="w-full md:w-64 shrink-0">
               <Select
                 options={[
-                  { value: "bestvideo+bestaudio", label: "Video (1080p HD)" },
                   {
-                    value: "bestvideo[height<=720]+bestaudio",
-                    label: "Video (720p HD)",
+                    value: "best",
+                    label: "Video",
                   },
-                  { value: "bestaudio", label: "Audio Extract (MP3)" },
+                  { value: "bestaudio", label: "Audio" },
                 ]}
                 value={format}
                 onChange={setFormat}
