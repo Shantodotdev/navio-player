@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
 import { usePlayerStore } from '../store/playerStore'
-import type { Track } from '../store/playerStore'
+import { useLibrary } from '../hooks/useLibrary'
 import {
   FolderPlus,
   Search,
@@ -16,78 +16,12 @@ export const Route = createFileRoute('/library')({
   component: LibraryView,
 })
 
-// Mock scanned library to demonstrate UI searches and filtering
-const MOCK_LIBRARY: Track[] = [
-  {
-    id: 'lib-1',
-    name: 'Lost in the Echo.mp3',
-    path: 'D:\\Music\\Linkin Park\\Lost in the Echo.mp3',
-    title: 'Lost in the Echo',
-    artist: 'Linkin Park',
-    album: 'Living Things',
-    duration_secs: 205,
-    media_type: 'audio',
-  },
-  {
-    id: 'lib-2',
-    name: 'Starlight.mp3',
-    path: 'D:\\Music\\Muse\\Starlight.mp3',
-    title: 'Starlight',
-    artist: 'Muse',
-    album: 'Black Holes and Revelations',
-    duration_secs: 240,
-    media_type: 'audio',
-  },
-  {
-    id: 'lib-3',
-    name: 'Introductory Video.mp4',
-    path: 'C:\\Videos\\Ardio\\Intro.mp4',
-    title: 'Introductory Video',
-    artist: 'Ardio Team',
-    album: 'Promotional',
-    duration_secs: 120,
-    media_type: 'video',
-  },
-  {
-    id: 'lib-4',
-    name: 'Numb.mp3',
-    path: 'D:\\Music\\Linkin Park\\Numb.mp3',
-    title: 'Numb',
-    artist: 'Linkin Park',
-    album: 'Meteora',
-    duration_secs: 187,
-    media_type: 'audio',
-  },
-  {
-    id: 'lib-5',
-    name: 'Inception Trailer.mp4',
-    path: 'C:\\Videos\\Ardio\\Inception.mp4',
-    title: 'Inception Trailer',
-    artist: 'Warner Bros.',
-    album: 'Trailers',
-    duration_secs: 154,
-    media_type: 'video',
-  },
-]
-
-const MOCK_FOLDERS = [
-  'D:\\Music\\Linkin Park',
-  'D:\\Music\\Muse',
-  'C:\\Videos\\Ardio',
-]
-
 function LibraryView() {
   const { playTrack } = usePlayerStore()
-  const [tracks, setTracks] = useState<Track[]>(MOCK_LIBRARY)
-  const [scannedDirs, setScannedDirs] = useState<string[]>(MOCK_FOLDERS)
+  const { tracks, scannedDirs, addFolder, deleteFolder, rescanAll } = useLibrary()
+  
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'audio' | 'video'>('all')
-
-  // Deleting a directory automatically filters out any tracks starting with its path
-  const handleDeleteFolder = (folder: string) => {
-    setScannedDirs((prev) => prev.filter((d) => d !== folder))
-    setTracks((prev) => prev.filter((t) => !t.path.startsWith(folder)))
-  }
 
   const filteredTracks = tracks.filter((t) => {
     const query = searchQuery.toLowerCase()
@@ -112,18 +46,25 @@ function LibraryView() {
         </div>
 
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 px-4.5 py-2.5 bg-card-bg hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-base transition-all text-zinc-400 hover:text-zinc-200 font-medium cursor-pointer">
+          <button 
+            onClick={rescanAll}
+            disabled={scannedDirs.length === 0}
+            className="flex items-center gap-2 px-4.5 py-2.5 bg-card-bg hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-base transition-all text-zinc-400 hover:text-zinc-200 font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          >
             <RefreshCcw size={16} />
             <span>Rescan all</span>
           </button>
-          <button className="flex items-center gap-2 px-4.5 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer">
+          <button 
+            onClick={addFolder}
+            className="flex items-center gap-2 px-4.5 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
+          >
             <FolderPlus size={16} />
             <span>Add folder</span>
           </button>
         </div>
       </div>
 
-      {tracks.length === 0 ? (
+      {scannedDirs.length === 0 ? (
         // Large Elegant Empty State Panel
         <div className="flex flex-col items-center justify-center py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-8">
           <div className="p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
@@ -152,18 +93,13 @@ function LibraryView() {
                 >
                   <span className="text-zinc-400">{dir}</span>
                   <button
-                    onClick={() => handleDeleteFolder(dir)}
+                    onClick={() => deleteFolder(dir)}
                     className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
                   >
                     <Trash2 size={14} />
                   </button>
                 </div>
               ))}
-              {scannedDirs.length === 0 && (
-                <span className="text-sm text-zinc-500 italic">
-                  No scanned folders yet. Add one above to begin scanning.
-                </span>
-              )}
             </div>
           </div>
 
