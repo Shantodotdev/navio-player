@@ -1,13 +1,37 @@
-import { X, Music, Play, ListMusic } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { usePlayerStore } from "../store/playerStore";
-import type { Track } from "../store/playerStore";
+import {
+  Film,
+  ListMusic,
+  LoaderCircle,
+  Maximize2,
+  Music,
+  Pause,
+  Play,
+  X,
+} from "lucide-react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
+import { type Track, usePlayerStore } from "../store/playerStore";
+import {
+  clampDrawerWidth,
+  DEFAULT_DRAWER_WIDTH,
+  DRAWER_WIDTH_STORAGE_KEY,
+  getMaxDrawerWidth,
+  getStoredDrawerWidth,
+  MAX_DRAWER_WIDTH,
+  MIN_DRAWER_WIDTH,
+} from "./nowPlayingDrawerSizing";
 
 export function NowPlayingDrawer() {
   const {
     currentTrack,
     playlist,
     isDrawerOpen,
+    isPlaying,
     setDrawerOpen,
     playTrack,
     setMediaElement,
@@ -16,211 +40,338 @@ export function NowPlayingDrawer() {
     nextTrack,
   } = usePlayerStore();
 
-  const [coverUrl, setCoverUrl] = useState<string>("");
+  const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isBuffering, setIsBuffering] = useState(false);
+  const [playbackError, setPlaybackError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const consecutiveFailures = useRef(0);
 
-  // Define some default tracks in case the active play queue is empty
-  const mockQueue: Track[] = [
-    {
-      id: "mock-1",
-      name: "Lost in the Echo.mp3",
-      path: "",
-      title: "Lost in the Echo",
-      duration_secs: 205,
-      media_type: "audio",
-    },
-    {
-      id: "mock-2",
-      name: "Starlight.mp3",
-      path: "",
-      title: "Starlight",
-      duration_secs: 240,
-      media_type: "audio",
-    },
-  ];
+  const isVideo = currentTrack?.media_type === "video";
+  const activeTrack: Track = currentTrack ?? {
+    id: "",
+    path: "",
+    name: "",
+    duration_secs: 0,
+    media_type: "audio",
+  };
+  const activeQueue = currentTrack
+    ? playlist.length > 0
+      ? playlist
+      : [currentTrack]
+    : [];
 
-  const activeTrack = currentTrack || mockQueue[0];
-  const activeQueue = playlist.length > 0 ? playlist : mockQueue;
-
-  // Sync the HTML5 video element ref with Zustand store for global playback actions
   useEffect(() => {
-    if (videoRef.current) {
-      setMediaElement(videoRef.current);
-    }
-    return () => {
-      setMediaElement(null);
-    };
+    if (videoRef.current) setMediaElement(videoRef.current);
+    return () => setMediaElement(null);
   }, [setMediaElement]);
 
-  // Safely resolve local cached cover art files using Tauri convertFileSrc (prevents SSR errors)
   useEffect(() => {
-    if (activeTrack && activeTrack.cover_cache_path) {
-      const convertCachePath = async () => {
-        try {
-          const { convertFileSrc } = await import("@tauri-apps/api/core");
-          setCoverUrl(convertFileSrc(activeTrack.cover_cache_path!));
-        } catch (err) {
-          console.warn("Tauri convertFileSrc asset resolution failed:", err);
-          setCoverUrl("");
-        }
-      };
-      convertCachePath();
-    } else {
-      setCoverUrl("");
+    if (typeof window === "undefined") return;
+
+    const syncDrawerWidth = () => {
+      setDrawerWidth((width) =>
+        clampDrawerWidth(
+          width || getStoredDrawerWidth(window.innerWidth),
+          window.innerWidth,
+        ),
+      );
+    };
+
+    setDrawerWidth(getStoredDrawerWidth(window.innerWidth));
+    window.addEventListener("resize", syncDrawerWidth);
+    return () => window.removeEventListener("resize", syncDrawerWidth);
+  }, []);
+
+  useEffect(() => {
+    setIsBuffering(false);
+    setPlaybackError("");
+  }, [currentTrack?.id]);
+
+  const updateDrawerWidth = (nextWidth: number) => {
+    const clampedWidth = clampDrawerWidth(nextWidth, window.innerWidth);
+    setDrawerWidth(clampedWidth);
+    window.localStorage.setItem(DRAWER_WIDTH_STORAGE_KEY, String(clampedWidth));
+  };
+
+  const handleResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setIsResizing(true);
+  };
+
+  const handleResizePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (isResizing) updateDrawerWidth(window.innerWidth - event.clientX);
+  };
+
+  const stopResizing = () => setIsResizing(false);
+
+  const handleResizeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      updateDrawerWidth(drawerWidth + 20);
     }
-  }, [activeTrack]);
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      updateDrawerWidth(drawerWidth - 20);
+    }
+  };
+
+  const handleMediaError = () => {
+    if (!currentTrack) return;
+
+    console.warn("Playback failed for file path:", currentTrack.path);
+    setIsBuffering(false);
+    setPlaybackError(
+      "This media could not be played. Moving to the next item.",
+    );
+    consecutiveFailures.current += 1;
+
+    if (consecutiveFailures.current >= activeQueue.length) {
+      setIsPlaying(false);
+      consecutiveFailures.current = 0;
+      return;
+    }
+
+    nextTrack();
+  };
+
+  const enterFullscreen = () => {
+    void videoRef.current?.requestFullscreen().catch(() => undefined);
+  };
+
+  const mediaPlayer = (
+    <video
+      ref={videoRef}
+      className={
+        isVideo ? "absolute inset-0 w-full h-full object-contain" : "hidden"
+      }
+      onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+      onPlay={() => {
+        setIsPlaying(true);
+        consecutiveFailures.current = 0;
+      }}
+      onPause={() => setIsPlaying(false)}
+      onWaiting={() => setIsBuffering(true)}
+      onCanPlay={() => setIsBuffering(false)}
+      onEnded={nextTrack}
+      onError={handleMediaError}
+    />
+  );
 
   return (
-    <div
-      className={`absolute top-0 right-0 h-full w-96 bg-[#07070a]/98 backdrop-blur-3xl border-l border-white/5 shadow-[-15px_0_30px_-10px_rgba(0,0,0,0.8)] z-45 flex flex-col transition-transform duration-300 ease-out transform ${
+    <aside
+      className={`absolute top-0 right-0 h-full bg-[#07070a]/98 backdrop-blur-3xl border-l border-white/5 shadow-[-15px_0_30px_-10px_rgba(0,0,0,0.8)] z-45 flex flex-col transition-transform duration-300 ease-out ${
         isDrawerOpen ? "translate-x-0" : "translate-x-full"
-      }`}
+      } ${isResizing ? "select-none" : ""}`}
+      style={{ width: drawerWidth }}
+      aria-label="Now playing"
     >
-      {/* Drawer Header */}
-      <div className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
-        <span className="text-sm font-medium text-brand-light">
-          Now playing
-        </span>
+      <div
+        role="separator"
+        aria-label="Resize now playing"
+        aria-orientation="vertical"
+        aria-valuemin={MIN_DRAWER_WIDTH}
+        aria-valuemax={
+          typeof window === "undefined"
+            ? MAX_DRAWER_WIDTH
+            : getMaxDrawerWidth(window.innerWidth)
+        }
+        aria-valuenow={drawerWidth}
+        tabIndex={0}
+        onPointerDown={handleResizePointerDown}
+        onPointerMove={handleResizePointerMove}
+        onPointerUp={stopResizing}
+        onPointerCancel={stopResizing}
+        onKeyDown={handleResizeKeyDown}
+        className="absolute left-0 top-0 z-30 h-full w-2 -translate-x-1 cursor-ew-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-transparent hover:before:bg-brand/70 focus-visible:before:bg-brand"
+      />
+
+      <header className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
+        <div>
+          <span className="text-sm font-medium text-brand-light">
+            Now playing
+          </span>
+          {currentTrack && (
+            <p className="text-xs text-zinc-500 mt-0.5 capitalize">
+              {currentTrack.media_type}
+            </p>
+          )}
+        </div>
         <button
+          type="button"
           onClick={() => setDrawerOpen(false)}
+          aria-label="Close now playing"
           className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <X size={15} />
         </button>
-      </div>
+      </header>
 
-      {/* Scrollable Content Container */}
-      <div className="flex-1 overflow-y-auto p-5 space-y-6">
-        {/* Top Part: Large Cover Art & Details */}
-        <div className="space-y-4">
-          <div className="w-full aspect-square rounded-xl bg-card-bg border border-white/5 flex items-center justify-center shadow-lg overflow-hidden relative group">
-            <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none"></div>
+      <div
+        className={`flex-1 min-h-0 flex flex-col gap-6 p-5 ${
+          currentTrack ? "" : "hidden"
+        }`}
+      >
+        <div className="space-y-4 min-w-0 shrink-0">
+          <div
+            className={`relative overflow-hidden rounded-xl border border-white/5 shadow-lg group ${
+              isVideo ? "aspect-video bg-black" : "aspect-video bg-card-bg"
+            }`}
+          >
+            <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
+            {mediaPlayer}
 
-            {/* Core Background Player Tag */}
-            <video
-              ref={videoRef}
-              className={`w-full h-full object-cover z-20 ${
-                activeTrack.media_type === "video" ? "block" : "hidden"
-              }`}
-              onTimeUpdate={(e) => {
-                setCurrentTime(e.currentTarget.currentTime);
-              }}
-              onPlay={() => {
-                setIsPlaying(true);
-                consecutiveFailures.current = 0;
-              }}
-              onPause={() => setIsPlaying(false)}
-              onEnded={nextTrack}
-              onError={() => {
-                console.warn(
-                  "Playback failed for file path:",
-                  activeTrack.path,
-                  ". Auto-skipping...",
-                );
-                consecutiveFailures.current += 1;
-                if (consecutiveFailures.current >= activeQueue.length) {
-                  console.warn(
-                    "All tracks in queue failed to play. Stopping playback.",
-                  );
-                  setIsPlaying(false);
-                  consecutiveFailures.current = 0;
-                } else {
-                  nextTrack();
-                }
-              }}
-            />
+            {!isVideo && <AudioOrbit />}
 
-            {/* Audio Art Elements (shown only when playing audio) */}
-            {activeTrack.media_type === "audio" && (
-              <>
-                {coverUrl ? (
-                  <img
-                    src={coverUrl}
-                    alt={activeTrack.title || activeTrack.name}
-                    className="absolute inset-0 w-full h-full object-cover z-20 pointer-events-none"
-                  />
-                ) : (
-                  // Spinning vinyl disc fallback when cover art is missing
-                  <div className="absolute w-72 h-72 rounded-full border border-black/40 bg-zinc-950 flex items-center justify-center shadow-2xl animate-spin-slow">
-                    <div className="w-28 h-28 rounded-full border border-white/5 bg-zinc-900 flex items-center justify-center">
-                      <div className="w-8 h-8 rounded-full bg-brand"></div>
-                    </div>
-                  </div>
-                )}
-              </>
+            {isVideo && (
+              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    aria-label={isPlaying ? "Pause video" : "Play video"}
+                    onClick={() => setIsPlaying(!isPlaying)}
+                    className="w-12 h-12 rounded-full bg-black/65 hover:bg-brand text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
+                  >
+                    {isPlaying ? (
+                      <Pause size={19} fill="currentColor" />
+                    ) : (
+                      <Play
+                        size={19}
+                        fill="currentColor"
+                        className="translate-x-px"
+                      />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Enter fullscreen"
+                    onClick={enterFullscreen}
+                    className="w-10 h-10 rounded-full bg-black/65 hover:bg-white/20 text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
+                  >
+                    <Maximize2 size={17} />
+                  </button>
+                </div>
+              </div>
             )}
 
-            {/* Video overlay controls indicator */}
-            {activeTrack.media_type === "video" && (
-              <div className="absolute inset-0 bg-black/20 z-10 flex items-center justify-center pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                <Play size={26} className="text-zinc-200" fill="currentColor" />
+            {isBuffering && (
+              <div className="absolute inset-0 z-30 grid place-items-center bg-black/40 pointer-events-none">
+                <LoaderCircle size={28} className="text-white animate-spin" />
               </div>
             )}
           </div>
 
           <div className="space-y-1 px-1">
-            <h3 className="text-lg font-medium text-zinc-200 truncate">
+            <h2 className="text-xl font-medium text-zinc-100 truncate">
               {activeTrack.title || activeTrack.name}
-            </h3>
-            <p className="text-sm text-zinc-400 truncate font-medium">
+            </h2>
+            <p className="text-sm text-zinc-400 capitalize">
               {activeTrack.media_type}
             </p>
+            {playbackError && (
+              <p role="alert" className="text-xs text-red-300 pt-1">
+                {playbackError}
+              </p>
+            )}
           </div>
         </div>
 
-        {/* Bottom Part: Playlist Queue */}
-        <div className="space-y-3 pt-4 border-t border-white/5">
-          <div className="flex items-center gap-2 text-sm font-medium text-zinc-400">
-            <ListMusic size={16} className="text-brand-light" />
-            <span>Up next</span>
+        <Queue
+          tracks={activeQueue}
+          currentTrackId={activeTrack.id}
+          onSelect={playTrack}
+        />
+      </div>
+
+      {!currentTrack && (
+        <div className="flex-1 grid place-items-center p-8 text-center">
+          <div className="max-w-xs space-y-4">
+            <div className="mx-auto w-16 h-16 rounded-2xl bg-brand/10 border border-brand/20 text-brand-light grid place-items-center">
+              <Music size={28} />
+            </div>
+            <div className="space-y-1.5">
+              <h2 className="text-lg font-medium text-zinc-200">
+                Nothing playing
+              </h2>
+              <p className="text-sm leading-relaxed text-zinc-500">
+                Choose an item from your library to start playback.
+              </p>
+            </div>
           </div>
+        </div>
+      )}
+    </aside>
+  );
+}
 
-          {/* Queue List */}
-          <div className="space-y-1.5">
-            {activeQueue.map((track) => {
-              const isCurrent = activeTrack.id === track.id;
+function Queue({
+  tracks,
+  currentTrackId,
+  onSelect,
+}: {
+  tracks: Track[];
+  currentTrackId: string;
+  onSelect: (track: Track, queue: Track[]) => void;
+}) {
+  if (tracks.length === 0) return null;
 
-              return (
-                <div
-                  key={track.id}
-                  onClick={() => playTrack(track, activeQueue)}
-                  className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer border transition-all duration-150 group ${
-                    isCurrent
-                      ? "bg-brand/10 border-brand/20 text-brand-light font-medium"
-                      : "bg-transparent border-transparent hover:bg-white/5 text-zinc-400 hover:text-zinc-200"
-                  }`}
-                >
-                  <div className="w-9 h-9 rounded bg-white/5 flex items-center justify-center shrink-0 relative overflow-hidden">
-                    <Music
-                      size={13}
-                      className="text-zinc-400 group-hover:opacity-0"
-                    />
-                    <div className="absolute inset-0 bg-brand opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                      <Play
-                        size={10}
-                        fill="currentColor"
-                        className="text-zinc-200"
-                      />
-                    </div>
-                  </div>
+  return (
+    <section className="flex-1 min-h-0 flex flex-col gap-3 pt-5 border-t border-white/5">
+      <div className="flex items-center gap-2 text-sm font-medium text-zinc-400">
+        <ListMusic size={16} className="text-brand-light" />
+        <span>Up next</span>
+      </div>
+      <div className="flex-1 min-h-0 space-y-1.5 overflow-y-auto pr-1">
+        {tracks.map((track) => {
+          const isCurrent = currentTrackId === track.id;
 
-                  <div className="flex-1 flex flex-col min-w-0">
-                    <span className="text-xs truncate">
-                      {track.title || track.name}
-                    </span>
-                    <span className="text-3xs text-zinc-500 truncate mt-0.5">
-                      {track.media_type}
-                    </span>
-                  </div>
+          return (
+            <button
+              key={track.id}
+              type="button"
+              onClick={() => onSelect(track, tracks)}
+              className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left border transition-all duration-150 group cursor-pointer ${
+                isCurrent
+                  ? "bg-brand/10 border-brand/20 text-brand-light font-medium"
+                  : "bg-transparent border-transparent hover:bg-white/5 text-zinc-400 hover:text-zinc-200"
+              }`}
+            >
+              <div className="w-9 h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
+                {track.media_type === "video" ? (
+                  <Film size={13} className="text-zinc-400" />
+                ) : (
+                  <Music size={13} className="text-zinc-400" />
+                )}
+              </div>
+              <div className="flex-1 min-w-0">
+                <span className="block text-sm truncate">
+                  {track.title || track.name}
+                </span>
+                <span className="block text-xs text-zinc-500 truncate mt-0.5 capitalize">
+                  {track.media_type}
+                </span>
+              </div>
+              <span className="text-xs text-zinc-500 font-medium">
+                {formatTime(track.duration_secs)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
-                  <span className="text-xs text-zinc-500 font-medium">
-                    {formatTime(track.duration_secs)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
+function AudioOrbit() {
+  return (
+    <div className="absolute inset-0 z-20 grid place-items-center overflow-hidden bg-linear-to-br from-[#100711] via-[#0b0b16] to-[#06121a]">
+      <div className="relative w-40 aspect-square">
+        <div className="absolute inset-0 rounded-full border border-brand/35 border-t-brand-light animate-spin-slow">
+          <span className="absolute -top-1 left-1/2 w-2.5 h-2.5 rounded-full bg-brand-light shadow-[0_0_12px_rgba(199,44,78,0.9)]" />
+        </div>
+        <div className="absolute inset-5 rounded-full border border-white/10 border-b-brand/40 animate-[spin_8s_linear_infinite_reverse]" />
+        <div className="absolute inset-11 rounded-full bg-brand/15 border border-brand/30 shadow-[0_0_38px_rgba(168,28,60,0.3)] grid place-items-center text-brand-light">
+          <Music size={30} />
         </div>
       </div>
     </div>
@@ -228,8 +379,8 @@ export function NowPlayingDrawer() {
 }
 
 function formatTime(secs: number): string {
-  if (!secs || isNaN(secs)) return "0:00";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
+  if (!secs || Number.isNaN(secs)) return "0:00";
+  const minutes = Math.floor(secs / 60);
+  const seconds = Math.floor(secs % 60);
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 }

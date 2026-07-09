@@ -7,6 +7,7 @@ import {
   Repeat,
   Shuffle,
   Music,
+  Film,
   Maximize2,
   PanelRight,
 } from "lucide-react";
@@ -115,8 +116,20 @@ export function PlayerBar() {
       {/* Left: Active Track Details */}
       <div className="flex items-center gap-4 w-1/3">
         <div className="w-14 h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden group relative shrink-0">
-          {coverUrl ? (
-            <img src={coverUrl} alt="" className="w-full h-full object-cover" />
+          {currentTrack?.media_type === "video" ? (
+            <div
+              aria-label="Video now playing"
+              className="w-full h-full grid place-items-center bg-brand/10 text-brand-light"
+            >
+              <Film size={22} />
+            </div>
+          ) : coverUrl ? (
+            <img
+              src={coverUrl}
+              alt=""
+              onError={() => setCoverUrl("")}
+              className="w-full h-full object-cover"
+            />
           ) : (
             <Music size={22} className="text-zinc-400" />
           )}

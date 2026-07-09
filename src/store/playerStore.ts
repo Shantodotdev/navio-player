@@ -85,6 +85,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       playIndex: idx !== -1 ? idx : 0,
       isPlaying: true,
       currentTime: 0,
+      isDrawerOpen: true,
     });
 
     if (mediaElement) {
