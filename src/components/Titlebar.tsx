@@ -37,14 +37,8 @@ export function Titlebar() {
 
   return (
     <div className="w-full h-8 bg-[#09090c] border-b border-white/5 flex items-center justify-between select-none z-100 shrink-0">
-      {/* Left side: Draggable window title metadata area */}
-      <div
-        data-tauri-drag-region
-        className="flex-1 h-full flex items-center gap-2 pl-4 text-3xs font-bold text-gray-500 uppercase tracking-widest cursor-default"
-      >
-        <div className="w-2 h-2 rounded-full bg-brand pointer-events-none"></div>
-        <span className="pointer-events-none">Navio Player</span>
-      </div>
+      {/* Left side: Draggable window region (title text removed for minimalist style) */}
+      <div data-tauri-drag-region className="flex-1 h-full cursor-default" />
 
       {/* Right side: Control buttons (outside drag region) */}
       <div className="flex h-full items-center">
