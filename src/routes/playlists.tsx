@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import type { Track } from "../store/playerStore";
-import { Plus, ListMusic, Play, Music, Film, Clock } from "lucide-react";
+import { ListMusic, Play, Music, Film, Clock } from "lucide-react";
+import { CreatePlaylistModal } from "../components/CreatePlaylistModal";
 
 export const Route = createFileRoute("/playlists")({
   component: PlaylistsView,
@@ -93,9 +93,6 @@ const MOCK_PLAYLISTS: MockPlaylist[] = [
 function PlaylistsView() {
   const { playTrack } = usePlayerStore();
   const [playlists, setPlaylists] = useState<MockPlaylist[]>(MOCK_PLAYLISTS);
-  const [isCreating, setIsCreating] = useState(false);
-  const [newPlaylistName, setNewPlaylistName] = useState("");
-  const [newPlaylistDesc, setNewPlaylistDesc] = useState("");
 
   const handlePlayPlaylist = (playlist: MockPlaylist) => {
     if (playlist.tracks.length > 0) {
@@ -103,21 +100,14 @@ function PlaylistsView() {
     }
   };
 
-  const handleCreatePlaylist = (e: FormEvent) => {
-    e.preventDefault();
-    if (!newPlaylistName.trim()) return;
-
+  const handleCreatePlaylist = (name: string, description: string) => {
     const newPl: MockPlaylist = {
       id: `pl-${Date.now()}`,
-      name: newPlaylistName,
-      description: newPlaylistDesc || "Custom user playlist.",
+      name: name,
+      description: description || "Custom user playlist.",
       tracks: [],
     };
-
     setPlaylists((prev) => [...prev, newPl]);
-    setNewPlaylistName("");
-    setNewPlaylistDesc("");
-    setIsCreating(false);
   };
 
   return (
@@ -130,68 +120,8 @@ function PlaylistsView() {
           </h1>
         </div>
 
-        <button
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-2 px-5 py-3 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
-        >
-          <Plus size={16} />
-          <span>New playlist</span>
-        </button>
+        <CreatePlaylistModal onPlaylistCreated={handleCreatePlaylist} />
       </div>
-
-      {/* Create Playlist Overlay Modal Mock */}
-      {isCreating && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="w-full max-w-md bg-[#0e0e12] border border-white/5 rounded-2xl p-6 shadow-2xl space-y-4">
-            <h3 className="text-xl font-medium text-zinc-200">
-              Create new playlist
-            </h3>
-            <form onSubmit={handleCreatePlaylist} className="space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-sm text-zinc-400 font-medium">
-                  Playlist name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Chill Beats"
-                  value={newPlaylistName}
-                  onChange={(e) => setNewPlaylistName(e.target.value)}
-                  className="w-full bg-black/40 border border-white/5 rounded-lg p-2.5 text-base text-zinc-200 focus:outline-none focus:border-brand/40 font-medium"
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <label className="block text-sm text-zinc-400 font-medium">
-                  Description
-                </label>
-                <textarea
-                  placeholder="e.g. Tracks to listen to when studying..."
-                  value={newPlaylistDesc}
-                  onChange={(e) => setNewPlaylistDesc(e.target.value)}
-                  className="w-full h-20 bg-black/40 border border-white/5 rounded-lg p-2.5 text-base text-zinc-200 focus:outline-none focus:border-brand/40 resize-none font-medium"
-                />
-              </div>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreating(false)}
-                  className="px-4 py-2 text-base text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-brand hover:bg-brand-light text-zinc-200 font-medium rounded-lg text-base shadow shadow-brand-glow transition-colors cursor-pointer"
-                >
-                  Create playlist
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* Playlists Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
