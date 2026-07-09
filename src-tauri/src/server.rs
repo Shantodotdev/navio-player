@@ -49,15 +49,21 @@ pub async fn start_server(
   let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
     .await
     .map_err(|e| format!("Failed to bind to local port: {}", e))?;
-  
+
   let port = listener
     .local_addr()
     .map_err(|e| format!("Failed to get local address: {}", e))?
     .port();
 
   // Print startup logs so developers can see the server address in the terminal
-  println!("[Navio Server] Started local streaming server at http://127.0.0.1:{}", port);
-  println!("[Navio Server] Hello testing endpoint: http://127.0.0.1:{}/hello", port);
+  println!(
+    "[Navio Server] Started local streaming server at http://127.0.0.1:{}",
+    port
+  );
+  println!(
+    "[Navio Server] Hello testing endpoint: http://127.0.0.1:{}/hello",
+    port
+  );
 
   // Spawn the server task with a graceful shutdown trigger
   tokio::spawn(async move {
@@ -79,6 +85,15 @@ async fn hello_world() -> &'static str {
   "Hello from Navio Streaming Server!"
 }
 
+fn normalize_path(path: &std::path::Path) -> String {
+  let mut s = path.to_string_lossy().replace('\\', "/").to_lowercase();
+  // Remove UNC prefix if present
+  if s.starts_with("//?/") {
+    s = s[4..].to_string();
+  }
+  s
+}
+
 /// Axum route handler that streams local media files.
 /// Implements HTTP Range requests so that the WebView's `<video>` or `<audio>`
 /// players can scrub/seek cleanly without loading entire media files into memory.
@@ -89,18 +104,35 @@ async fn stream_file(
 ) -> Result<Response, StatusCode> {
   // Decode the URL encoded file path
   let decoded_bytes = percent_encoding::percent_decode_str(&encoded_path).collect::<Vec<u8>>();
-  let path = PathBuf::from(
-    String::from_utf8(decoded_bytes).map_err(|_| StatusCode::BAD_REQUEST)?,
-  );
+  let path = PathBuf::from(String::from_utf8(decoded_bytes).map_err(|_| StatusCode::BAD_REQUEST)?);
 
   // SECURITY CHECK: Is the file path within the user's allowed (scanned) directories?
   let is_allowed = {
     let dirs = state.allowed_directories.lock().unwrap();
-    dirs.iter().any(|dir| path.starts_with(dir))
+    let normalized_path = normalize_path(&path);
+
+    let allowed = dirs.iter().any(|dir| {
+      let normalized_dir = normalize_path(dir);
+      if normalized_path.starts_with(&normalized_dir) {
+        let len = normalized_dir.len();
+        normalized_path.len() == len || normalized_path.chars().nth(len) == Some('/')
+      } else {
+        false
+      }
+    });
+
+    if !allowed {
+      println!(
+        "[Navio Server] Access denied for streaming path: {:?}",
+        path
+      );
+      println!("[Navio Server] Allowed directories were: {:?}", *dirs);
+    }
+
+    allowed
   };
 
   if !is_allowed {
-    log::warn!("Access denied for streaming path: {:?}", path);
     return Err(StatusCode::FORBIDDEN);
   }
 
@@ -163,7 +195,10 @@ async fn stream_file(
     .status(status)
     .header(header::CONTENT_TYPE, mime_type)
     .header(header::ACCEPT_RANGES, "bytes")
-    .header(header::CONTENT_RANGE, format!("bytes {}-{}/{}", start, end, file_len))
+    .header(
+      header::CONTENT_RANGE,
+      format!("bytes {}-{}/{}", start, end, file_len),
+    )
     .header(header::CONTENT_LENGTH, chunk_size)
     .body(body)
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
