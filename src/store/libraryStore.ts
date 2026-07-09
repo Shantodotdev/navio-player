@@ -21,7 +21,7 @@ interface LibraryState {
    * Loads the current library catalog state (scanned directories, playlists, and tracks)
    * from the database file on disk (`$APPDATA/ardio/library.json`).
    * Skips loading if the state is already initialized, unless `force` is set to true.
-   * 
+   *
    * @param force Set true to ignore initialization cache and load fresh from disk.
    */
   fetchLibrary: (force?: boolean) => Promise<void>;
@@ -34,10 +34,10 @@ interface LibraryState {
   addFolder: () => Promise<void>;
 
   /**
-   * Removes a directory from the allowed registry list, purges all indexed tracks 
+   * Removes a directory from the allowed registry list, purges all indexed tracks
    * belonging to that path from the catalog, writes the changes to disk, and updates state.
    * Keeps playlists intact.
-   * 
+   *
    * @param folder The absolute folder path string to remove.
    */
   deleteFolder: (folder: string) => Promise<void>;
@@ -62,9 +62,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      
+
       // Load current catalog from appdata json database
-      const db = await invoke<{ scanned_directories: string[]; tracks: Track[]; playlists: any[] }>("get_library");
+      const db = await invoke<{
+        scanned_directories: string[];
+        tracks: Track[];
+        playlists: any[];
+      }>("get_library");
       set({
         tracks: db.tracks || [],
         scannedDirs: db.scanned_directories || [],
@@ -83,7 +87,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { invoke } = await import("@tauri-apps/api/core");
 
-      // 1. Open the system native directory dialog selector
+      // Open the system native directory dialog selector
       const selected = await open({
         directory: true,
         multiple: false,
@@ -95,13 +99,17 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         const folderPath = Array.isArray(selected) ? selected[0] : selected;
         if (folderPath) {
           set({ isLoading: true });
-          
-          // 2. Invoke the heavy I/O lofty recursive scanner in Rust
-          const db = await invoke<{ scanned_directories: string[]; tracks: Track[]; playlists: any[] }>("scan_folder", {
+
+          // Invoke the heavy I/O lofty recursive scanner in Rust
+          const db = await invoke<{
+            scanned_directories: string[];
+            tracks: Track[];
+            playlists: any[];
+          }>("scan_folder", {
             folderPath,
           });
-          
-          // 3. Update the global memory cache
+
+          // Update the global memory cache
           set({
             tracks: db.tracks || [],
             scannedDirs: db.scanned_directories || [],
@@ -120,12 +128,16 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   deleteFolder: async (folder) => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      
+
       // Fetch full database from disk to retrieve playlists (prevents losing playlist relations)
-      const db = await invoke<{ scanned_directories: string[]; tracks: Track[]; playlists: any[] }>("get_library");
+      const db = await invoke<{
+        scanned_directories: string[];
+        tracks: Track[];
+        playlists: any[];
+      }>("get_library");
 
       const { scannedDirs, tracks } = get();
-      
+
       // Filter out the selected folder and all tracks residing within its path
       const updatedDirs = scannedDirs.filter((d) => d !== folder);
       const updatedTracks = tracks.filter((t) => !t.path.startsWith(folder));
@@ -135,7 +147,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       // Persist the changes to disk
       await invoke("save_library", { db });
-      
+
       // Update memory store state
       set({
         scannedDirs: updatedDirs,
@@ -157,7 +169,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       // Rescan folders sequentially to keep IO and RAM usage flat
       for (const dir of scannedDirs) {
-        latestDb = await invoke<{ scanned_directories: string[]; tracks: Track[]; playlists: any[] }>("scan_folder", {
+        latestDb = await invoke<{
+          scanned_directories: string[];
+          tracks: Track[];
+          playlists: any[];
+        }>("scan_folder", {
           folderPath: dir,
         });
       }

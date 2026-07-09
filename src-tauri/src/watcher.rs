@@ -1,14 +1,14 @@
+use crate::library;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tokio::sync::mpsc;
 use tauri::{Emitter, Manager};
-use crate::library;
+use tokio::sync::mpsc;
 
 /**
  * Starts the file system watcher task in a background tokio pool.
  * Initializes directory watch points for all folders currently saved in the library catalog.
- * 
+ *
  * @param app_handle The active Tauri application handle.
  * @returns The RecommendedWatcher instance to be preserved in the AppState.
  */
@@ -99,14 +99,17 @@ fn process_changed_paths(
   paths: &HashSet<PathBuf>,
 ) -> Result<(), String> {
   let mut db = library::load_db(app_handle)?;
-  let cache_dir = app_handle.path().app_cache_dir().map_err(|e| e.to_string())?;
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|e| e.to_string())?;
   let mut has_changes = false;
 
   let allowed_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm"];
 
   for path in paths {
     if path.exists() {
-      // 1. File exists on disk: check if it's a supported media item and insert/update tags
+      // File exists on disk: check if it's a supported media item and insert/update tags
       if path.is_file() {
         if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
           if allowed_extensions.contains(&ext.to_lowercase().as_str()) {
@@ -122,11 +125,11 @@ fn process_changed_paths(
         }
       }
     } else {
-      // 2. File was removed: remove it from the catalog
+      // File was removed: remove it from the catalog
       let path_str = path.to_string_lossy().to_string();
       let old_len = db.tracks.len();
       db.tracks.retain(|t| t.path != path_str);
-      
+
       if db.tracks.len() != old_len {
         has_changes = true;
       }
@@ -136,7 +139,9 @@ fn process_changed_paths(
   // Save the database and broadcast changes to the frontend if updates occurred
   if has_changes {
     library::save_db(app_handle, &db)?;
-    app_handle.emit("library-updated", ()).map_err(|e| e.to_string())?;
+    app_handle
+      .emit("library-updated", ())
+      .map_err(|e| e.to_string())?;
     println!("[Ardio Watcher] Database synced and 'library-updated' broadcasted.");
   }
 

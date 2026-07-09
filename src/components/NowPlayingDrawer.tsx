@@ -4,19 +4,19 @@ import { usePlayerStore } from "../store/playerStore";
 import type { Track } from "../store/playerStore";
 
 export function NowPlayingDrawer() {
-  const { 
-    currentTrack, 
-    playlist, 
-    isDrawerOpen, 
-    setDrawerOpen, 
+  const {
+    currentTrack,
+    playlist,
+    isDrawerOpen,
+    setDrawerOpen,
     playTrack,
     setMediaElement,
     setCurrentTime,
     setIsPlaying,
-    nextTrack
+    nextTrack,
   } = usePlayerStore();
 
-  const [coverUrl, setCoverUrl] = useState<string>('');
+  const [coverUrl, setCoverUrl] = useState<string>("");
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Define some default tracks in case the active play queue is empty
@@ -46,7 +46,7 @@ export function NowPlayingDrawer() {
   const activeTrack = currentTrack || mockQueue[0];
   const activeQueue = playlist.length > 0 ? playlist : mockQueue;
 
-  // 1. Sync the HTML5 video element ref with Zustand store for global playback actions
+  // Sync the HTML5 video element ref with Zustand store for global playback actions
   useEffect(() => {
     if (videoRef.current) {
       setMediaElement(videoRef.current);
@@ -56,7 +56,7 @@ export function NowPlayingDrawer() {
     };
   }, [setMediaElement]);
 
-  // 2. Safely resolve local cached cover art files using Tauri convertFileSrc (prevents SSR errors)
+  // Safely resolve local cached cover art files using Tauri convertFileSrc (prevents SSR errors)
   useEffect(() => {
     if (activeTrack && activeTrack.cover_cache_path) {
       const convertCachePath = async () => {
@@ -65,12 +65,12 @@ export function NowPlayingDrawer() {
           setCoverUrl(convertFileSrc(activeTrack.cover_cache_path!));
         } catch (err) {
           console.warn("Tauri convertFileSrc asset resolution failed:", err);
-          setCoverUrl('');
+          setCoverUrl("");
         }
       };
       convertCachePath();
     } else {
-      setCoverUrl('');
+      setCoverUrl("");
     }
   }, [activeTrack]);
 
@@ -113,7 +113,11 @@ export function NowPlayingDrawer() {
               onPause={() => setIsPlaying(false)}
               onEnded={nextTrack}
               onError={() => {
-                console.warn("Playback failed for file path:", activeTrack.path, ". Auto-skipping...");
+                console.warn(
+                  "Playback failed for file path:",
+                  activeTrack.path,
+                  ". Auto-skipping...",
+                );
                 nextTrack();
               }}
             />

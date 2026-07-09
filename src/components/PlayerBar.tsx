@@ -32,7 +32,7 @@ export function PlayerBar() {
 
   const [coverUrl, setCoverUrl] = useState("");
 
-  // 1. Resolve local cached cover art files using Tauri convertFileSrc (safe for browser rendering)
+  // Resolve local cached cover art files using Tauri convertFileSrc (safe for browser rendering)
   useEffect(() => {
     if (currentTrack?.cover_cache_path) {
       const convertPath = async () => {
@@ -49,7 +49,7 @@ export function PlayerBar() {
     }
   }, [currentTrack]);
 
-  // 2. MouseDown handler to support smooth dragging/scrubbing on the timeline
+  // MouseDown handler to support smooth dragging/scrubbing on the timeline
   const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!currentTrack || !mediaElement || currentTrack.duration_secs <= 0)
       return;
@@ -80,7 +80,7 @@ export function PlayerBar() {
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  // 3. MouseDown handler to support smooth dragging on the volume bar
+  // MouseDown handler to support smooth dragging on the volume bar
   const handleVolumeMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
     const volumeContainer = e.currentTarget;
 

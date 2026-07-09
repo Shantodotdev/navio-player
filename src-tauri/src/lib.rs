@@ -75,13 +75,13 @@ async fn scan_folder(
     return Err("Selected folder does not exist.".to_string());
   }
 
-  // 1. Authorize this folder path in the streaming server's allowlist
+  // Authorize this folder path in the streaming server's allowlist
   {
     let mut allowed = state.allowed_directories.lock().unwrap();
     allowed.insert(path.clone());
   }
 
-  // 2. Register path with directory watcher dynamically
+  // Register path with directory watcher dynamically
   {
     let mut watcher_opt = state.watcher.lock().unwrap();
     if let Some(ref mut watcher) = *watcher_opt {
@@ -90,7 +90,7 @@ async fn scan_folder(
     }
   }
 
-  // 3. Load the current database state
+  // Load the current database state
   let mut db = library::load_db(&app_handle)?;
 
   // Cleanup: Retain only existing tracks currently present on host disk (removes manually deleted files)
@@ -105,7 +105,7 @@ async fn scan_folder(
     db.scanned_directories.push(canonical_path);
   }
 
-  // 4. Scan the folder recursively in a blocking worker thread pool to keep UI responsive
+  // Scan the folder recursively in a blocking worker thread pool to keep UI responsive
   let cache_dir = app_handle
     .path()
     .app_cache_dir()
@@ -117,7 +117,7 @@ async fn scan_folder(
   .await
   .map_err(|e| e.to_string())?;
 
-  // 5. Merge scanned tracks (update metadata if path is already indexed, otherwise append)
+  // Merge scanned tracks (update metadata if path is already indexed, otherwise append)
   for new_item in scanned_items {
     if let Some(pos) = db.tracks.iter().position(|t| t.path == new_item.path) {
       db.tracks[pos] = new_item;
@@ -126,7 +126,7 @@ async fn scan_folder(
     }
   }
 
-  // 6. Write the updated catalog state to disk
+  // Write the updated catalog state to disk
   library::save_db(&app_handle, &db)?;
 
   Ok(db)
