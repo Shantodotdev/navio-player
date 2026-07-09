@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Select } from "../components/Select";
 import {
   Download,
@@ -33,6 +33,16 @@ function DownloaderView() {
   const [activeTab, setActiveTab] = useState<"all" | "active" | "history">(
     "all",
   );
+  const urlRef = useRef(url);
+  const formatRef = useRef(format);
+
+  useEffect(() => {
+    urlRef.current = url;
+  }, [url]);
+
+  useEffect(() => {
+    formatRef.current = format;
+  }, [format]);
 
   // Load download cards history from localStorage on mount (client-side only)
   useEffect(() => {
@@ -89,11 +99,16 @@ function DownloaderView() {
               };
               return updated;
             } else {
+              const currentFormat = formatRef.current;
               const formatLabel =
-                format === "bestaudio" ? "audio (MP3)" : "video (1080p)";
+                currentFormat === "bestaudio"
+                  ? "audio (MP3)"
+                  : currentFormat.includes("720p")
+                    ? "video (720p)"
+                    : "video (1080p)";
               const newItem: DownloadItem = {
                 id: payload.id,
-                url: payload.url || url,
+                url: payload.url || urlRef.current,
                 title: payload.title || "Media Stream",
                 progress: Math.round(payload.progress),
                 speed: payload.speed,
@@ -117,7 +132,7 @@ function DownloaderView() {
     return () => {
       if (unlistenFn) unlistenFn();
     };
-  }, [format, url]);
+  }, []);
 
   // Start download via backend Tauri command
   const handleStartDownload = async (e: React.FormEvent) => {

@@ -520,6 +520,7 @@ pub async fn start_download(
       .arg(bin_dir.to_string_lossy().to_string())
       .arg("--merge-output-format")
       .arg("webm")
+      .arg("--newline")
       .stdout(Stdio::piped())
       .stderr(Stdio::piped());
 
@@ -568,7 +569,7 @@ pub async fn start_download(
 
     // Regex to parse progress lines: [download]  12.3% of  34.5MiB at   5.2MiB/s ETA 00:12
     let progress_regex = regex::Regex::new(
-      r"\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+([^\s]+)\s+at\s+([^\s]+)\s+ETA\s+([^\s]+)",
+      r"\[download\]\s+(\d+(?:\.\d+)?)%\s+of\s+(.+?)\s+at\s+(.+?)\s+ETA\s+([^\s]+)",
     )
     .unwrap();
 
@@ -625,9 +626,15 @@ pub async fn start_download(
 
       // Check for download progress metrics
       if let Some(caps) = progress_regex.captures(&line) {
-        progress = caps.get(1).unwrap().as_str().parse::<f32>().unwrap_or(0.0);
-        size = caps.get(2).unwrap().as_str().to_string();
-        speed = caps.get(3).unwrap().as_str().to_string();
+        progress = caps
+          .get(1)
+          .unwrap()
+          .as_str()
+          .parse::<f32>()
+          .unwrap_or(0.0)
+          .clamp(0.0, 100.0);
+        size = caps.get(2).unwrap().as_str().trim().to_string();
+        speed = caps.get(3).unwrap().as_str().trim().to_string();
         eta = caps.get(4).unwrap().as_str().to_string();
         payload_update = true;
       }
