@@ -10,6 +10,7 @@ import {
   Film,
   Trash2,
   RefreshCcw,
+  X,
 } from 'lucide-react'
 
 export const Route = createFileRoute('/library')({
@@ -22,6 +23,7 @@ function LibraryView() {
   
   const [searchQuery, setSearchQuery] = useState('')
   const [filterType, setFilterType] = useState<'all' | 'audio' | 'video'>('all')
+  const [selectedDirectory, setSelectedDirectory] = useState<string | null>(null)
 
   const filteredTracks = tracks.filter((t) => {
     const query = searchQuery.toLowerCase()
@@ -31,7 +33,10 @@ function LibraryView() {
       t.path.toLowerCase().includes(query)
 
     const matchesFilter = filterType === 'all' || t.media_type === filterType
-    return matchesSearch && matchesFilter
+    const matchesDirectory =
+      !selectedDirectory || isPathWithinDirectory(t.path, selectedDirectory)
+
+    return matchesSearch && matchesFilter && matchesDirectory
   })
 
   return (
@@ -88,12 +93,30 @@ function LibraryView() {
               {scannedDirs.map((dir) => (
                 <div
                   key={dir}
-                  className="flex items-center gap-2.5 bg-black/40 border border-white/5 px-3.5 py-2.5 rounded-xl text-sm text-zinc-400 font-medium group"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedDirectory(dir)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedDirectory(dir)
+                    }
+                  }}
+                  className={`flex items-center gap-2.5 border px-3.5 py-2.5 rounded-xl text-sm font-medium group cursor-pointer transition-colors ${
+                    selectedDirectory === dir
+                      ? 'bg-brand/20 border-brand/50 text-zinc-200'
+                      : 'bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200'
+                  }`}
                 >
-                  <span className="text-zinc-400">{dir}</span>
+                  <span>{dir}</span>
                   <button
-                    onClick={() => deleteFolder(dir)}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (selectedDirectory === dir) setSelectedDirectory(null)
+                      deleteFolder(dir)
+                    }}
                     className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+                    aria-label={`Remove ${dir} from library`}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -104,6 +127,17 @@ function LibraryView() {
 
           {/* Filters & Search */}
           <div className="flex flex-col sm:flex-row gap-4 items-center mb-3">
+            {selectedDirectory && (
+              <button
+                type="button"
+                onClick={() => setSelectedDirectory(null)}
+                className="flex items-center gap-2 shrink-0 rounded-lg border border-brand/30 bg-brand/10 px-3 py-2 text-sm text-brand-light hover:bg-brand/20 transition-colors cursor-pointer"
+              >
+                <span className="max-w-[18rem] truncate">{selectedDirectory}</span>
+                <X size={15} />
+              </button>
+            )}
+
             {/* Search */}
             <div className="w-full sm:flex-1 relative">
               <Search
@@ -258,4 +292,15 @@ function formatFileSize(bytes?: number): string {
 
   const precision = size >= 10 || unitIndex === 0 ? 0 : 1
   return `${size.toFixed(precision)} ${units[unitIndex]}`
+}
+
+function isPathWithinDirectory(filePath: string, directoryPath: string): boolean {
+  const normalizedFilePath = filePath.replace(/[\\/]+$/, '').toLowerCase()
+  const normalizedDirectoryPath = directoryPath.replace(/[\\/]+$/, '').toLowerCase()
+
+  return (
+    normalizedFilePath === normalizedDirectoryPath ||
+    normalizedFilePath.startsWith(`${normalizedDirectoryPath}\\`) ||
+    normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)
+  )
 }
