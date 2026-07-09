@@ -1,3 +1,4 @@
+mod downloader;
 mod library;
 mod server;
 mod watcher;
@@ -60,6 +61,45 @@ fn save_library(
   }
 
   library::save_db(&app_handle, &db)
+}
+
+/// Tauri command to open the Downloads folder inside the system's native file explorer.
+#[tauri::command]
+fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
+  let download_dir = app_handle
+    .path()
+    .download_dir()
+    .map_err(|e| e.to_string())?
+    .join("Navio Player");
+
+  if !download_dir.exists() {
+    std::fs::create_dir_all(&download_dir)
+      .map_err(|e| format!("Failed to create download folder: {}", e))?;
+  }
+
+  #[cfg(target_os = "windows")]
+  {
+    std::process::Command::new("explorer")
+      .arg(&download_dir)
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+  #[cfg(target_os = "macos")]
+  {
+    std::process::Command::new("open")
+      .arg(&download_dir)
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+  #[cfg(target_os = "linux")]
+  {
+    std::process::Command::new("xdg-open")
+      .arg(&download_dir)
+      .spawn()
+      .map_err(|e| e.to_string())?;
+  }
+
+  Ok(())
 }
 
 /// Tauri command to recursively scan a local directory and merge it with the database.
@@ -194,7 +234,9 @@ pub fn run() {
       get_stream_port,
       get_library,
       save_library,
-      scan_folder
+      scan_folder,
+      downloader::start_download,
+      open_folder
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application");
