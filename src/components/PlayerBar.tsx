@@ -99,7 +99,7 @@ export function PlayerBar() {
         </div>
 
         {/* Progress bar */}
-        <div className="w-full flex items-center gap-2 text-2xs text-zinc-500 font-mono">
+        <div className="w-full flex items-center gap-2 text-2xs text-zinc-500">
           <span>0:00</span>
           <div className="flex-1 h-1 bg-white/10 rounded-full cursor-pointer relative group">
             <div className="h-full bg-brand group-hover:bg-brand-light rounded-full w-1/4 relative">

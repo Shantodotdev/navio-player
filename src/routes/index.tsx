@@ -152,7 +152,7 @@ function DashboardView() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-5 shrink-0 text-sm font-mono text-zinc-450">
+              <div className="flex items-center gap-5 shrink-0 text-sm text-zinc-450">
                 <span className="px-2 py-0.5 text-xs rounded bg-white/5 border border-white/5 text-zinc-400 font-medium lowercase">
                   {track.media_type}
                 </span>

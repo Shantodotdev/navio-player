@@ -129,7 +129,7 @@ export function NowPlayingDrawer() {
                   onClick={() => playTrack(track, activeQueue)}
                   className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer border transition-all duration-150 group ${
                     isCurrent
-                      ? "bg-brand/10 border-brand/20 text-brand-light font-semibold"
+                      ? "bg-brand/10 border-brand/20 text-brand-light font-medium"
                       : "bg-transparent border-transparent hover:bg-white/5 text-gray-400 hover:text-white"
                   }`}
                 >
@@ -156,7 +156,7 @@ export function NowPlayingDrawer() {
                     </span>
                   </div>
 
-                  <span className="text-3xs text-gray-500 font-mono">
+                  <span className="text-3xs text-gray-500">
                     {formatTime(track.duration_secs)}
                   </span>
                 </div>
