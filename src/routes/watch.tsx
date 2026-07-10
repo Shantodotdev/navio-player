@@ -3,8 +3,6 @@ import {
   ChevronLeft,
   ChevronRight,
   FastForward,
-  Maximize2,
-  Minimize2,
   Pause,
   Play,
   Rewind,
@@ -273,14 +271,6 @@ function WatchView() {
             <p className="mt-1 text-sm text-white/55">Theater mode</p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => void toggleFullscreen()}
-            className="grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white hover:bg-white/15 transition-colors cursor-pointer"
-            aria-label="Enter fullscreen"
-          >
-            <Maximize2 size={19} />
-          </button>
         </div>
 
         <div className="pointer-events-auto space-y-4">
@@ -377,14 +367,6 @@ function WatchView() {
               <span className="w-20 text-right text-sm tabular-nums text-white/70">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
-              <button
-                type="button"
-                onClick={() => void exitWatch()}
-                className="hidden items-center gap-2 rounded-lg bg-black/45 px-3 py-2 text-sm text-white hover:bg-white/15 transition-colors cursor-pointer sm:flex"
-              >
-                <Minimize2 size={17} />
-                Exit
-              </button>
             </div>
           </div>
         </div>
