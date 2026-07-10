@@ -28,6 +28,9 @@ pub struct AppState {
 
   /// Reference to the active recommended file watcher.
   pub watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
+
+  /// Persistent theater metadata/cache and active media preparation jobs.
+  pub media_cache: media_tools::MediaCache,
 }
 
 #[derive(serde::Serialize)]
@@ -65,19 +68,33 @@ async fn inspect_video_tracks(
   path: String,
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
-) -> Result<media_tools::VideoTrackInfo, String> {
-  media_tools::inspect_video_tracks(&app_handle, &state.allowed_directories, path).await
+) -> Result<media_tools::TheaterMediaInfo, String> {
+  media_tools::inspect_video_tracks(
+    &app_handle,
+    &state.allowed_directories,
+    &state.media_cache,
+    path,
+  )
+  .await
 }
 
 #[tauri::command]
 async fn extract_subtitle_track(
   path: String,
   stream_index: u32,
+  request_id: String,
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
-  media_tools::extract_subtitle_track(&app_handle, &state.allowed_directories, path, stream_index)
-    .await
+  media_tools::extract_subtitle_track(
+    &app_handle,
+    &state.allowed_directories,
+    &state.media_cache,
+    path,
+    stream_index,
+    request_id,
+  )
+  .await
 }
 
 #[tauri::command]
@@ -85,15 +102,52 @@ async fn extract_audio_track(
   path: String,
   stream_index: u32,
   codec: String,
+  request_id: String,
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<String, String> {
   media_tools::extract_audio_track(
     &app_handle,
     &state.allowed_directories,
+    &state.media_cache,
     path,
     stream_index,
     codec,
+    request_id,
+  )
+  .await
+}
+
+#[tauri::command]
+async fn cancel_media_preparation(
+  request_id: String,
+  state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+  state.media_cache.cancel_request(&request_id).await;
+  Ok(())
+}
+
+#[tauri::command]
+async fn save_theater_state(
+  path: String,
+  position_secs: f64,
+  audio_stream_index: Option<u32>,
+  subtitle_stream_index: Option<u32>,
+  subtitle_enabled: bool,
+  save_preferences: bool,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+  media_tools::save_theater_state(
+    &app_handle,
+    &state.allowed_directories,
+    &state.media_cache,
+    path,
+    position_secs,
+    audio_stream_index,
+    subtitle_stream_index,
+    subtitle_enabled,
+    save_preferences,
   )
   .await
 }
@@ -342,6 +396,7 @@ pub fn run() {
     stream_token,
     shutdown_tx: Mutex::new(Some(shutdown_tx)),
     watcher: Arc::new(Mutex::new(None)),
+    media_cache: media_tools::MediaCache::default(),
   };
 
   // Build the Tauri application context
@@ -389,6 +444,8 @@ pub fn run() {
       inspect_video_tracks,
       extract_subtitle_track,
       extract_audio_track,
+      cancel_media_preparation,
+      save_theater_state,
       set_theater_fullscreen,
       toggle_theater_fullscreen,
       get_library,
