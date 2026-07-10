@@ -10,12 +10,14 @@ use crate::downloader;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
+use tokio::io::AsyncWriteExt;
 
 /// Maximum combined size of prepared alternate-audio files.
 const MAX_AUDIO_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
@@ -23,6 +25,8 @@ const MAX_AUDIO_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
 const MAX_SUBTITLE_CACHE_BYTES: u64 = 64 * 1024 * 1024; // 64 MB
 /// Maximum number of source-file records retained in the persistent database.
 const MAX_MEDIA_DATABASE_ENTRIES: usize = 2_000;
+/// Partial outputs newer than this may still belong to an active FFmpeg job.
+const STALE_PARTIAL_AGE_MS: u64 = 60 * 60 * 1_000;
 
 /// Resolved paths to the media executables used by theater playback.
 #[derive(Clone)]
@@ -309,7 +313,11 @@ where
   }
 }
 
-/// Serializes a complete JSON store after ensuring its parent directory exists.
+/// Serializes a complete JSON store and atomically publishes it.
+///
+/// The bytes are flushed to a unique file in the same directory before that
+/// file replaces the previous version. Readers therefore see either the old or
+/// new complete document, never a partially truncated JSON payload.
 async fn save_json<T>(path: &Path, value: &T) -> Result<(), String>
 where
   T: serde::Serialize,
@@ -321,9 +329,91 @@ where
   }
   let bytes = serde_json::to_vec(value)
     .map_err(|error| format!("Could not serialize media data: {}", error))?;
-  tokio::fs::write(path, bytes)
-    .await
-    .map_err(|error| format!("Could not save media data: {}", error))
+
+  let file_name = path
+    .file_name()
+    .and_then(|value| value.to_str())
+    .unwrap_or("media.json");
+  let temporary_path = path.with_file_name(format!(
+    ".{}.{}.tmp",
+    file_name,
+    uuid::Uuid::new_v4()
+  ));
+  let write_result = async {
+    let mut file = tokio::fs::OpenOptions::new()
+      .write(true)
+      .create_new(true)
+      .open(&temporary_path)
+      .await?;
+    file.write_all(&bytes).await?;
+    file.flush().await?;
+    file.sync_all().await?;
+    drop(file);
+    replace_file(&temporary_path, path).await?;
+    sync_parent_directory(path).await
+  }
+  .await;
+
+  if let Err(error) = write_result {
+    let _ = tokio::fs::remove_file(&temporary_path).await;
+    return Err(format!("Could not save media data: {}", error));
+  }
+  Ok(())
+}
+
+#[cfg(windows)]
+async fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+  use std::os::windows::ffi::OsStrExt;
+  use windows_sys::Win32::Storage::FileSystem::{
+    MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+  };
+
+  let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+  let destination = destination
+    .as_os_str()
+    .encode_wide()
+    .chain(Some(0))
+    .collect::<Vec<_>>();
+  tokio::task::spawn_blocking(move || {
+    let result = unsafe {
+      MoveFileExW(
+        source.as_ptr(),
+        destination.as_ptr(),
+        MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+      )
+    };
+    if result == 0 {
+      Err(io::Error::last_os_error())
+    } else {
+      Ok(())
+    }
+  })
+  .await
+  .map_err(io::Error::other)?
+}
+
+#[cfg(not(windows))]
+async fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
+  tokio::fs::rename(source, destination).await
+}
+
+#[cfg(windows)]
+async fn sync_parent_directory(_path: &Path) -> io::Result<()> {
+  // MOVEFILE_WRITE_THROUGH flushes the replacement operation on Windows.
+  Ok(())
+}
+
+#[cfg(not(windows))]
+async fn sync_parent_directory(path: &Path) -> io::Result<()> {
+  let parent = path.parent().map(Path::to_path_buf);
+  tokio::task::spawn_blocking(move || {
+    if let Some(parent) = parent {
+      std::fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+  })
+  .await
+  .map_err(io::Error::other)?
 }
 
 /// Removes the least recently used source records until the database is within
@@ -500,8 +590,7 @@ impl MediaCache {
     let root = theater_cache_root(app_handle)?;
     let index_path = root.join("asset-index.json");
     let mut index = load_json_or_default::<AssetIndex>(&index_path).await;
-    // Reconcile bookkeeping with files removed externally or by a prior run.
-    index.entries.retain(|path, _| Path::new(path).is_file());
+    reconcile_asset_index(&root, &mut index).await?;
     let size_bytes = tokio::fs::metadata(path)
       .await
       .map_err(|error| format!("Could not inspect cached media: {}", error))?
@@ -517,6 +606,106 @@ impl MediaCache {
     cleanup_assets(&mut index, kind, path).await;
     save_json(&index_path, &index).await
   }
+}
+
+/// Rebuilds LRU bookkeeping from the files that actually exist on disk.
+///
+/// This recovers from a missing or malformed index, includes assets produced by
+/// the older UUID-based cache layout, and removes abandoned partial files once
+/// they are old enough that no active FFmpeg job can reasonably own them.
+async fn reconcile_asset_index(root: &Path, index: &mut AssetIndex) -> Result<(), String> {
+  let app_cache = root
+    .parent()
+    .ok_or_else(|| "Could not resolve the application cache root.".to_string())?;
+  let directories = [
+    (root.join("audio"), AssetKind::Audio),
+    (root.join("subtitles"), AssetKind::Subtitle),
+    (app_cache.join("theater-audio"), AssetKind::Audio),
+    (app_cache.join("theater-subtitles"), AssetKind::Subtitle),
+  ];
+  let mut discovered = HashSet::new();
+
+  for (directory, kind) in directories {
+    scan_asset_directory(&directory, kind, index, &mut discovered).await?;
+  }
+
+  // Anything not rediscovered was deleted externally or evicted previously.
+  index.entries.retain(|path, _| discovered.contains(path));
+  Ok(())
+}
+
+/// Adds regular generated files from one managed directory to the LRU index.
+async fn scan_asset_directory(
+  directory: &Path,
+  kind: AssetKind,
+  index: &mut AssetIndex,
+  discovered: &mut HashSet<String>,
+) -> Result<(), String> {
+  let mut entries = match tokio::fs::read_dir(directory).await {
+    Ok(entries) => entries,
+    Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(()),
+    Err(error) => {
+      return Err(format!(
+        "Could not inspect theater cache directory {}: {}",
+        directory.display(),
+        error
+      ))
+    }
+  };
+
+  while let Some(entry) = entries
+    .next_entry()
+    .await
+    .map_err(|error| format!("Could not read theater cache entry: {}", error))?
+  {
+    let metadata = entry
+      .metadata()
+      .await
+      .map_err(|error| format!("Could not inspect theater cache entry: {}", error))?;
+    if !metadata.is_file() {
+      continue;
+    }
+
+    let path = entry.path();
+    let path_key = path.to_string_lossy().to_string();
+    let modified_ms = metadata
+      .modified()
+      .map(system_time_ms)
+      .unwrap_or_else(|_| now_ms());
+    let file_name = entry.file_name().to_string_lossy().to_string();
+    if file_name.contains(".part.") || file_name.ends_with(".part") {
+      // A recent partial file may belong to another concurrent extraction.
+      if now_ms().saturating_sub(modified_ms) >= STALE_PARTIAL_AGE_MS {
+        let _ = tokio::fs::remove_file(&path).await;
+      }
+      continue;
+    }
+
+    discovered.insert(path_key.clone());
+    let previous_access = index
+      .entries
+      .get(&path_key)
+      .map(|asset| asset.last_accessed_ms)
+      .unwrap_or(modified_ms);
+    index.entries.insert(
+      path_key,
+      AssetIndexEntry {
+        kind,
+        size_bytes: metadata.len(),
+        last_accessed_ms: previous_access,
+      },
+    );
+  }
+  Ok(())
+}
+
+/// Converts a filesystem timestamp into the millisecond scale used by the LRU.
+fn system_time_ms(time: SystemTime) -> u64 {
+  time
+    .duration_since(UNIX_EPOCH)
+    .unwrap_or_default()
+    .as_millis()
+    .min(u128::from(u64::MAX)) as u64
 }
 
 /// Evicts least recently used files of one kind until that kind is under its
