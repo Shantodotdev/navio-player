@@ -632,7 +632,11 @@ function TheaterControls({
 
 function formatTime(secs: number): string {
   if (!secs || Number.isNaN(secs)) return "0:00";
-  const minutes = Math.floor(secs / 60);
+  const hours = Math.floor(secs / 3600);
+  const minutes = Math.floor((secs % 3600) / 60);
   const seconds = Math.floor(secs % 60);
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
   return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 }

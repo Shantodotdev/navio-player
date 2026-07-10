@@ -71,6 +71,7 @@ body:fullscreen,
   border: 0;
   border-radius: 9999px;
   outline: none;
+  transition: height 150ms ease;
 }
 
 .theater-progress::-webkit-slider-runnable-track {
@@ -89,6 +90,20 @@ body:fullscreen,
   border-radius: 9999px;
   background: #c72c4e;
   box-shadow: none;
+}
+
+.theater-progress:hover {
+  height: 10px;
+}
+
+.theater-progress:hover::-webkit-slider-runnable-track {
+  height: 10px;
+}
+
+.theater-progress:hover::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -4px;
 }
 
 .theater-volume {

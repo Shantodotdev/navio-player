@@ -255,10 +255,12 @@ export function PlayerBar() {
   );
 }
 
-// Convert seconds to clean display format MM:SS
+// Convert seconds to clean display format MM:SS or H:MM:SS for long videos.
 function formatTime(secs: number): string {
   if (!secs || isNaN(secs)) return "0:00";
-  const m = Math.floor(secs / 60);
+  const hours = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
   const s = Math.floor(secs % 60);
+  if (hours > 0) return `${hours}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }
