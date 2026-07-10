@@ -26,7 +26,6 @@ function WatchView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hideControlsTimer = useRef<number | null>(null);
   const [showControls, setShowControls] = useState(true);
-  const [isBuffering, setIsBuffering] = useState(false);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
 
   const {
@@ -227,16 +226,8 @@ function WatchView() {
         }
         onPlay={() => setIsPlaying(true)}
         onPause={() => setIsPlaying(false)}
-        onWaiting={() => setIsBuffering(true)}
-        onCanPlay={() => setIsBuffering(false)}
         onEnded={nextTrack}
       />
-
-      {isBuffering && (
-        <div className="absolute inset-0 grid place-items-center bg-black/30">
-          <div className="h-10 w-10 animate-spin rounded-full border-2 border-white/25 border-t-white" />
-        </div>
-      )}
 
       <div
         className="absolute inset-0 z-10"

@@ -6,7 +6,6 @@ import {
   FastForward,
   Languages,
   ListMusic,
-  LoaderCircle,
   Maximize2,
   Music,
   MonitorPlay,
@@ -59,7 +58,6 @@ export function NowPlayingDrawer() {
 
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
-  const [isBuffering, setIsBuffering] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const theaterRef = useRef<HTMLElement>(null);
@@ -103,7 +101,6 @@ export function NowPlayingDrawer() {
   }, []);
 
   useEffect(() => {
-    setIsBuffering(false);
     setPlaybackError("");
   }, [currentTrack?.id]);
 
@@ -139,7 +136,6 @@ export function NowPlayingDrawer() {
     if (!currentTrack) return;
 
     console.warn("Playback failed for file path:", currentTrack.path);
-    setIsBuffering(false);
     setPlaybackError(
       "This media could not be played. Moving to the next item.",
     );
@@ -226,8 +222,6 @@ export function NowPlayingDrawer() {
         consecutiveFailures.current = 0;
       }}
       onPause={() => setIsPlaying(false)}
-      onWaiting={() => setIsBuffering(true)}
-      onCanPlay={() => setIsBuffering(false)}
       onEnded={nextTrack}
       onError={handleMediaError}
     />
@@ -379,11 +373,6 @@ export function NowPlayingDrawer() {
               />
             )}
 
-            {isBuffering && (
-              <div className="absolute inset-0 z-30 grid place-items-center bg-black/40 pointer-events-none">
-                <LoaderCircle size={28} className="text-white animate-spin" />
-              </div>
-            )}
           </div>
 
           <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
