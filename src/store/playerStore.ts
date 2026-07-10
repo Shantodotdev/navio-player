@@ -32,6 +32,8 @@ interface PlayerState {
   volume: number;
   /// Now Playing sidebar drawer toggle state.
   isDrawerOpen: boolean;
+  /// Full-app theater mode for the active video.
+  isTheaterOpen: boolean;
   /// Reference to the DOM media player element.
   mediaElement: HTMLVideoElement | null;
 
@@ -58,8 +60,12 @@ interface PlayerState {
   setDrawerOpen: (open: boolean) => void;
   /// Toggle the Now Playing right drawer.
   toggleDrawer: () => void;
+  /// Open or close the theater presentation for a video.
+  setTheaterOpen: (open: boolean) => void;
   /// Set the reference to the unified background video/audio element.
   setMediaElement: (element: HTMLVideoElement | null) => void;
+  /// Clear the media element only when the caller still owns the active reference.
+  clearMediaElement: (element: HTMLVideoElement | null) => void;
 }
 
 export const usePlayerStore = create<PlayerState>((set, get) => ({
@@ -72,6 +78,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   currentTime: 0,
   volume: 80,
   isDrawerOpen: false,
+  isTheaterOpen: false,
   mediaElement: null,
 
   playTrack: (track, fromPlaylist = []) => {
@@ -86,6 +93,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: true,
       currentTime: 0,
       isDrawerOpen: true,
+      isTheaterOpen: false,
     });
 
     if (mediaElement) {
@@ -135,6 +143,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTrack: track,
       isPlaying: true,
       currentTime: 0,
+      isTheaterOpen: track.media_type === "video" ? get().isTheaterOpen : false,
     });
 
     if (mediaElement && track) {
@@ -158,6 +167,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTrack: track,
       isPlaying: true,
       currentTime: 0,
+      isTheaterOpen: track.media_type === "video" ? get().isTheaterOpen : false,
     });
 
     if (mediaElement && track) {
@@ -175,13 +185,46 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setPlaylist: (tracks) => set({ playlist: tracks }),
   setDrawerOpen: (open) => set({ isDrawerOpen: open }),
   toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
+  setTheaterOpen: (open) => {
+    const { currentTrack } = get();
+    set({ isTheaterOpen: open && currentTrack?.media_type === "video" });
+  },
 
   setMediaElement: (element) => {
-    const { volume } = get();
+    const {
+      currentTime,
+      currentTrack,
+      isPlaying,
+      mediaElement,
+      streamPort,
+      streamToken,
+      volume,
+    } = get();
     if (element) {
       element.volume = volume / 100;
+
+      if (currentTrack && element !== mediaElement) {
+        element.src = buildStreamUrl(
+          streamPort,
+          streamToken,
+          currentTrack.path,
+        );
+        element.currentTime = currentTime;
+
+        if (isPlaying) {
+          element
+            .play()
+            .catch((err) => console.warn("Playback resume failed:", err));
+        }
+      }
     }
     set({ mediaElement: element });
+  },
+
+  clearMediaElement: (element) => {
+    if (element && get().mediaElement === element) {
+      set({ mediaElement: null });
+    }
   },
 }));
 

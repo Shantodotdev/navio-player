@@ -3,6 +3,7 @@ import {
   HeadContent,
   Scripts,
   createRootRoute,
+  useRouterState,
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { Titlebar } from "../components/Titlebar";
@@ -18,6 +19,9 @@ export const Route = createRootRoute({
 
 export default function Root() {
   const { setStreamConfig } = usePlayerStore();
+  const isWatchRoute = useRouterState({
+    select: (state) => state.location.pathname === "/watch",
+  });
 
   useEffect(() => {
     // Initialize tauri client port on client boot
@@ -45,20 +49,26 @@ export default function Root() {
         <HeadContent />
       </head>
       <body>
-        <div className="flex flex-col h-screen w-screen overflow-hidden bg-dark-bg text-gray-200">
-          <Titlebar />
+        <div className="h-screen w-screen overflow-hidden bg-dark-bg text-gray-200">
+          {isWatchRoute ? (
+            <Outlet />
+          ) : (
+            <div className="flex h-full w-full flex-col overflow-hidden">
+              <Titlebar />
 
-          <div className="flex flex-1 overflow-hidden relative">
-            <Sidebar />
-            <main className="flex-1 flex flex-col h-full overflow-hidden bg-linear-to-br from-dark-bg to-[#12070a]">
-              <div className="flex-1 overflow-y-auto p-8 pb-8">
-                <Outlet />
+              <div className="flex flex-1 overflow-hidden relative">
+                <Sidebar />
+                <main className="flex-1 flex flex-col h-full overflow-hidden bg-linear-to-br from-dark-bg to-[#12070a]">
+                  <div className="flex-1 overflow-y-auto p-8 pb-8">
+                    <Outlet />
+                  </div>
+                </main>
+                <NowPlayingDrawer />
               </div>
-            </main>
-            <NowPlayingDrawer />
-          </div>
 
-          <PlayerBar />
+              <PlayerBar />
+            </div>
+          )}
         </div>
         <Scripts />
       </body>
