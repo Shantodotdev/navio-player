@@ -25,6 +25,19 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import {
+  buildStreamUrl,
+  cancelMediaPreparation,
+  createRequestId,
+  findActiveSubtitle,
+  isCopyCompatibleAudio,
+  isTauri,
+  MIN_RESUMABLE_VIDEO_DURATION_SECS,
+  parseWebVtt,
+  persistTheaterState,
+  type SubtitleCue,
+  type TheaterMediaInfo,
+} from "../lib/theaterMedia";
 import { type Track, usePlayerStore } from "../store/playerStore";
 import {
   clampDrawerWidth,
@@ -54,16 +67,31 @@ export function NowPlayingDrawer() {
     nextTrack,
     prevTrack,
     currentTime,
+    streamPort,
+    streamToken,
+    volume,
   } = usePlayerStore();
 
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
+  const [alternateAudioUrl, setAlternateAudioUrl] = useState<string | null>(
+    null,
+  );
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const alternateAudioRef = useRef<HTMLAudioElement>(null);
   const theaterRef = useRef<HTMLElement>(null);
   const consecutiveFailures = useRef(0);
+  const activeAudioRequest = useRef<string | null>(null);
+  const activeSubtitleRequest = useRef<string | null>(null);
+  const subtitleCursor = useRef(-1);
+  const latestPlaybackTime = useRef(0);
+  const lastPlayerUpdate = useRef(0);
+  const persistTimer = useRef<number | null>(null);
 
   const isVideo = currentTrack?.media_type === "video";
+  const currentTrackPath = currentTrack?.path;
   const activeTrack: Track = currentTrack ?? {
     id: "",
     path: "",
@@ -76,6 +104,13 @@ export function NowPlayingDrawer() {
       ? playlist
       : [currentTrack]
     : [];
+  const duration = currentTrack?.duration_secs ?? 0;
+  const activeSubtitle = findActiveSubtitle(
+    subtitleCues,
+    currentTime,
+    subtitleCursor.current,
+  );
+  subtitleCursor.current = activeSubtitle.index;
 
   useEffect(() => {
     const media = videoRef.current;
@@ -103,6 +138,214 @@ export function NowPlayingDrawer() {
   useEffect(() => {
     setPlaybackError("");
   }, [currentTrack?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const subtitleFetch = new AbortController();
+    setAlternateAudioUrl(null);
+    setSubtitleCues([]);
+    subtitleCursor.current = -1;
+    latestPlaybackTime.current = 0;
+    activeAudioRequest.current = null;
+    activeSubtitleRequest.current = null;
+
+    if (!isVideo || !currentTrackPath || !isTauri) return;
+
+    const loadSavedVideoState = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const info = await invoke<TheaterMediaInfo>("inspect_video_tracks", {
+          path: currentTrackPath,
+        });
+        if (cancelled) return;
+
+        const resumePosition =
+          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
+          info.resume_position_secs >= 5 &&
+          info.resume_position_secs < Math.max(duration - 15, 5)
+            ? info.resume_position_secs
+            : 0;
+        latestPlaybackTime.current = resumePosition;
+        if (resumePosition > 0 && videoRef.current) {
+          videoRef.current.currentTime = resumePosition;
+          setCurrentTime(resumePosition);
+        }
+
+        const defaultAudio =
+          info.audio_tracks.find((track) => track.is_default) ??
+          info.audio_tracks[0];
+        const preferredAudio = info.audio_tracks.find(
+          (track) =>
+            track.stream_index === info.preferred_audio_stream_index,
+        );
+        const audioTrack = preferredAudio ?? defaultAudio;
+        const restoreAudio = async () => {
+          if (
+            !audioTrack ||
+            !defaultAudio ||
+            audioTrack.stream_index === defaultAudio.stream_index ||
+            (!isCopyCompatibleAudio(audioTrack.codec) &&
+              !info.cached_audio_stream_indexes.includes(
+                audioTrack.stream_index,
+              ))
+          ) {
+            return;
+          }
+
+          try {
+            const requestId = createRequestId();
+            activeAudioRequest.current = requestId;
+            const audioPath = await invoke<string>("extract_audio_track", {
+              path: currentTrackPath,
+              streamIndex: audioTrack.stream_index,
+              codec: audioTrack.codec,
+              requestId,
+            });
+            if (!cancelled && activeAudioRequest.current === requestId) {
+              setAlternateAudioUrl(
+                buildStreamUrl(streamPort, streamToken, audioPath),
+              );
+            }
+          } catch (error) {
+            if (!cancelled) {
+              console.warn("Loading saved sidebar audio failed:", error);
+            }
+          }
+        };
+
+        const subtitleTrack = info.subtitle_preference_set
+          ? info.subtitle_tracks.find(
+              (track) =>
+                track.stream_index === info.preferred_subtitle_stream_index,
+            )
+          : info.subtitle_tracks.find((track) => track.is_default);
+        const restoreSubtitles = async () => {
+          if (!subtitleTrack || cancelled) return;
+
+          try {
+            const requestId = createRequestId();
+            activeSubtitleRequest.current = requestId;
+            const subtitlePath = await invoke<string>(
+              "extract_subtitle_track",
+              {
+                path: currentTrackPath,
+                streamIndex: subtitleTrack.stream_index,
+                requestId,
+              },
+            );
+            if (cancelled || activeSubtitleRequest.current !== requestId) {
+              return;
+            }
+
+            const response = await fetch(
+              buildStreamUrl(streamPort, streamToken, subtitlePath),
+              { signal: subtitleFetch.signal },
+            );
+            if (!response.ok) {
+              throw new Error(`Subtitle request failed: ${response.status}`);
+            }
+            const cues = parseWebVtt(await response.text());
+            if (!cancelled) {
+              subtitleCursor.current = -1;
+              setSubtitleCues(cues);
+            }
+          } catch (error) {
+            if (!cancelled && !subtitleFetch.signal.aborted) {
+              console.warn("Loading saved sidebar subtitles failed:", error);
+            }
+          }
+        };
+
+        await Promise.all([restoreAudio(), restoreSubtitles()]);
+      } catch (error) {
+        if (!cancelled && !subtitleFetch.signal.aborted) {
+          console.warn("Loading saved sidebar video state failed:", error);
+        }
+      }
+    };
+
+    void loadSavedVideoState();
+    return () => {
+      cancelled = true;
+      subtitleFetch.abort();
+      void cancelMediaPreparation(activeAudioRequest.current);
+      void cancelMediaPreparation(activeSubtitleRequest.current);
+    };
+  }, [
+    currentTrackPath,
+    duration,
+    isVideo,
+    setCurrentTime,
+    streamPort,
+    streamToken,
+  ]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const alternateAudio = alternateAudioRef.current;
+    if (!video || !alternateAudio) return;
+
+    video.muted = Boolean(alternateAudioUrl);
+    alternateAudio.volume = volume / 100;
+    if (!alternateAudioUrl) {
+      alternateAudio.pause();
+      alternateAudio.removeAttribute("src");
+      alternateAudio.load();
+      return;
+    }
+
+    if (alternateAudio.src !== alternateAudioUrl) {
+      alternateAudio.src = alternateAudioUrl;
+      alternateAudio.load();
+    }
+
+    const synchronize = () => {
+      if (Math.abs(alternateAudio.currentTime - video.currentTime) > 0.5) {
+        alternateAudio.currentTime = video.currentTime;
+      }
+      if (isPlaying) {
+        void alternateAudio
+          .play()
+          .catch((error) =>
+            console.warn("Sidebar alternate audio playback failed:", error),
+          );
+      } else {
+        alternateAudio.pause();
+      }
+    };
+
+    if (alternateAudio.readyState >= HTMLMediaElement.HAVE_METADATA) {
+      synchronize();
+    } else {
+      alternateAudio.addEventListener("loadedmetadata", synchronize, {
+        once: true,
+      });
+    }
+    return () =>
+      alternateAudio.removeEventListener("loadedmetadata", synchronize);
+  }, [alternateAudioUrl, isPlaying, volume]);
+
+  useEffect(() => {
+    const path = currentTrack?.path;
+    return () => {
+      if (persistTimer.current !== null) {
+        window.clearTimeout(persistTimer.current);
+        persistTimer.current = null;
+      }
+      if (
+        path &&
+        duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
+        latestPlaybackTime.current > 0
+      ) {
+        void persistTheaterState({
+          path,
+          durationSecs: duration,
+          positionSecs: latestPlaybackTime.current,
+          savePreferences: false,
+        });
+      }
+    };
+  }, [currentTrackPath, duration]);
 
   const updateDrawerWidth = (nextWidth: number) => {
     const clampedWidth = clampDrawerWidth(nextWidth, window.innerWidth);
@@ -216,13 +459,73 @@ export function NowPlayingDrawer() {
             }`
           : "hidden"
       }
-      onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+      onTimeUpdate={(event) => {
+        const playbackTime = event.currentTarget.currentTime;
+        const alternateAudio = alternateAudioRef.current;
+        if (
+          alternateAudioUrl &&
+          alternateAudio &&
+          Math.abs(alternateAudio.currentTime - playbackTime) > 0.5
+        ) {
+          alternateAudio.currentTime = playbackTime;
+        }
+
+        latestPlaybackTime.current = playbackTime;
+        const now = performance.now();
+        if (now - lastPlayerUpdate.current >= 250) {
+          lastPlayerUpdate.current = now;
+          setCurrentTime(playbackTime);
+        }
+
+        if (
+          currentTrack &&
+          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
+          persistTimer.current === null
+        ) {
+          persistTimer.current = window.setTimeout(() => {
+            persistTimer.current = null;
+            void persistTheaterState({
+              path: currentTrack.path,
+              durationSecs: duration,
+              positionSecs: latestPlaybackTime.current,
+              savePreferences: false,
+            });
+          }, 5_000);
+        }
+      }}
       onPlay={() => {
         setIsPlaying(true);
         consecutiveFailures.current = 0;
       }}
-      onPause={() => setIsPlaying(false)}
-      onEnded={nextTrack}
+      onPause={() => {
+        alternateAudioRef.current?.pause();
+        setIsPlaying(false);
+        if (
+          currentTrack &&
+          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS
+        ) {
+          void persistTheaterState({
+            path: currentTrack.path,
+            durationSecs: duration,
+            positionSecs: latestPlaybackTime.current,
+            savePreferences: false,
+          });
+        }
+      }}
+      onEnded={() => {
+        if (
+          currentTrack &&
+          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS
+        ) {
+          void persistTheaterState({
+            path: currentTrack.path,
+            durationSecs: duration,
+            positionSecs: 0,
+            savePreferences: false,
+          });
+        }
+        nextTrack();
+      }}
       onError={handleMediaError}
     />
   );
@@ -315,6 +618,23 @@ export function NowPlayingDrawer() {
               <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
             )}
             {mediaPlayer}
+            <audio ref={alternateAudioRef} className="hidden" />
+
+            {isVideo && activeSubtitle.text && (
+              <div
+                className={`pointer-events-none absolute inset-x-4 z-30 flex justify-center text-center ${
+                  isTheaterOpen ? "bottom-32" : "bottom-4"
+                }`}
+              >
+                <p
+                  className={`max-w-4xl whitespace-pre-line rounded-md bg-black/75 px-3 py-1.5 font-medium leading-snug text-white shadow-lg ${
+                    isTheaterOpen ? "text-xl" : "text-sm"
+                  }`}
+                >
+                  {activeSubtitle.text}
+                </p>
+              </div>
+            )}
 
             {!isVideo && <AudioOrbit />}
 

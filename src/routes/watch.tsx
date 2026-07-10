@@ -13,37 +13,22 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  buildStreamUrl,
+  cancelMediaPreparation,
+  createRequestId,
+  findActiveSubtitle,
+  isCopyCompatibleAudio,
+  isTauri,
+  MIN_RESUMABLE_VIDEO_DURATION_SECS,
+  parseWebVtt,
+  persistTheaterState,
+  type EmbeddedTrack,
+  type SubtitleCue,
+  type TheaterMediaInfo,
+  type VideoTrackInfo,
+} from "../lib/theaterMedia";
 import { usePlayerStore } from "../store/playerStore";
-
-const isTauri =
-  typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-
-type EmbeddedTrack = {
-  stream_index: number;
-  language: string | null;
-  title: string | null;
-  is_default: boolean;
-  codec: string;
-};
-
-type VideoTrackInfo = {
-  audio_tracks: EmbeddedTrack[];
-  subtitle_tracks: EmbeddedTrack[];
-};
-
-type TheaterMediaInfo = VideoTrackInfo & {
-  resume_position_secs: number;
-  preferred_audio_stream_index: number | null;
-  subtitle_preference_set: boolean;
-  preferred_subtitle_stream_index: number | null;
-  cached_audio_stream_indexes: number[];
-};
-
-type SubtitleCue = {
-  start: number;
-  end: number;
-  text: string;
-};
 
 const emptyTrackInfo: VideoTrackInfo = {
   audio_tracks: [],
@@ -184,6 +169,7 @@ function WatchView() {
         setTrackInfo(info);
 
         const resumePosition =
+          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
           info.resume_position_secs >= 5 &&
           info.resume_position_secs < Math.max(duration - 15, 5)
             ? info.resume_position_secs
@@ -322,15 +308,20 @@ function WatchView() {
         window.clearTimeout(persistTimer.current);
         persistTimer.current = null;
       }
-      if (path && latestPlaybackTime.current > 0) {
+      if (
+        path &&
+        duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
+        latestPlaybackTime.current > 0
+      ) {
         void persistTheaterState({
           path,
+          durationSecs: duration,
           positionSecs: latestPlaybackTime.current,
           savePreferences: false,
         });
       }
     };
-  }, [currentTrack?.path]);
+  }, [currentTrack?.path, duration]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -492,6 +483,7 @@ function WatchView() {
       if (currentTrack) {
         void persistTheaterState({
           path: currentTrack.path,
+          durationSecs: duration,
           positionSecs: latestPlaybackTime.current,
           audioStreamIndex: selectedAudio,
           subtitleStreamIndex: null,
@@ -517,6 +509,7 @@ function WatchView() {
       setSubtitleUrl(buildStreamUrl(streamPort, streamToken, subtitlePath));
       void persistTheaterState({
         path: currentTrack.path,
+        durationSecs: duration,
         positionSecs: latestPlaybackTime.current,
         audioStreamIndex: selectedAudio,
         subtitleStreamIndex: track.stream_index,
@@ -546,6 +539,7 @@ function WatchView() {
       setAlternateAudioUrl(null);
       void persistTheaterState({
         path: currentTrack.path,
+        durationSecs: duration,
         positionSecs: latestPlaybackTime.current,
         audioStreamIndex: track.stream_index,
         subtitleStreamIndex: selectedSubtitle,
@@ -571,6 +565,7 @@ function WatchView() {
       setAlternateAudioUrl(buildStreamUrl(streamPort, streamToken, audioPath));
       void persistTheaterState({
         path: currentTrack.path,
+        durationSecs: duration,
         positionSecs: latestPlaybackTime.current,
         audioStreamIndex: track.stream_index,
         subtitleStreamIndex: selectedSubtitle,
@@ -655,11 +650,15 @@ function WatchView() {
             setCurrentTime(playbackTime);
           }
 
-          if (persistTimer.current === null) {
+          if (
+            duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS &&
+            persistTimer.current === null
+          ) {
             persistTimer.current = window.setTimeout(() => {
               persistTimer.current = null;
               void persistTheaterState({
                 path: currentTrack.path,
+                durationSecs: duration,
                 positionSecs: latestPlaybackTime.current,
                 savePreferences: false,
               });
@@ -670,18 +669,24 @@ function WatchView() {
         onPause={() => {
           alternateAudioRef.current?.pause();
           setIsPlaying(false);
-          void persistTheaterState({
-            path: currentTrack.path,
-            positionSecs: latestPlaybackTime.current,
-            savePreferences: false,
-          });
+          if (duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
+            void persistTheaterState({
+              path: currentTrack.path,
+              durationSecs: duration,
+              positionSecs: latestPlaybackTime.current,
+              savePreferences: false,
+            });
+          }
         }}
         onEnded={() => {
-          void persistTheaterState({
-            path: currentTrack.path,
-            positionSecs: 0,
-            savePreferences: false,
-          });
+          if (duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
+            void persistTheaterState({
+              path: currentTrack.path,
+              durationSecs: duration,
+              positionSecs: 0,
+              savePreferences: false,
+            });
+          }
           nextTrack();
         }}
       />
@@ -957,105 +962,6 @@ function WatchView() {
   );
 }
 
-function buildStreamUrl(port: number, token: string, path: string): string {
-  return `http://127.0.0.1:${port}/stream/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`;
-}
-
-function createRequestId(): string {
-  return typeof crypto.randomUUID === "function"
-    ? crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
-async function cancelMediaPreparation(requestId: string | null) {
-  if (!requestId || !isTauri) return;
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("cancel_media_preparation", { requestId });
-  } catch (error) {
-    console.warn("Cancelling media preparation failed:", error);
-  }
-}
-
-type TheaterStateUpdate = {
-  path: string;
-  positionSecs: number;
-  audioStreamIndex?: number | null;
-  subtitleStreamIndex?: number | null;
-  subtitleEnabled?: boolean;
-  savePreferences: boolean;
-};
-
-async function persistTheaterState(update: TheaterStateUpdate) {
-  if (!isTauri) return;
-  try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("save_theater_state", {
-      path: update.path,
-      positionSecs: update.positionSecs,
-      audioStreamIndex: update.audioStreamIndex ?? null,
-      subtitleStreamIndex: update.subtitleStreamIndex ?? null,
-      subtitleEnabled: update.subtitleEnabled ?? false,
-      savePreferences: update.savePreferences,
-    });
-  } catch (error) {
-    console.warn("Saving theater state failed:", error);
-  }
-}
-
-function isCopyCompatibleAudio(codec: string): boolean {
-  return ["aac", "mp3", "opus", "vorbis"].includes(codec.toLowerCase());
-}
-
-function findActiveSubtitle(
-  cues: SubtitleCue[],
-  time: number,
-  cursor: number,
-): { index: number; text: string } {
-  if (cues.length === 0) return { index: -1, text: "" };
-
-  let index = cursor;
-  if (
-    index < 0 ||
-    index >= cues.length ||
-    time < cues[index].start ||
-    time >= cues[index].end
-  ) {
-    let low = 0;
-    let high = cues.length - 1;
-    index = -1;
-    while (low <= high) {
-      const middle = (low + high) >>> 1;
-      if (cues[middle].start <= time) {
-        index = middle;
-        low = middle + 1;
-      } else {
-        high = middle - 1;
-      }
-    }
-  }
-
-  if (index < 0 || time >= cues[index].end) {
-    return { index, text: "" };
-  }
-
-  let first = index;
-  while (
-    first > 0 &&
-    cues[first - 1].start <= time &&
-    cues[first - 1].end > time
-  ) {
-    first -= 1;
-  }
-  const text: string[] = [];
-  for (let cueIndex = first; cueIndex < cues.length; cueIndex += 1) {
-    const cue = cues[cueIndex];
-    if (cue.start > time) break;
-    if (cue.end > time) text.push(cue.text);
-  }
-  return { index, text: text.join("\n") };
-}
-
 function formatTrackLabel(track: EmbeddedTrack): string {
   const language = formatLanguage(track.language);
   const title = track.title?.trim();
@@ -1087,43 +993,6 @@ function formatLanguage(language: string | null): string | null {
 
   const normalized = language.trim().toLowerCase();
   return names[normalized] || language.trim();
-}
-
-function parseWebVtt(vtt: string): SubtitleCue[] {
-  return vtt
-    .replace(/^\uFEFF?WEBVTT[^\n]*\r?\n/, "")
-    .split(/\r?\n\r?\n/)
-    .flatMap((block) => {
-      const lines = block.split(/\r?\n/).filter(Boolean);
-      const timingIndex = lines.findIndex((line) => line.includes("-->"));
-      if (timingIndex === -1) return [];
-
-      const [startText, endText] = lines[timingIndex]
-        .split("-->")
-        .map((time) => time.trim().split(/\s+/)[0]);
-      const start = parseSubtitleTime(startText);
-      const end = parseSubtitleTime(endText);
-      const text = lines
-        .slice(timingIndex + 1)
-        .join("\n")
-        .replace(/<[^>]+>/g, "")
-        .trim();
-      return Number.isFinite(start) && Number.isFinite(end) && text
-        ? [{ start, end, text }]
-        : [];
-    })
-    .sort((left, right) => left.start - right.start);
-}
-
-function parseSubtitleTime(value: string | undefined): number {
-  if (!value) return Number.NaN;
-  const parts = value.replace(",", ".").split(":").map(Number);
-  if (parts.some(Number.isNaN) || parts.length < 2 || parts.length > 3) {
-    return Number.NaN;
-  }
-  return parts.length === 3
-    ? parts[0] * 3600 + parts[1] * 60 + parts[2]
-    : parts[0] * 60 + parts[1];
 }
 
 function formatTime(secs: number): string {
