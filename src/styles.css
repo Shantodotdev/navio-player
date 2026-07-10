@@ -91,6 +91,31 @@ body:fullscreen,
   box-shadow: none;
 }
 
+.theater-volume {
+  appearance: none;
+  height: 4px;
+  border: 0;
+  border-radius: 9999px;
+  outline: none;
+}
+
+.theater-volume::-webkit-slider-runnable-track {
+  height: 4px;
+  border: 0;
+  border-radius: 9999px;
+  background: transparent;
+}
+
+.theater-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  margin-top: -3.5px;
+  border: 0;
+  border-radius: 9999px;
+  background: #c72c4e;
+}
+
 ::backdrop,
 .watch-stage::backdrop {
   background: #000;

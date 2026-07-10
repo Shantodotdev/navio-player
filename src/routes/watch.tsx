@@ -9,6 +9,7 @@ import {
   Play,
   Rewind,
   Volume2,
+  VolumeX,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
@@ -359,8 +360,20 @@ function WatchView() {
                 className="hover:text-brand-light transition-colors cursor-pointer"
                 aria-label="Toggle mute"
               >
-                <Volume2 size={20} />
+                {volume === 0 ? <VolumeX size={20} /> : <Volume2 size={20} />}
               </button>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={volume}
+                onChange={(event) => setVolume(Number(event.target.value))}
+                aria-label="Volume"
+                className="theater-volume w-24 cursor-pointer"
+                style={{
+                  background: `linear-gradient(to right, #c72c4e 0%, #c72c4e ${volume}%, #34343d ${volume}%, #34343d 100%)`,
+                }}
+              />
               <span className="w-20 text-right text-sm tabular-nums text-white/70">
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
