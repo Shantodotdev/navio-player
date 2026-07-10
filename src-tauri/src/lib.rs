@@ -1,5 +1,6 @@
 mod downloader;
 mod library;
+mod media_tools;
 mod server;
 mod watcher;
 
@@ -57,6 +58,45 @@ fn get_stream_config(state: tauri::State<'_, AppState>) -> StreamConfig {
     port: state.stream_port,
     token: state.stream_token.clone(),
   }
+}
+
+#[tauri::command]
+async fn inspect_video_tracks(
+  path: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<media_tools::VideoTrackInfo, String> {
+  media_tools::inspect_video_tracks(&app_handle, &state.allowed_directories, path).await
+}
+
+#[tauri::command]
+fn set_theater_fullscreen(app_handle: tauri::AppHandle, fullscreen: bool) -> Result<bool, String> {
+  let window = app_handle
+    .get_webview_window("main")
+    .ok_or_else(|| "Main window was not found.".to_string())?;
+
+  if fullscreen {
+    window.set_decorations(false).map_err(|e| e.to_string())?;
+    window.set_resizable(false).map_err(|e| e.to_string())?;
+    window.set_fullscreen(true).map_err(|e| e.to_string())?;
+    window.set_focus().map_err(|e| e.to_string())?;
+  } else {
+    window.set_fullscreen(false).map_err(|e| e.to_string())?;
+    window.set_resizable(true).map_err(|e| e.to_string())?;
+    window.set_decorations(false).map_err(|e| e.to_string())?;
+  }
+
+  window.is_fullscreen().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn toggle_theater_fullscreen(app_handle: tauri::AppHandle) -> Result<bool, String> {
+  let window = app_handle
+    .get_webview_window("main")
+    .ok_or_else(|| "Main window was not found.".to_string())?;
+  let next_fullscreen = !window.is_fullscreen().map_err(|e| e.to_string())?;
+
+  set_theater_fullscreen(app_handle, next_fullscreen)
 }
 
 /// Tauri command to retrieve the user's media library catalog.
@@ -317,6 +357,9 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       get_stream_port,
       get_stream_config,
+      inspect_video_tracks,
+      set_theater_fullscreen,
+      toggle_theater_fullscreen,
       get_library,
       save_library,
       scan_folder,

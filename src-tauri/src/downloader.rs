@@ -263,7 +263,7 @@ async fn ensure_ytdlp_installed(
 /// # Arguments
 /// * `app_handle` - Tauri application handle to resolve path pathways.
 /// * `download_id` - ID of the active download card to broadcast setup progress updates to.
-async fn ensure_ffmpeg_installed(
+pub async fn ensure_ffmpeg_installed(
   app_handle: &AppHandle,
   download_id: &str,
 ) -> Result<PathBuf, String> {
@@ -478,7 +478,10 @@ pub async fn start_download(
     let _ffmpeg_path = match ensure_ffmpeg_installed(&app_handle_clone, &id).await {
       Ok(p) => p,
       Err(err) => {
-        eprintln!("[Navio Downloader] Media processing preparation failed: {}", err);
+        eprintln!(
+          "[Navio Downloader] Media processing preparation failed: {}",
+          err
+        );
         let err_payload = DownloadPayload {
           id,
           url,
@@ -512,8 +515,7 @@ pub async fn start_download(
       );
     }
 
-    cmd
-      .arg(&url);
+    cmd.arg(&url);
 
     if format != "best" {
       cmd.arg("-f").arg(&format);
@@ -534,7 +536,10 @@ pub async fn start_download(
     let mut child = match cmd.spawn() {
       Ok(c) => c,
       Err(err) => {
-        eprintln!("[Navio Downloader] Could not start download process: {}", err);
+        eprintln!(
+          "[Navio Downloader] Could not start download process: {}",
+          err
+        );
         let err_payload = DownloadPayload {
           id,
           url,
