@@ -9,6 +9,7 @@
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
+    "lint": "tsc --noEmit",
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run"
