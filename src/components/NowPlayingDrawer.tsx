@@ -47,7 +47,7 @@ import {
   getStoredDrawerWidth,
   MAX_DRAWER_WIDTH,
   MIN_DRAWER_WIDTH,
-} from "./nowPlayingDrawerSizing";
+} from "../lib/nowPlayingDrawerSizing";
 
 export function NowPlayingDrawer() {
   const navigate = useNavigate();
@@ -175,8 +175,7 @@ export function NowPlayingDrawer() {
           info.audio_tracks.find((track) => track.is_default) ??
           info.audio_tracks[0];
         const preferredAudio = info.audio_tracks.find(
-          (track) =>
-            track.stream_index === info.preferred_audio_stream_index,
+          (track) => track.stream_index === info.preferred_audio_stream_index,
         );
         const audioTrack = preferredAudio ?? defaultAudio;
         const restoreAudio = async () => {
@@ -500,10 +499,7 @@ export function NowPlayingDrawer() {
       onPause={() => {
         alternateAudioRef.current?.pause();
         setIsPlaying(false);
-        if (
-          currentTrack &&
-          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS
-        ) {
+        if (currentTrack && duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
           void persistTheaterState({
             path: currentTrack.path,
             durationSecs: duration,
@@ -513,10 +509,7 @@ export function NowPlayingDrawer() {
         }
       }}
       onEnded={() => {
-        if (
-          currentTrack &&
-          duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS
-        ) {
+        if (currentTrack && duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
           void persistTheaterState({
             path: currentTrack.path,
             durationSecs: duration,
@@ -692,7 +685,6 @@ export function NowPlayingDrawer() {
                 }}
               />
             )}
-
           </div>
 
           <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
