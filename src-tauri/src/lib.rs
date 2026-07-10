@@ -130,6 +130,7 @@ async fn cancel_media_preparation(
 #[tauri::command]
 async fn save_theater_state(
   path: String,
+  duration_secs: f64,
   position_secs: f64,
   audio_stream_index: Option<u32>,
   subtitle_stream_index: Option<u32>,
@@ -143,6 +144,7 @@ async fn save_theater_state(
     &state.allowed_directories,
     &state.media_cache,
     path,
+    duration_secs,
     position_secs,
     audio_stream_index,
     subtitle_stream_index,

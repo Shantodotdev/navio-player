@@ -15,9 +15,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
+use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 use tokio::sync::{oneshot, watch};
-use tokio::io::AsyncWriteExt;
 
 /// Maximum combined size of prepared alternate-audio files.
 const MAX_AUDIO_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
@@ -25,6 +25,8 @@ const MAX_AUDIO_CACHE_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GB
 const MAX_SUBTITLE_CACHE_BYTES: u64 = 64 * 1024 * 1024; // 64 MB
 /// Maximum number of source-file records retained in the persistent database.
 const MAX_MEDIA_DATABASE_ENTRIES: usize = 2_000;
+/// Resume progress is only useful for long-form video content.
+const MIN_RESUMABLE_VIDEO_DURATION_SECS: f64 = 10.0 * 60.0; // 10 minutes
 /// Partial outputs newer than this may still belong to an active FFmpeg job.
 const STALE_PARTIAL_AGE_MS: u64 = 60 * 60 * 1_000;
 
@@ -334,11 +336,7 @@ where
     .file_name()
     .and_then(|value| value.to_str())
     .unwrap_or("media.json");
-  let temporary_path = path.with_file_name(format!(
-    ".{}.{}.tmp",
-    file_name,
-    uuid::Uuid::new_v4()
-  ));
+  let temporary_path = path.with_file_name(format!(".{}.{}.tmp", file_name, uuid::Uuid::new_v4()));
   let write_result = async {
     let mut file = tokio::fs::OpenOptions::new()
       .write(true)
@@ -368,7 +366,11 @@ async fn replace_file(source: &Path, destination: &Path) -> io::Result<()> {
     MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
   };
 
-  let source = source.as_os_str().encode_wide().chain(Some(0)).collect::<Vec<_>>();
+  let source = source
+    .as_os_str()
+    .encode_wide()
+    .chain(Some(0))
+    .collect::<Vec<_>>();
   let destination = destination
     .as_os_str()
     .encode_wide()
@@ -1159,11 +1161,13 @@ pub async fn extract_audio_track(
 /// Frequent playback checkpoints set `save_preferences` to false so they cannot
 /// overwrite a newer explicit language selection with stale UI state. Passing
 /// `subtitle_enabled = false` records an intentional "subtitles off" choice.
+/// Videos shorter than ten minutes retain preferences but never retain progress.
 pub async fn save_theater_state(
   app_handle: &AppHandle,
   allowed_directories: &Arc<Mutex<HashSet<PathBuf>>>,
   cache: &MediaCache,
   path: String,
+  duration_secs: f64,
   position_secs: f64,
   audio_stream_index: Option<u32>,
   subtitle_stream_index: Option<u32>,
@@ -1174,7 +1178,11 @@ pub async fn save_theater_state(
   let fingerprint = media_fingerprint(&media_path)?;
   cache
     .update_media_entry(app_handle, &fingerprint, &media_path, |entry| {
-      entry.resume_position_secs = position_secs.max(0.0);
+      entry.resume_position_secs = if duration_secs >= MIN_RESUMABLE_VIDEO_DURATION_SECS {
+        position_secs.max(0.0)
+      } else {
+        0.0
+      };
       if save_preferences {
         entry.preferred_audio_stream_index = audio_stream_index;
         entry.subtitle_preference_set = true;
