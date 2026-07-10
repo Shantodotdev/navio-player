@@ -38,3 +38,6 @@ mime_guess = "2.0"
 tokio-util = { version = "0.7", features = ["io"] }
 notify = "6.1.1"
 zip = { version = "1.1.4", default-features = false, features = ["deflate"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem"] }
