@@ -1,85 +1,4 @@
-use axum::{
-  body::Body,
-  extract::{Path, Query, State},
-  http::{header, HeaderMap, StatusCode},
-  response::Response,
-  routing::get,
-  Router,
-};
-use std::{
-  collections::HashSet,
-  path::{Path as StdPath, PathBuf},
-  sync::{Arc, Mutex},
-};
-use tokio::fs::File;
-use tokio::io::AsyncReadExt;
-use tokio::sync::oneshot;
-use tokio_util::io::ReaderStream;
-
-/// State shared across the local HTTP streaming server threads.
-#[derive(Clone)]
-pub struct ServerState {
-  /// Directories that the user scanned. Only files inside these dirs can be streamed.
-  /// This is a security boundary preventing arbitrary local file reads by webview scripts.
-  pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,
-
-  /// Per-process bearer token required by stream requests.
-  /// This prevents arbitrary browser origins from reading localhost media URLs.
-  pub stream_token: String,
-}
-
-#[derive(serde::Deserialize)]
-struct StreamQuery {
-  token: String,
-}
-
-/// Spawns a lightweight local HTTP streaming server on a dynamic port.
-///
-/// # Arguments
-/// * `state` - The shared server configuration containing allowed directory paths.
-/// * `shutdown_rx` - A oneshot receiver used to trigger graceful server shutdown on exit.
-///
-/// # Returns
-/// The randomly allocated TCP port number on which the server is listening.
-pub async fn start_server(
-  state: ServerState,
-  shutdown_rx: oneshot::Receiver<()>,
-) -> Result<u16, String> {
-  // Setup the server router
-  // We use percent-decoded path parameters to avoid URL segment clashes with file path separators.
-  let app = Router::new()
-    .route("/stream/:file_path", get(stream_file))
-    .with_state(state);
-
-  // Bind to 127.0.0.1 on a random available port (port 0 requests dynamic allocation)
-  let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-    .await
-    .map_err(|e| format!("Failed to bind to local port: {}", e))?;
-
-  let port = listener
-    .local_addr()
-    .map_err(|e| format!("Failed to get local address: {}", e))?
-    .port();
-
-  // Print startup logs so developers can see the server address in the terminal
-  println!(
-    "[Navio Server] Started local streaming server at http://127.0.0.1:{}",
-    port
-  );
-  // Spawn the server task with a graceful shutdown trigger
-  tokio::spawn(async move {
-    axum::serve(listener, app)
-      .with_graceful_shutdown(async move {
-        // Wait for the shutdown signal from the Tauri lifecycle thread
-        let _ = shutdown_rx.await;
-        println!("[Navio Server] Local streaming server shutting down gracefully.");
-      })
-      .await
-      .unwrap();
-  });
-
-  Ok(port)
-}
+use super::*;
 
 fn is_path_allowed(path: &StdPath, allowed_directories: &HashSet<PathBuf>) -> bool {
   let Ok(canonical_path) = path.canonicalize() else {
@@ -97,7 +16,7 @@ fn is_path_allowed(path: &StdPath, allowed_directories: &HashSet<PathBuf>) -> bo
 /// Axum route handler that streams local media files.
 /// Implements HTTP Range requests so that the WebView's `<video>` or `<audio>`
 /// players can scrub/seek cleanly without loading entire media files into memory.
-async fn stream_file(
+pub(super) async fn stream_file(
   State(state): State<ServerState>,
   Query(query): Query<StreamQuery>,
   headers: HeaderMap,
@@ -233,28 +152,4 @@ async fn stream_file(
     .header(header::CONTENT_LENGTH, chunk_size)
     .body(body)
     .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-/// Helper function to parse standard HTTP byte-range header strings.
-///
-/// # Arguments
-/// * `range_str` - The raw range header value (e.g. "bytes=2048-")
-/// * `file_len` - The total length of the file in bytes.
-fn parse_range(range_str: &str, file_len: u64) -> Option<(u64, u64)> {
-  if !range_str.starts_with("bytes=") {
-    return None;
-  }
-  let ranges: Vec<&str> = range_str["bytes=".len()..].split('-').collect();
-  if ranges.len() != 2 {
-    return None;
-  }
-
-  let start = ranges[0].parse::<u64>().ok()?;
-  let end = if ranges[1].is_empty() {
-    file_len - 1
-  } else {
-    ranges[1].parse::<u64>().ok()?
-  };
-
-  Some((start, end))
 }
