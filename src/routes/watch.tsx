@@ -188,7 +188,9 @@ function WatchView() {
           .then((subtitlePath) => {
             if (cancelled) return;
             setSelectedSubtitle(defaultSubtitle.stream_index);
-            setSubtitleUrl(buildStreamUrl(streamPort, streamToken, subtitlePath));
+            setSubtitleUrl(
+              buildStreamUrl(streamPort, streamToken, subtitlePath),
+            );
           })
           .catch((error) => {
             if (!cancelled) {
@@ -535,7 +537,6 @@ function WatchView() {
             <h1 className="truncate text-xl font-medium text-white">
               {currentTrack.title || currentTrack.name}
             </h1>
-            <p className="mt-1 text-sm text-white/55">Theater mode</p>
           </div>
         </div>
 
@@ -657,9 +658,13 @@ function WatchView() {
                 </button>
 
                 {openMenu && (
-                  <div className={`absolute bottom-11 right-0 w-72 overflow-hidden rounded-xl border border-white/15 bg-black/65 p-2 shadow-2xl backdrop-blur-2xl transition-all duration-180 ease-out ${isMenuVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-95 opacity-0 pointer-events-none"}`}>
+                  <div
+                    className={`absolute bottom-11 right-0 w-72 overflow-hidden rounded-xl border border-white/15 bg-black/65 p-2 shadow-2xl backdrop-blur-2xl transition-all duration-180 ease-out ${isMenuVisible ? "translate-y-0 scale-100 opacity-100" : "translate-y-2 scale-95 opacity-0 pointer-events-none"}`}
+                  >
                     <p className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-white/45">
-                      {openMenu === "subtitles" ? "Subtitles" : "Audio & language"}
+                      {openMenu === "subtitles"
+                        ? "Subtitles"
+                        : "Audio & language"}
                     </p>
                     {openMenu === "subtitles" && (
                       <button
@@ -670,19 +675,33 @@ function WatchView() {
                         Off
                       </button>
                     )}
-                    {(openMenu === "subtitles" ? trackInfo.subtitle_tracks : trackInfo.audio_tracks).map((track) => {
-                      const isSelected = openMenu === "subtitles"
-                        ? selectedSubtitle === track.stream_index
-                        : selectedAudio === track.stream_index;
+                    {(openMenu === "subtitles"
+                      ? trackInfo.subtitle_tracks
+                      : trackInfo.audio_tracks
+                    ).map((track) => {
+                      const isSelected =
+                        openMenu === "subtitles"
+                          ? selectedSubtitle === track.stream_index
+                          : selectedAudio === track.stream_index;
                       return (
                         <button
                           key={track.stream_index}
                           type="button"
-                          onClick={() => openMenu === "subtitles" ? void chooseSubtitle(track) : void chooseAudio(track)}
+                          onClick={() =>
+                            openMenu === "subtitles"
+                              ? void chooseSubtitle(track)
+                              : void chooseAudio(track)
+                          }
                           className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition-colors cursor-pointer ${isSelected ? "bg-brand/20 text-brand-light" : "text-white/75 hover:bg-white/10"}`}
                         >
-                          <span className="truncate text-sm">{formatTrackLabel(track)}</span>
-                          {track.is_default && <span className="shrink-0 text-xs text-white/40">Default</span>}
+                          <span className="truncate text-sm">
+                            {formatTrackLabel(track)}
+                          </span>
+                          {track.is_default && (
+                            <span className="shrink-0 text-xs text-white/40">
+                              Default
+                            </span>
+                          )}
                         </button>
                       );
                     })}
