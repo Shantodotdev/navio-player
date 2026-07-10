@@ -107,6 +107,17 @@ function WatchView() {
 
   const revealControls = () => setShowControls(true);
 
+  const togglePlayback = () => {
+    const media = videoRef.current;
+    if (!media) return;
+
+    if (media.paused) {
+      void media.play().catch((error) => console.warn("Play failed:", error));
+    } else {
+      media.pause();
+    }
+  };
+
   const leaveNativeFullscreen = async () => {
     if (!isTauri) return;
 
@@ -181,14 +192,6 @@ function WatchView() {
     } else if (event.key.toLowerCase() === "f") {
       event.preventDefault();
       void toggleFullscreen();
-    } else if (event.key === "Escape") {
-      if (isNativeFullscreen) {
-        void leaveNativeFullscreen();
-      } else if (document.fullscreenElement) {
-        void document.exitFullscreen();
-      } else {
-        void exitWatch();
-      }
     }
   };
 
@@ -218,7 +221,8 @@ function WatchView() {
       <video
         ref={videoRef}
         className="absolute inset-0 h-full w-full object-cover"
-        onClick={() => setIsPlaying(!isPlaying)}
+        onClick={togglePlayback}
+        onDoubleClick={() => void toggleFullscreen()}
         onTimeUpdate={(event) =>
           setCurrentTime(event.currentTarget.currentTime)
         }
@@ -236,16 +240,22 @@ function WatchView() {
       )}
 
       <div
-        onClick={(event) => {
-          if (event.target === event.currentTarget) setIsPlaying(!isPlaying);
-        }}
-        className={`absolute inset-0 flex flex-col justify-between bg-linear-to-b from-black/80 via-transparent to-black/85 px-8 py-7 transition-opacity duration-300 ${
+        className="absolute inset-0 z-10"
+        onClick={togglePlayback}
+        onDoubleClick={() => void toggleFullscreen()}
+        aria-label="Toggle video playback"
+        role="button"
+        tabIndex={-1}
+      />
+
+      <div
+        className={`pointer-events-none absolute inset-0 z-20 flex flex-col justify-between bg-linear-to-b from-black/80 via-transparent to-black/85 px-8 py-7 transition-opacity duration-300 ${
           showControls || !isPlaying
             ? "opacity-100"
             : "pointer-events-none opacity-0"
         }`}
       >
-        <div className="flex items-center justify-between gap-4">
+        <div className="pointer-events-auto flex items-center justify-between gap-4">
           <button
             type="button"
             onClick={() => void exitWatch()}
@@ -272,7 +282,7 @@ function WatchView() {
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="pointer-events-auto space-y-4">
           <input
             type="range"
             min="0"

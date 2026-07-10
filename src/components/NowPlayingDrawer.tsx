@@ -159,6 +159,12 @@ export function NowPlayingDrawer() {
     void target?.requestFullscreen().catch(() => undefined);
   };
 
+  const openWatch = () => {
+    if (!isVideo) return;
+    setTheaterOpen(true);
+    void navigate({ to: "/watch" });
+  };
+
   useEffect(() => {
     if (!isTheaterOpen) return;
 
@@ -302,6 +308,7 @@ export function NowPlayingDrawer() {
           }
         >
           <div
+            onDoubleClick={openWatch}
             className={`relative overflow-hidden group ${
               isTheaterOpen
                 ? "absolute inset-0 z-10 bg-black"
@@ -339,10 +346,7 @@ export function NowPlayingDrawer() {
                   <button
                     type="button"
                     aria-label="Open theater mode"
-                    onClick={() => {
-                      setTheaterOpen(true);
-                      void navigate({ to: "/watch" });
-                    }}
+                    onClick={openWatch}
                     className="w-10 h-10 rounded-full bg-black/65 hover:bg-white/20 text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
                   >
                     <MonitorPlay size={17} />
