@@ -221,6 +221,10 @@ async fn stream_file(
   Response::builder()
     .status(status)
     .header(header::CONTENT_TYPE, mime_type)
+    // Captions are fetched with CORS even when the video itself can stream
+    // without it. The bearer token and path allowlist remain the access
+    // boundary, so this permits the local WebView to load generated WebVTT.
+    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
     .header(header::ACCEPT_RANGES, "bytes")
     .header(
       header::CONTENT_RANGE,

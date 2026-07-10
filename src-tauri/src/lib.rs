@@ -70,6 +70,35 @@ async fn inspect_video_tracks(
 }
 
 #[tauri::command]
+async fn extract_subtitle_track(
+  path: String,
+  stream_index: u32,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+  media_tools::extract_subtitle_track(&app_handle, &state.allowed_directories, path, stream_index)
+    .await
+}
+
+#[tauri::command]
+async fn extract_audio_track(
+  path: String,
+  stream_index: u32,
+  codec: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+  media_tools::extract_audio_track(
+    &app_handle,
+    &state.allowed_directories,
+    path,
+    stream_index,
+    codec,
+  )
+  .await
+}
+
+#[tauri::command]
 fn set_theater_fullscreen(app_handle: tauri::AppHandle, fullscreen: bool) -> Result<bool, String> {
   let window = app_handle
     .get_webview_window("main")
@@ -358,6 +387,8 @@ pub fn run() {
       get_stream_port,
       get_stream_config,
       inspect_video_tracks,
+      extract_subtitle_track,
+      extract_audio_track,
       set_theater_fullscreen,
       toggle_theater_fullscreen,
       get_library,
