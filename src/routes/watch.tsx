@@ -31,6 +31,14 @@ type VideoTrackInfo = {
   subtitle_tracks: EmbeddedTrack[];
 };
 
+type TheaterMediaInfo = VideoTrackInfo & {
+  resume_position_secs: number;
+  preferred_audio_stream_index: number | null;
+  subtitle_preference_set: boolean;
+  preferred_subtitle_stream_index: number | null;
+  cached_audio_stream_indexes: number[];
+};
+
 type SubtitleCue = {
   start: number;
   end: number;
@@ -52,6 +60,12 @@ function WatchView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const alternateAudioRef = useRef<HTMLAudioElement>(null);
   const hideControlsTimer = useRef<number | null>(null);
+  const activeAudioRequest = useRef<string | null>(null);
+  const activeSubtitleRequest = useRef<string | null>(null);
+  const lastPlayerUpdate = useRef(0);
+  const latestPlaybackTime = useRef(0);
+  const persistTimer = useRef<number | null>(null);
+  const subtitleCursor = useRef(-1);
   const [showControls, setShowControls] = useState(true);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [trackInfo, setTrackInfo] = useState<VideoTrackInfo>(emptyTrackInfo);
@@ -97,10 +111,13 @@ function WatchView() {
       ? playlist[(playIndex + 1) % playlist.length]
       : null;
   const isNearEnd = duration > 0 && currentTime >= Math.max(duration - 30, 15);
-  const activeSubtitleText = subtitleCues
-    .filter((cue) => currentTime >= cue.start && currentTime < cue.end)
-    .map((cue) => cue.text)
-    .join("\n");
+  const activeSubtitle = findActiveSubtitle(
+    subtitleCues,
+    currentTime,
+    subtitleCursor.current,
+  );
+  subtitleCursor.current = activeSubtitle.index;
+  const activeSubtitleText = activeSubtitle.text;
 
   useEffect(() => {
     setTheaterOpen(isVideo);
@@ -152,64 +169,129 @@ function WatchView() {
     setAudioError(null);
     setSubtitleError(null);
     setDismissNextUp(false);
+    subtitleCursor.current = -1;
+    latestPlaybackTime.current = 0;
 
     if (!isVideo || !currentTrack || !isTauri) return;
 
-    void import("@tauri-apps/api/core")
-      .then(({ invoke }) =>
-        invoke<VideoTrackInfo>("inspect_video_tracks", {
+    const loadMediaState = async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const info = await invoke<TheaterMediaInfo>("inspect_video_tracks", {
           path: currentTrack.path,
-        }),
-      )
-      .then((info) => {
+        });
         if (cancelled) return;
         setTrackInfo(info);
-        const defaultAudio = info.audio_tracks.find(
-          (track) => track.is_default,
-        );
-        setSelectedAudio(
-          defaultAudio?.stream_index ??
-            info.audio_tracks[0]?.stream_index ??
-            null,
-        );
 
-        const defaultSubtitle = info.subtitle_tracks.find(
-          (track) => track.is_default,
-        );
-        if (!defaultSubtitle) return;
+        const resumePosition =
+          info.resume_position_secs >= 5 &&
+          info.resume_position_secs < Math.max(duration - 15, 5)
+            ? info.resume_position_secs
+            : 0;
+        latestPlaybackTime.current = resumePosition;
+        if (resumePosition > 0 && videoRef.current) {
+          videoRef.current.currentTime = resumePosition;
+          setCurrentTime(resumePosition);
+        }
 
-        void import("@tauri-apps/api/core")
-          .then(({ invoke }) =>
-            invoke<string>("extract_subtitle_track", {
+        const defaultAudio =
+          info.audio_tracks.find((track) => track.is_default) ??
+          info.audio_tracks[0];
+        const preferredAudio = info.audio_tracks.find(
+          (track) =>
+            track.stream_index === info.preferred_audio_stream_index,
+        );
+        const audioTrack = preferredAudio ?? defaultAudio;
+        setSelectedAudio(audioTrack?.stream_index ?? null);
+
+        if (
+          audioTrack &&
+          defaultAudio &&
+          audioTrack.stream_index !== defaultAudio.stream_index &&
+          (isCopyCompatibleAudio(audioTrack.codec) ||
+            info.cached_audio_stream_indexes.includes(audioTrack.stream_index))
+        ) {
+          const requestId = createRequestId();
+          activeAudioRequest.current = requestId;
+          setIsPreparingAudio(true);
+          try {
+            const audioPath = await invoke<string>("extract_audio_track", {
               path: currentTrack.path,
-              streamIndex: defaultSubtitle.stream_index,
-            }),
-          )
-          .then((subtitlePath) => {
-            if (cancelled) return;
-            setSelectedSubtitle(defaultSubtitle.stream_index);
+              streamIndex: audioTrack.stream_index,
+              codec: audioTrack.codec,
+              requestId,
+            });
+            if (!cancelled && activeAudioRequest.current === requestId) {
+              setAlternateAudioUrl(
+                buildStreamUrl(streamPort, streamToken, audioPath),
+              );
+            }
+          } catch (error) {
+            if (!cancelled) {
+              console.warn("Preferred audio preparation failed:", error);
+              setSelectedAudio(defaultAudio.stream_index);
+            }
+          } finally {
+            if (!cancelled && activeAudioRequest.current === requestId) {
+              setIsPreparingAudio(false);
+            }
+          }
+        } else if (preferredAudio && audioTrack !== defaultAudio) {
+          setSelectedAudio(defaultAudio?.stream_index ?? null);
+        }
+
+        const subtitleTrack = info.subtitle_preference_set
+          ? info.subtitle_tracks.find(
+              (track) =>
+                track.stream_index === info.preferred_subtitle_stream_index,
+            )
+          : info.subtitle_tracks.find((track) => track.is_default);
+        if (!subtitleTrack) return;
+
+        const requestId = createRequestId();
+        activeSubtitleRequest.current = requestId;
+        setSelectedSubtitle(subtitleTrack.stream_index);
+        try {
+          const subtitlePath = await invoke<string>("extract_subtitle_track", {
+            path: currentTrack.path,
+            streamIndex: subtitleTrack.stream_index,
+            requestId,
+          });
+          if (!cancelled && activeSubtitleRequest.current === requestId) {
             setSubtitleUrl(
               buildStreamUrl(streamPort, streamToken, subtitlePath),
             );
-          })
-          .catch((error) => {
-            if (!cancelled) {
-              console.warn("Default subtitle extraction failed:", error);
-            }
-          });
-      })
-      .catch((error) => {
+          }
+        } catch (error) {
+          if (!cancelled) {
+            console.warn("Preferred subtitle extraction failed:", error);
+          }
+        }
+      } catch (error) {
         if (!cancelled) console.warn("Video track inspection failed:", error);
-      });
+      }
+    };
+
+    void loadMediaState();
 
     return () => {
       cancelled = true;
+      void cancelMediaPreparation(activeAudioRequest.current);
+      void cancelMediaPreparation(activeSubtitleRequest.current);
     };
-  }, [currentTrack, isVideo, streamPort, streamToken]);
+  }, [
+    currentTrack,
+    duration,
+    isVideo,
+    setCurrentTime,
+    streamPort,
+    streamToken,
+  ]);
 
   useEffect(() => {
     if (!subtitleUrl) {
       setSubtitleCues([]);
+      subtitleCursor.current = -1;
       return;
     }
 
@@ -220,7 +302,10 @@ function WatchView() {
           throw new Error(`Subtitle request failed: ${response.status}`);
         return response.text();
       })
-      .then((vtt) => setSubtitleCues(parseWebVtt(vtt)))
+      .then((vtt) => {
+        subtitleCursor.current = -1;
+        setSubtitleCues(parseWebVtt(vtt));
+      })
       .catch((error) => {
         if (error.name === "AbortError") return;
         console.warn("Subtitle loading failed:", error);
@@ -229,6 +314,23 @@ function WatchView() {
 
     return () => controller.abort();
   }, [subtitleUrl]);
+
+  useEffect(() => {
+    const path = currentTrack?.path;
+    return () => {
+      if (persistTimer.current !== null) {
+        window.clearTimeout(persistTimer.current);
+        persistTimer.current = null;
+      }
+      if (path && latestPlaybackTime.current > 0) {
+        void persistTheaterState({
+          path,
+          positionSecs: latestPlaybackTime.current,
+          savePreferences: false,
+        });
+      }
+    };
+  }, [currentTrack?.path]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -380,24 +482,49 @@ function WatchView() {
   const chooseSubtitle = async (track: EmbeddedTrack | null) => {
     setOpenMenu(null);
     setSubtitleError(null);
+    await cancelMediaPreparation(activeSubtitleRequest.current);
 
     if (!track) {
+      activeSubtitleRequest.current = null;
       setSelectedSubtitle(null);
       setSubtitleUrl(null);
       setSubtitleCues([]);
+      if (currentTrack) {
+        void persistTheaterState({
+          path: currentTrack.path,
+          positionSecs: latestPlaybackTime.current,
+          audioStreamIndex: selectedAudio,
+          subtitleStreamIndex: null,
+          subtitleEnabled: false,
+          savePreferences: true,
+        });
+      }
       return;
     }
 
     if (!currentTrack || !isTauri) return;
+    const requestId = createRequestId();
+    activeSubtitleRequest.current = requestId;
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const subtitlePath = await invoke<string>("extract_subtitle_track", {
         path: currentTrack.path,
         streamIndex: track.stream_index,
+        requestId,
       });
+      if (activeSubtitleRequest.current !== requestId) return;
       setSelectedSubtitle(track.stream_index);
       setSubtitleUrl(buildStreamUrl(streamPort, streamToken, subtitlePath));
+      void persistTheaterState({
+        path: currentTrack.path,
+        positionSecs: latestPlaybackTime.current,
+        audioStreamIndex: selectedAudio,
+        subtitleStreamIndex: track.stream_index,
+        subtitleEnabled: true,
+        savePreferences: true,
+      });
     } catch (error) {
+      if (activeSubtitleRequest.current !== requestId) return;
       console.warn("Subtitle extraction failed:", error);
       setSubtitleError("That subtitle track is not supported.");
     }
@@ -406,6 +533,8 @@ function WatchView() {
   const chooseAudio = async (track: EmbeddedTrack) => {
     setOpenMenu(null);
     setAudioError(null);
+    await cancelMediaPreparation(activeAudioRequest.current);
+    activeAudioRequest.current = null;
 
     const defaultTrack =
       trackInfo.audio_tracks.find((candidate) => candidate.is_default) ??
@@ -415,9 +544,19 @@ function WatchView() {
     if (track.stream_index === defaultTrack.stream_index) {
       setSelectedAudio(track.stream_index);
       setAlternateAudioUrl(null);
+      void persistTheaterState({
+        path: currentTrack.path,
+        positionSecs: latestPlaybackTime.current,
+        audioStreamIndex: track.stream_index,
+        subtitleStreamIndex: selectedSubtitle,
+        subtitleEnabled: selectedSubtitle !== null,
+        savePreferences: true,
+      });
       return;
     }
 
+    const requestId = createRequestId();
+    activeAudioRequest.current = requestId;
     try {
       setIsPreparingAudio(true);
       const { invoke } = await import("@tauri-apps/api/core");
@@ -425,14 +564,27 @@ function WatchView() {
         path: currentTrack.path,
         streamIndex: track.stream_index,
         codec: track.codec,
+        requestId,
       });
+      if (activeAudioRequest.current !== requestId) return;
       setSelectedAudio(track.stream_index);
       setAlternateAudioUrl(buildStreamUrl(streamPort, streamToken, audioPath));
+      void persistTheaterState({
+        path: currentTrack.path,
+        positionSecs: latestPlaybackTime.current,
+        audioStreamIndex: track.stream_index,
+        subtitleStreamIndex: selectedSubtitle,
+        subtitleEnabled: selectedSubtitle !== null,
+        savePreferences: true,
+      });
     } catch (error) {
+      if (activeAudioRequest.current !== requestId) return;
       console.warn("Audio track preparation failed:", error);
       setAudioError("That audio track could not be prepared.");
     } finally {
-      setIsPreparingAudio(false);
+      if (activeAudioRequest.current === requestId) {
+        setIsPreparingAudio(false);
+      }
     }
   };
 
@@ -486,24 +638,52 @@ function WatchView() {
         onClick={togglePlayback}
         onDoubleClick={() => void toggleFullscreen()}
         onTimeUpdate={(event) => {
+          const playbackTime = event.currentTarget.currentTime;
           const alternateAudio = alternateAudioRef.current;
           if (
             alternateAudioUrl &&
             alternateAudio &&
-            Math.abs(
-              alternateAudio.currentTime - event.currentTarget.currentTime,
-            ) > 0.5
+            Math.abs(alternateAudio.currentTime - playbackTime) > 0.5
           ) {
-            alternateAudio.currentTime = event.currentTarget.currentTime;
+            alternateAudio.currentTime = playbackTime;
           }
-          setCurrentTime(event.currentTarget.currentTime);
+
+          latestPlaybackTime.current = playbackTime;
+          const now = performance.now();
+          if (now - lastPlayerUpdate.current >= 250) {
+            lastPlayerUpdate.current = now;
+            setCurrentTime(playbackTime);
+          }
+
+          if (persistTimer.current === null) {
+            persistTimer.current = window.setTimeout(() => {
+              persistTimer.current = null;
+              void persistTheaterState({
+                path: currentTrack.path,
+                positionSecs: latestPlaybackTime.current,
+                savePreferences: false,
+              });
+            }, 5_000);
+          }
         }}
         onPlay={() => setIsPlaying(true)}
         onPause={() => {
           alternateAudioRef.current?.pause();
           setIsPlaying(false);
+          void persistTheaterState({
+            path: currentTrack.path,
+            positionSecs: latestPlaybackTime.current,
+            savePreferences: false,
+          });
         }}
-        onEnded={nextTrack}
+        onEnded={() => {
+          void persistTheaterState({
+            path: currentTrack.path,
+            positionSecs: 0,
+            savePreferences: false,
+          });
+          nextTrack();
+        }}
       />
       <audio ref={alternateAudioRef} className="hidden" />
 
@@ -781,6 +961,101 @@ function buildStreamUrl(port: number, token: string, path: string): string {
   return `http://127.0.0.1:${port}/stream/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`;
 }
 
+function createRequestId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+async function cancelMediaPreparation(requestId: string | null) {
+  if (!requestId || !isTauri) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("cancel_media_preparation", { requestId });
+  } catch (error) {
+    console.warn("Cancelling media preparation failed:", error);
+  }
+}
+
+type TheaterStateUpdate = {
+  path: string;
+  positionSecs: number;
+  audioStreamIndex?: number | null;
+  subtitleStreamIndex?: number | null;
+  subtitleEnabled?: boolean;
+  savePreferences: boolean;
+};
+
+async function persistTheaterState(update: TheaterStateUpdate) {
+  if (!isTauri) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_theater_state", {
+      path: update.path,
+      positionSecs: update.positionSecs,
+      audioStreamIndex: update.audioStreamIndex ?? null,
+      subtitleStreamIndex: update.subtitleStreamIndex ?? null,
+      subtitleEnabled: update.subtitleEnabled ?? false,
+      savePreferences: update.savePreferences,
+    });
+  } catch (error) {
+    console.warn("Saving theater state failed:", error);
+  }
+}
+
+function isCopyCompatibleAudio(codec: string): boolean {
+  return ["aac", "mp3", "opus", "vorbis"].includes(codec.toLowerCase());
+}
+
+function findActiveSubtitle(
+  cues: SubtitleCue[],
+  time: number,
+  cursor: number,
+): { index: number; text: string } {
+  if (cues.length === 0) return { index: -1, text: "" };
+
+  let index = cursor;
+  if (
+    index < 0 ||
+    index >= cues.length ||
+    time < cues[index].start ||
+    time >= cues[index].end
+  ) {
+    let low = 0;
+    let high = cues.length - 1;
+    index = -1;
+    while (low <= high) {
+      const middle = (low + high) >>> 1;
+      if (cues[middle].start <= time) {
+        index = middle;
+        low = middle + 1;
+      } else {
+        high = middle - 1;
+      }
+    }
+  }
+
+  if (index < 0 || time >= cues[index].end) {
+    return { index, text: "" };
+  }
+
+  let first = index;
+  while (
+    first > 0 &&
+    cues[first - 1].start <= time &&
+    cues[first - 1].end > time
+  ) {
+    first -= 1;
+  }
+  const text: string[] = [];
+  for (let cueIndex = first; cueIndex < cues.length; cueIndex += 1) {
+    const cue = cues[cueIndex];
+    if (cue.start > time) break;
+    if (cue.end > time) text.push(cue.text);
+  }
+  return { index, text: text.join("\n") };
+}
+
 function formatTrackLabel(track: EmbeddedTrack): string {
   const language = formatLanguage(track.language);
   const title = track.title?.trim();
@@ -836,7 +1111,8 @@ function parseWebVtt(vtt: string): SubtitleCue[] {
       return Number.isFinite(start) && Number.isFinite(end) && text
         ? [{ start, end, text }]
         : [];
-    });
+    })
+    .sort((left, right) => left.start - right.start);
 }
 
 function parseSubtitleTime(value: string | undefined): number {
