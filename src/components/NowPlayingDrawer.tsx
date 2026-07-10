@@ -1,19 +1,30 @@
 import {
   Film,
+  Captions,
+  ChevronLeft,
+  ChevronRight,
+  FastForward,
+  Languages,
   ListMusic,
   LoaderCircle,
   Maximize2,
   Music,
+  MonitorPlay,
+  Minimize2,
   Pause,
   Play,
+  Rewind,
+  Volume2,
   X,
 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   useEffect,
   useRef,
   useState,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent,
+  type RefObject,
 } from "react";
 import { type Track, usePlayerStore } from "../store/playerStore";
 import {
@@ -27,17 +38,23 @@ import {
 } from "./nowPlayingDrawerSizing";
 
 export function NowPlayingDrawer() {
+  const navigate = useNavigate();
   const {
     currentTrack,
     playlist,
     isDrawerOpen,
+    isTheaterOpen,
     isPlaying,
     setDrawerOpen,
+    setTheaterOpen,
     playTrack,
     setMediaElement,
+    clearMediaElement,
     setCurrentTime,
     setIsPlaying,
     nextTrack,
+    prevTrack,
+    currentTime,
   } = usePlayerStore();
 
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
@@ -45,6 +62,7 @@ export function NowPlayingDrawer() {
   const [isBuffering, setIsBuffering] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
+  const theaterRef = useRef<HTMLElement>(null);
   const consecutiveFailures = useRef(0);
 
   const isVideo = currentTrack?.media_type === "video";
@@ -62,9 +80,10 @@ export function NowPlayingDrawer() {
     : [];
 
   useEffect(() => {
-    if (videoRef.current) setMediaElement(videoRef.current);
-    return () => setMediaElement(null);
-  }, [setMediaElement]);
+    const media = videoRef.current;
+    if (media) setMediaElement(media);
+    return () => clearMediaElement(media);
+  }, [clearMediaElement, setMediaElement]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -105,7 +124,7 @@ export function NowPlayingDrawer() {
 
   const stopResizing = () => setIsResizing(false);
 
-  const handleResizeKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  const handleResizeKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
       updateDrawerWidth(drawerWidth + 20);
@@ -136,14 +155,64 @@ export function NowPlayingDrawer() {
   };
 
   const enterFullscreen = () => {
-    void videoRef.current?.requestFullscreen().catch(() => undefined);
+    const target = isTheaterOpen ? theaterRef.current : videoRef.current;
+    void target?.requestFullscreen().catch(() => undefined);
   };
+
+  useEffect(() => {
+    if (!isTheaterOpen) return;
+
+    const handleKeyboard = (event: globalThis.KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement) return;
+      const media = videoRef.current;
+      if (!media) return;
+
+      const seek = (seconds: number) => {
+        const nextTime = Math.max(
+          0,
+          Math.min(media.duration || 0, media.currentTime + seconds),
+        );
+        media.currentTime = nextTime;
+        setCurrentTime(nextTime);
+      };
+
+      if (event.key === " " || event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setIsPlaying(!isPlaying);
+      } else if (event.key === "ArrowLeft" || event.key.toLowerCase() === "j") {
+        event.preventDefault();
+        seek(-10);
+      } else if (
+        event.key === "ArrowRight" ||
+        event.key.toLowerCase() === "l"
+      ) {
+        event.preventDefault();
+        seek(10);
+      } else if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        enterFullscreen();
+      } else if (event.key === "Escape") {
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else {
+          setTheaterOpen(false);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyboard);
+    return () => window.removeEventListener("keydown", handleKeyboard);
+  }, [isPlaying, isTheaterOpen, setCurrentTime, setIsPlaying, setTheaterOpen]);
 
   const mediaPlayer = (
     <video
       ref={videoRef}
       className={
-        isVideo ? "absolute inset-0 w-full h-full object-contain" : "hidden"
+        isVideo
+          ? `absolute inset-0 w-full h-full object-contain ${
+              isTheaterOpen ? "z-20" : ""
+            }`
+          : "hidden"
       }
       onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
       onPlay={() => {
@@ -160,33 +229,46 @@ export function NowPlayingDrawer() {
 
   return (
     <aside
-      className={`absolute top-0 right-0 h-full bg-[#07070a]/98 backdrop-blur-3xl border-l border-white/5 shadow-[-15px_0_30px_-10px_rgba(0,0,0,0.8)] z-45 flex flex-col transition-transform duration-300 ease-out ${
-        isDrawerOpen ? "translate-x-0" : "translate-x-full"
-      } ${isResizing ? "select-none" : ""}`}
-      style={{ width: drawerWidth }}
+      ref={theaterRef}
+      className={
+        isTheaterOpen
+          ? "fixed inset-0 z-70 flex h-screen w-screen flex-col overflow-hidden bg-black"
+          : `absolute top-0 right-0 h-full bg-[#07070a]/98 backdrop-blur-3xl border-l border-white/5 shadow-[-15px_0_30px_-10px_rgba(0,0,0,0.8)] z-45 flex flex-col transition-transform duration-300 ease-out ${
+              isDrawerOpen ? "translate-x-0" : "translate-x-full"
+            } ${isResizing ? "select-none" : ""}`
+      }
+      style={isTheaterOpen ? undefined : { width: drawerWidth }}
       aria-label="Now playing"
     >
-      <div
-        role="separator"
-        aria-label="Resize now playing"
-        aria-orientation="vertical"
-        aria-valuemin={MIN_DRAWER_WIDTH}
-        aria-valuemax={
-          typeof window === "undefined"
-            ? MAX_DRAWER_WIDTH
-            : getMaxDrawerWidth(window.innerWidth)
-        }
-        aria-valuenow={drawerWidth}
-        tabIndex={0}
-        onPointerDown={handleResizePointerDown}
-        onPointerMove={handleResizePointerMove}
-        onPointerUp={stopResizing}
-        onPointerCancel={stopResizing}
-        onKeyDown={handleResizeKeyDown}
-        className="absolute left-0 top-0 z-30 h-full w-2 -translate-x-1 cursor-ew-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-transparent hover:before:bg-brand/70 focus-visible:before:bg-brand"
-      />
+      {!isTheaterOpen && (
+        <div
+          role="separator"
+          aria-label="Resize now playing"
+          aria-orientation="vertical"
+          aria-valuemin={MIN_DRAWER_WIDTH}
+          aria-valuemax={
+            typeof window === "undefined"
+              ? MAX_DRAWER_WIDTH
+              : getMaxDrawerWidth(window.innerWidth)
+          }
+          aria-valuenow={drawerWidth}
+          tabIndex={0}
+          onPointerDown={handleResizePointerDown}
+          onPointerMove={handleResizePointerMove}
+          onPointerUp={stopResizing}
+          onPointerCancel={stopResizing}
+          onKeyDown={handleResizeKeyDown}
+          className="absolute left-0 top-0 z-30 h-full w-2 -translate-x-1 cursor-ew-resize touch-none outline-none before:absolute before:inset-y-0 before:left-1/2 before:w-px before:bg-transparent hover:before:bg-brand/70 focus-visible:before:bg-brand"
+        />
+      )}
 
-      <header className="flex items-center justify-between p-5 border-b border-white/5 shrink-0">
+      <header
+        className={
+          isTheaterOpen
+            ? "hidden"
+            : "flex items-center justify-between p-5 border-b border-white/5 shrink-0"
+        }
+      >
         <div>
           <span className="text-sm font-medium text-brand-light">
             Now playing
@@ -208,22 +290,34 @@ export function NowPlayingDrawer() {
       </header>
 
       <div
-        className={`flex-1 min-h-0 flex flex-col gap-6 p-5 ${
-          currentTrack ? "" : "hidden"
-        }`}
+        className={`${
+          isTheaterOpen
+            ? "absolute inset-0 min-h-0"
+            : "flex-1 min-h-0 flex flex-col gap-6 p-5"
+        } ${currentTrack ? "" : "hidden"}`}
       >
-        <div className="space-y-4 min-w-0 shrink-0">
+        <div
+          className={
+            isTheaterOpen ? "absolute inset-0" : "space-y-4 min-w-0 shrink-0"
+          }
+        >
           <div
-            className={`relative overflow-hidden rounded-xl border border-white/5 shadow-lg group ${
-              isVideo ? "aspect-video bg-black" : "aspect-video bg-card-bg"
+            className={`relative overflow-hidden group ${
+              isTheaterOpen
+                ? "absolute inset-0 z-10 bg-black"
+                : isVideo
+                  ? "aspect-video rounded-xl border border-white/5 shadow-lg bg-black"
+                  : "aspect-video rounded-xl border border-white/5 shadow-lg bg-card-bg"
             }`}
           >
-            <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
+            {!isTheaterOpen && (
+              <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
+            )}
             {mediaPlayer}
 
             {!isVideo && <AudioOrbit />}
 
-            {isVideo && (
+            {isVideo && !isTheaterOpen && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                 <div className="flex items-center gap-3">
                   <button
@@ -244,14 +338,41 @@ export function NowPlayingDrawer() {
                   </button>
                   <button
                     type="button"
-                    aria-label="Enter fullscreen"
-                    onClick={enterFullscreen}
+                    aria-label="Open theater mode"
+                    onClick={() => {
+                      setTheaterOpen(true);
+                      void navigate({ to: "/watch" });
+                    }}
                     className="w-10 h-10 rounded-full bg-black/65 hover:bg-white/20 text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
                   >
-                    <Maximize2 size={17} />
+                    <MonitorPlay size={17} />
                   </button>
                 </div>
               </div>
+            )}
+
+            {isTheaterOpen && (
+              <TheaterControls
+                videoRef={videoRef}
+                currentTime={currentTime}
+                duration={currentTrack?.duration_secs ?? 0}
+                isPlaying={isPlaying}
+                onExit={() => setTheaterOpen(false)}
+                onFullscreen={enterFullscreen}
+                onPlayPause={() => setIsPlaying(!isPlaying)}
+                onNext={nextTrack}
+                onPrevious={prevTrack}
+                onSeek={(seconds) => {
+                  const media = videoRef.current;
+                  if (!media) return;
+                  const nextTime = Math.max(
+                    0,
+                    Math.min(media.duration || 0, media.currentTime + seconds),
+                  );
+                  media.currentTime = nextTime;
+                  setCurrentTime(nextTime);
+                }}
+              />
             )}
 
             {isBuffering && (
@@ -261,7 +382,7 @@ export function NowPlayingDrawer() {
             )}
           </div>
 
-          <div className="space-y-1 px-1">
+          <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
             <h2 className="text-xl font-medium text-zinc-100 truncate">
               {activeTrack.title || activeTrack.name}
             </h2>
@@ -276,11 +397,13 @@ export function NowPlayingDrawer() {
           </div>
         </div>
 
-        <Queue
-          tracks={activeQueue}
-          currentTrackId={activeTrack.id}
-          onSelect={playTrack}
-        />
+        {!isTheaterOpen && (
+          <Queue
+            tracks={activeQueue}
+            currentTrackId={activeTrack.id}
+            onSelect={playTrack}
+          />
+        )}
       </div>
 
       {!currentTrack && (
@@ -372,6 +495,142 @@ function AudioOrbit() {
         <div className="absolute inset-5 rounded-full border border-white/10 border-b-brand/40 animate-[spin_8s_linear_infinite_reverse]" />
         <div className="absolute inset-11 rounded-full bg-brand/15 border border-brand/30 shadow-[0_0_38px_rgba(168,28,60,0.3)] grid place-items-center text-brand-light">
           <Music size={30} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TheaterControls({
+  videoRef,
+  currentTime,
+  duration,
+  isPlaying,
+  onExit,
+  onFullscreen,
+  onPlayPause,
+  onNext,
+  onPrevious,
+  onSeek,
+}: {
+  videoRef: RefObject<HTMLVideoElement | null>;
+  currentTime: number;
+  duration: number;
+  isPlaying: boolean;
+  onExit: () => void;
+  onFullscreen: () => void;
+  onPlayPause: () => void;
+  onNext: () => void;
+  onPrevious: () => void;
+  onSeek: (seconds: number) => void;
+}) {
+  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+
+  return (
+    <div className="absolute inset-0 z-40 flex flex-col justify-between bg-linear-to-b from-black/65 via-transparent to-black/80 px-10 py-8 opacity-100 transition-opacity duration-300">
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={onExit}
+          className="flex items-center gap-2 rounded-lg bg-black/45 px-3 py-2 text-sm text-white hover:bg-white/15 transition-colors cursor-pointer"
+        >
+          <Minimize2 size={17} />
+          Exit theater
+        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            title="Subtitles are loaded when available"
+            className="p-2.5 rounded-full bg-black/45 text-white/60 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+          >
+            <Captions size={18} />
+          </button>
+          <button
+            type="button"
+            title="Audio languages are loaded when available"
+            className="p-2.5 rounded-full bg-black/45 text-white/60 hover:text-white hover:bg-white/15 transition-colors cursor-pointer"
+          >
+            <Languages size={18} />
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <input
+          type="range"
+          min="0"
+          max={duration || 0}
+          value={Math.min(currentTime, duration || 0)}
+          onChange={(event) => {
+            const nextTime = Number(event.target.value);
+            if (videoRef.current) videoRef.current.currentTime = nextTime;
+          }}
+          aria-label="Seek video"
+          className="w-full accent-brand cursor-pointer"
+          style={{ backgroundSize: `${progress}% 100%` }}
+        />
+        <div className="flex items-center justify-between text-white">
+          <div className="flex items-center gap-5">
+            <button
+              type="button"
+              onClick={onPrevious}
+              aria-label="Previous video"
+              className="hover:text-brand-light transition-colors cursor-pointer"
+            >
+              <ChevronLeft size={24} />
+            </button>
+            <button
+              type="button"
+              onClick={() => onSeek(-10)}
+              aria-label="Rewind 10 seconds"
+              className="hover:text-brand-light transition-colors cursor-pointer"
+            >
+              <Rewind size={23} />
+            </button>
+            <button
+              type="button"
+              onClick={onPlayPause}
+              aria-label={isPlaying ? "Pause video" : "Play video"}
+              className="w-12 h-12 rounded-full bg-white text-black grid place-items-center hover:bg-brand-light hover:text-white transition-colors cursor-pointer"
+            >
+              {isPlaying ? (
+                <Pause size={20} fill="currentColor" />
+              ) : (
+                <Play
+                  size={20}
+                  fill="currentColor"
+                  className="translate-x-px"
+                />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => onSeek(10)}
+              aria-label="Forward 10 seconds"
+              className="hover:text-brand-light transition-colors cursor-pointer"
+            >
+              <FastForward size={23} />
+            </button>
+            <button
+              type="button"
+              onClick={onNext}
+              aria-label="Next video"
+              className="hover:text-brand-light transition-colors cursor-pointer"
+            >
+              <ChevronRight size={24} />
+            </button>
+          </div>
+          <div className="flex items-center gap-4">
+            <Volume2 size={18} />
+            <button
+              type="button"
+              onClick={onFullscreen}
+              aria-label="Enter fullscreen"
+              className="hover:text-brand-light transition-colors cursor-pointer"
+            >
+              <Maximize2 size={20} />
+            </button>
+          </div>
         </div>
       </div>
     </div>
