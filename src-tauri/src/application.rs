@@ -86,6 +86,7 @@ pub fn run() {
       commands::save_library,
       commands::scan_folder,
       downloader::command::start_download,
+      downloader::command::check_url_type,
       commands::open_folder
     ])
     .build(tauri::generate_context!())

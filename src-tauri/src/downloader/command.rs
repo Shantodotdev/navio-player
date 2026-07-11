@@ -14,12 +14,13 @@ pub async fn start_download(
   id: String,
   url: String,
   format: String,
+  no_playlist: Option<bool>,
   app_handle: AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
   println!(
-    "[Navio Command] start_download | id={} format={} url={}",
-    id, format, url
+    "[Navio Command] start_download | id={} format={} url={} no_playlist={:?}",
+    id, format, url, no_playlist
   );
 
   // 1. Resolve and create the system Downloads/Navio Player folder path
@@ -148,14 +149,20 @@ pub async fn start_download(
       cmd.arg("-f").arg(&format);
     }
 
+    if no_playlist.unwrap_or(true) {
+      cmd.arg("--no-playlist");
+    } else {
+      cmd.arg("--yes-playlist");
+    }
+
     cmd
       .arg("-o")
       .arg(output_template.to_string_lossy().to_string())
       .arg("--ffmpeg-location")
       .arg(bin_dir.to_string_lossy().to_string())
-      .arg("--merge-output-format")
-      .arg("webm")
       .arg("--newline")
+      .arg("--concurrent-fragments")
+      .arg("3")
       .stdout(Stdio::piped())
       .stderr(Stdio::piped());
 
@@ -192,17 +199,23 @@ pub async fn start_download(
       .stderr
       .take()
       .expect("Failed to open process stderr stream");
-    let mut reader = BufReader::new(stdout).lines();
 
     // Spawn async background task to read stderr, print it, and capture the last error line
     let last_err = Arc::new(Mutex::new(String::new()));
     let last_err_clone = last_err.clone();
     tauri::async_runtime::spawn(async move {
-      let mut err_reader = BufReader::new(stderr).lines();
-      while let Ok(Some(line)) = err_reader.next_line().await {
+      let mut err_reader = BufReader::new(stderr);
+      let mut err_bytes = Vec::new();
+      while let Ok(n) = err_reader.read_until(b'\n', &mut err_bytes).await {
+        if n == 0 {
+          break;
+        }
+        let line = String::from_utf8_lossy(&err_bytes).into_owned();
+        let line = line.trim_end_matches(['\r', '\n']).to_string();
         eprintln!("[yt-dlp stderr] {}", line);
         let mut lock = last_err_clone.lock().unwrap();
         *lock = line;
+        err_bytes.clear();
       }
     });
 
@@ -215,6 +228,20 @@ pub async fn start_download(
     // Regex to extract output destination file names
     let dest_regex = regex::Regex::new(r"\[download\]\s+Destination:\s+(.+)").unwrap();
     let merge_regex = regex::Regex::new(r"\[Merger\]\s+Merging\s+formats\s+into\s+(.+)").unwrap();
+    let already_downloaded_regex =
+      regex::Regex::new(r"\[download\]\s+(.+?)\s+has\s+already\s+been\s+downloaded").unwrap();
+
+    // Regexes for playlist detection and tracking
+    let playlist_item_regex =
+      regex::Regex::new(r"\[download\]\s+Downloading\s+item\s+(\d+)\s+of\s+(\d+)").unwrap();
+    let playlist_title_regex =
+      regex::Regex::new(r"\[download\]\s+Downloading\s+playlist:\s+(.+)").unwrap();
+    let playlist_title_alt_regex =
+      regex::Regex::new(r"Downloading\s+playlist\s+(.+?)\s+-\s+add").unwrap();
+
+    let mut current_item = 0;
+    let mut total_items = 0;
+    let mut playlist_title: Option<String> = None;
 
     // Set initial fallback title using URL substring
     let mut current_title = url.replace("https://", "").replace("www.", "");
@@ -225,8 +252,18 @@ pub async fn start_download(
     // Keep track of the final downloaded absolute path (for indexing reference)
     let downloaded_path = Arc::new(Mutex::new(None));
 
+    let mut reader = BufReader::new(stdout);
+    let mut line_bytes = Vec::new();
+
     // Read subprocess stdout line by line
-    while let Ok(Some(line)) = reader.next_line().await {
+    while let Ok(n) = reader.read_until(b'\n', &mut line_bytes).await {
+      if n == 0 {
+        break; // EOF
+      }
+      let line = String::from_utf8_lossy(&line_bytes).into_owned();
+      let line = line.trim_end_matches(['\r', '\n']).to_string();
+      line_bytes.clear();
+
       println!("[yt-dlp stdout] {}", line);
 
       let mut payload_update = false;
@@ -234,6 +271,21 @@ pub async fn start_download(
       let mut size = "â€”".to_string();
       let mut speed = "â€”".to_string();
       let mut eta = "â€”".to_string();
+
+      // Check for playlist item index
+      if let Some(caps) = playlist_item_regex.captures(&line) {
+        if let (Ok(curr), Ok(tot)) = (caps[1].parse::<usize>(), caps[2].parse::<usize>()) {
+          current_item = curr;
+          total_items = tot;
+        }
+      }
+
+      // Check for playlist title
+      if let Some(caps) = playlist_title_regex.captures(&line) {
+        playlist_title = Some(caps[1].trim().to_string());
+      } else if let Some(caps) = playlist_title_alt_regex.captures(&line) {
+        playlist_title = Some(caps[1].trim().to_string());
+      }
 
       // Check for destination file name print
       if let Some(caps) = dest_regex.captures(&line) {
@@ -244,7 +296,7 @@ pub async fn start_download(
           .trim_matches(|c| c == '"' || c == '\'');
         *downloaded_path.lock().unwrap() = Some(PathBuf::from(full_path));
         if let Some(filename) = Path::new(full_path).file_name().and_then(|s| s.to_str()) {
-          current_title = filename.to_string();
+          current_title = clean_download_title(filename);
           payload_update = true;
         }
       }
@@ -258,7 +310,21 @@ pub async fn start_download(
           .trim_matches(|c| c == '"' || c == '\'');
         *downloaded_path.lock().unwrap() = Some(PathBuf::from(full_path));
         if let Some(filename) = Path::new(full_path).file_name().and_then(|s| s.to_str()) {
-          current_title = filename.to_string();
+          current_title = clean_download_title(filename);
+          payload_update = true;
+        }
+      }
+
+      // Check for already downloaded file skips
+      if let Some(caps) = already_downloaded_regex.captures(&line) {
+        let full_path = caps
+          .get(1)
+          .unwrap()
+          .as_str()
+          .trim_matches(|c| c == '"' || c == '\'');
+        *downloaded_path.lock().unwrap() = Some(PathBuf::from(full_path));
+        if let Some(filename) = Path::new(full_path).file_name().and_then(|s| s.to_str()) {
+          current_title = clean_download_title(filename);
           payload_update = true;
         }
       }
@@ -280,10 +346,16 @@ pub async fn start_download(
 
       // Broadcast progress event tick to the frontend
       if payload_update {
+        let display_title = if total_items > 0 && current_item > 0 {
+          format!("[{}/{}] {}", current_item, total_items, current_title)
+        } else {
+          current_title.clone()
+        };
+
         let tick = DownloadPayload {
           id: id.clone(),
           url: url.clone(),
-          title: current_title.clone(),
+          title: display_title,
           progress,
           speed,
           eta,
@@ -343,10 +415,16 @@ pub async fn start_download(
       }
 
       // Emit final completion payload
+      let final_title = if let Some(ref plt) = playlist_title {
+        format!("Playlist: {}", plt)
+      } else {
+        current_title.clone()
+      };
+
       let success_payload = DownloadPayload {
         id,
         url,
-        title: current_title,
+        title: final_title,
         progress: 100.0,
         speed: "Finished".to_string(),
         eta: "00:00".to_string(),
@@ -383,4 +461,63 @@ pub async fn start_download(
 
   println!("[Navio Command] start_download accepted | worker queued");
   Ok(())
+}
+
+#[derive(serde::Serialize)]
+pub struct UrlTypeInfo {
+  pub is_playlist: bool,
+  pub has_video: bool,
+}
+
+#[tauri::command]
+pub fn check_url_type(url: String) -> Result<UrlTypeInfo, String> {
+  let mut is_playlist = false;
+  let mut has_video = false;
+
+  if let Ok(parsed) = reqwest::Url::parse(&url) {
+    let host = parsed.host_str().unwrap_or("");
+    let is_youtube = host.contains("youtube.com") || host.contains("youtu.be");
+    if is_youtube {
+      if host.contains("youtu.be") {
+        has_video = !parsed.path().trim_start_matches('/').is_empty();
+      }
+      for (key, _) in parsed.query_pairs() {
+        if key == "list" {
+          is_playlist = true;
+        }
+        if key == "v" {
+          has_video = true;
+        }
+      }
+    } else {
+      let path = parsed.path().to_lowercase();
+      if path.contains("/playlist/")
+        || path.contains("/album/")
+        || path.contains("/set/")
+        || path.contains("/sets/")
+      {
+        is_playlist = true;
+      } else {
+        has_video = true;
+      }
+    }
+  }
+
+  Ok(UrlTypeInfo {
+    is_playlist,
+    has_video,
+  })
+}
+
+fn clean_download_title(filename: &str) -> String {
+  let mut title = filename.to_string();
+  if let Ok(format_re) = regex::Regex::new(r"\.f\d+") {
+    title = format_re.replace_all(&title, "").into_owned();
+  }
+  let title_without_suffixes = title.replace(".part", "").replace(".ytdl", "");
+  Path::new(&title_without_suffixes)
+    .file_stem()
+    .and_then(|s| s.to_str())
+    .map(|s| s.to_string())
+    .unwrap_or(title_without_suffixes)
 }

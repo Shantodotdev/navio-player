@@ -17,6 +17,8 @@ interface SelectProps {
   placeholder?: string;
   /// Additional custom CSS classes for layout positioning.
   className?: string;
+  /// Disable dropdown selection interactions.
+  disabled?: boolean;
 }
 
 export function Select({
@@ -25,6 +27,7 @@ export function Select({
   onChange,
   placeholder = "Select an option...",
   className = "",
+  disabled = false,
 }: SelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -57,8 +60,9 @@ export function Select({
       {/* Trigger Button */}
       <button
         type="button"
+        disabled={disabled}
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-black/40 hover:bg-black/60 border border-white/5 hover:border-white/10 rounded-lg text-sm text-gray-300 font-medium transition-all text-left focus:outline-none focus:border-brand/40 focus:ring-1 focus:ring-brand/40 shadow-inner cursor-pointer"
+        className="w-full flex items-center justify-between gap-2 px-4 py-2.5 bg-black/40 hover:bg-black/60 border border-white/5 hover:border-white/10 rounded-lg text-sm text-gray-300 font-medium transition-all text-left focus:outline-none focus:border-brand/40 focus:ring-1 focus:ring-brand/40 shadow-inner cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className="truncate">{displayText}</span>
         <ChevronDown
