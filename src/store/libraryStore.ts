@@ -1,14 +1,18 @@
 import { create } from "zustand";
 import type { Track } from "./playerStore";
 
-interface Playlist {
+export interface Playlist {
+  id: string;
   name: string;
-  track_ids: string[];
+  tracks: Track[];
 }
 
 interface LibraryDatabase {
   scanned_directories: string[];
   tracks: Track[];
+}
+
+interface PlaylistsDatabase {
   playlists: Playlist[];
 }
 
@@ -58,6 +62,15 @@ interface LibraryState {
    * sequentially to synchronize the catalog with any file additions/deletions on the host disk.
    */
   rescanAll: () => Promise<void>;
+
+  createPlaylist: (name: string) => Promise<void>;
+  renamePlaylist: (playlistId: string, name: string) => Promise<void>;
+  deletePlaylist: (playlistId: string) => Promise<void>;
+  addTrackToPlaylist: (playlistId: string, track: Track) => Promise<void>;
+  removeTrackFromPlaylist: (
+    playlistId: string,
+    trackId: string,
+  ) => Promise<void>;
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -74,12 +87,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     try {
       const { invoke } = await import("@tauri-apps/api/core");
 
-      // Load current catalog from appdata json database
+      // Load the library and independent playlist catalog from AppData.
       const db = await invoke<LibraryDatabase>("get_library");
+      const playlistsDb = await invoke<PlaylistsDatabase>("get_playlists");
       set({
         tracks: db.tracks || [],
         scannedDirs: db.scanned_directories || [],
-        playlists: db.playlists || [],
+        playlists: playlistsDb.playlists || [],
         isInitialized: true,
       });
     } catch (err) {
@@ -116,7 +130,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           set({
             tracks: db.tracks || [],
             scannedDirs: db.scanned_directories || [],
-            playlists: db.playlists || [],
             isInitialized: true,
           });
         }
@@ -178,7 +191,6 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         set({
           tracks: latestDb.tracks || [],
           scannedDirs: latestDb.scanned_directories || [],
-          playlists: latestDb.playlists || [],
         });
       }
     } catch (err) {
@@ -187,4 +199,92 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set({ isLoading: false });
     }
   },
+
+  createPlaylist: async (name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) throw new Error("Playlist name cannot be empty.");
+    if (
+      get().playlists.some(
+        (playlist) => playlist.name.toLowerCase() === trimmedName.toLowerCase(),
+      )
+    ) {
+      throw new Error("A playlist with this name already exists.");
+    }
+
+    const playlist: Playlist = {
+      id: createPlaylistId(),
+      name: trimmedName,
+      tracks: [],
+    };
+    await savePlaylists([...get().playlists, playlist]);
+    set((state) => ({ playlists: [...state.playlists, playlist] }));
+  },
+
+  renamePlaylist: async (playlistId, name) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) throw new Error("Playlist name cannot be empty.");
+    if (
+      get().playlists.some(
+        (playlist) =>
+          playlist.id !== playlistId &&
+          playlist.name.toLowerCase() === trimmedName.toLowerCase(),
+      )
+    ) {
+      throw new Error("A playlist with this name already exists.");
+    }
+
+    const updated = get().playlists.map((playlist) =>
+      playlist.id === playlistId
+        ? { ...playlist, name: trimmedName }
+        : playlist,
+    );
+    await savePlaylists(updated);
+    set({ playlists: updated });
+  },
+
+  deletePlaylist: async (playlistId) => {
+    const updated = get().playlists.filter(
+      (playlist) => playlist.id !== playlistId,
+    );
+    await savePlaylists(updated);
+    set({ playlists: updated });
+  },
+
+  addTrackToPlaylist: async (playlistId, track) => {
+    const updated = get().playlists.map((playlist) => {
+      if (
+        playlist.id !== playlistId ||
+        playlist.tracks.some((item) => item.id === track.id)
+      ) {
+        return playlist;
+      }
+      return { ...playlist, tracks: [...playlist.tracks, { ...track }] };
+    });
+    await savePlaylists(updated);
+    set({ playlists: updated });
+  },
+
+  removeTrackFromPlaylist: async (playlistId, trackId) => {
+    const updated = get().playlists.map((playlist) =>
+      playlist.id === playlistId
+        ? {
+            ...playlist,
+            tracks: playlist.tracks.filter((track) => track.id !== trackId),
+          }
+        : playlist,
+    );
+    await savePlaylists(updated);
+    set({ playlists: updated });
+  },
 }));
+
+async function savePlaylists(playlists: Playlist[]): Promise<void> {
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("save_playlists", { db: { playlists } });
+}
+
+function createPlaylistId(): string {
+  return typeof crypto.randomUUID === "function"
+    ? crypto.randomUUID()
+    : `playlist-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}

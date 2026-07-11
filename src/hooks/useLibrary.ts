@@ -18,6 +18,11 @@ export function useLibrary() {
     addFolder,
     deleteFolder,
     rescanAll,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist,
   } = useLibraryStore();
 
   // Automatically fetch database catalog on hook initialization (skips if already cached)
@@ -71,6 +76,11 @@ export function useLibrary() {
     addFolder,
     deleteFolder,
     rescanAll,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist,
     stats,
     recentTracks,
   };

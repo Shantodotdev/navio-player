@@ -1,198 +1,159 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { usePlayerStore } from "../store/playerStore";
-import type { Track } from "../store/playerStore";
-import { ListMusic, Play, Music, Film, Clock } from "lucide-react";
+import { Clock, Film, ListMusic, Music, Pencil, Play } from "lucide-react";
 import { CreatePlaylistModal } from "../components/CreatePlaylistModal";
+import { PlaylistEditorModal } from "../components/PlaylistEditorModal";
+import { useLibrary } from "../hooks/useLibrary";
+import type { Playlist } from "../store/libraryStore";
+import { usePlayerStore } from "../store/playerStore";
 
 export const Route = createFileRoute("/playlists")({
   component: PlaylistsView,
 });
 
-interface MockPlaylist {
-  id: string;
-  name: string;
-  description: string;
-  tracks: Track[];
-}
-
-const MOCK_PLAYLISTS: MockPlaylist[] = [
-  {
-    id: "pl-1",
-    name: "Favorite Audio Mix",
-    description: "Energetic rock tracks for workout sessions.",
-    tracks: [
-      {
-        id: "lib-1",
-        name: "Lost in the Echo.mp3",
-        path: "",
-        title: "Lost in the Echo",
-        duration_secs: 205,
-        media_type: "audio",
-      },
-      {
-        id: "lib-4",
-        name: "Numb.mp3",
-        path: "",
-        title: "Numb",
-        duration_secs: 187,
-        media_type: "audio",
-      },
-    ],
-  },
-  {
-    id: "pl-2",
-    name: "Relaxing Tracks",
-    description: "Calm acoustic songs for evening relaxation.",
-    tracks: [
-      {
-        id: "lib-2",
-        name: "Starlight.mp3",
-        path: "",
-        title: "Starlight",
-        duration_secs: 240,
-        media_type: "audio",
-      },
-    ],
-  },
-  {
-    id: "pl-3",
-    name: "Video Playlist",
-    description: "Promotional trailers and introductory videos.",
-    tracks: [
-      {
-        id: "lib-3",
-        name: "Introductory Video.mp4",
-        path: "",
-        title: "Introductory Video",
-        duration_secs: 120,
-        media_type: "video",
-      },
-      {
-        id: "lib-5",
-        name: "Inception Trailer.mp4",
-        path: "",
-        title: "Inception Trailer",
-        duration_secs: 154,
-        media_type: "video",
-      },
-    ],
-  },
-];
-
 function PlaylistsView() {
   const { playTrack } = usePlayerStore();
-  const [playlists, setPlaylists] = useState<MockPlaylist[]>(MOCK_PLAYLISTS);
+  const {
+    tracks,
+    playlists,
+    createPlaylist,
+    renamePlaylist,
+    deletePlaylist,
+    addTrackToPlaylist,
+    removeTrackFromPlaylist,
+  } = useLibrary();
+  const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
-  const handlePlayPlaylist = (playlist: MockPlaylist) => {
-    if (playlist.tracks.length > 0) {
-      playTrack(playlist.tracks[0], playlist.tracks);
-    }
+  const activePlaylist = editingPlaylist
+    ? (playlists.find((playlist) => playlist.id === editingPlaylist.id) ?? null)
+    : null;
+
+  const openEditor = (playlist: Playlist) => {
+    setEditingPlaylist(playlist);
+    setIsEditorOpen(true);
   };
 
-  const handleCreatePlaylist = (name: string, description: string) => {
-    const newPl: MockPlaylist = {
-      id: `pl-${Date.now()}`,
-      name: name,
-      description: description || "Custom user playlist.",
-      tracks: [],
-    };
-    setPlaylists((prev) => [...prev, newPl]);
+  const handlePlayPlaylist = (playlist: Playlist) => {
+    const availableTracks = playlist.tracks.filter(
+      (track) => track.path.trim().length > 0,
+    );
+    if (availableTracks.length > 0)
+      playTrack(availableTracks[0], availableTracks);
   };
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400">
-      {/* Top Header */}
-      <div className="flex justify-between items-center mb-10">
-        <div>
-          <h1 className="text-4xl font-medium text-zinc-200 tracking-tight">
-            Playlists
-          </h1>
+    <div className="mx-auto max-w-6xl select-none space-y-6 font-medium text-zinc-400">
+      <div className="mb-10 flex items-center justify-between">
+        <h1 className="text-4xl font-medium tracking-tight text-zinc-200">
+          Playlists
+        </h1>
+        <CreatePlaylistModal onPlaylistCreated={createPlaylist} />
+      </div>
+
+      {playlists.length === 0 ? (
+        <div className="flex flex-col items-center justify-center space-y-5 rounded-2xl border border-white/5 bg-panel-bg/10 p-8 py-24 text-center">
+          <div className="rounded-full border border-brand/10 bg-brand/5 p-5 text-brand-light shadow-lg shadow-brand-glow">
+            <ListMusic size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-medium text-zinc-200">
+              No playlists yet
+            </h2>
+            <p className="max-w-md text-sm leading-relaxed text-zinc-400">
+              Create a playlist and add tracks from your local library.
+            </p>
+          </div>
         </div>
-
-        <CreatePlaylistModal onPlaylistCreated={handleCreatePlaylist} />
-      </div>
-
-      {/* Playlists Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {playlists.map((pl) => {
-          const totalDuration = pl.tracks.reduce(
-            (acc, t) => acc + t.duration_secs,
-            0,
-          );
-
-          return (
-            <div
-              key={pl.id}
-              className="bg-panel-bg/20 hover:bg-panel-bg/40 border border-white/5 hover:border-brand/20 p-6 flex flex-col justify-between group transition-all duration-300 relative overflow-hidden h-52 rounded-lg"
-            >
-              {/* Corner Glow Overlay */}
-              <div className="absolute -top-12 -right-12 w-24 h-24 bg-brand/5 group-hover:bg-brand/10 filter blur-xl rounded-full transition-all"></div>
-
-              <div>
-                <div className="flex justify-between items-start">
-                  <div className="w-12 h-12 rounded-xl bg-brand/10 border border-brand/20 text-brand-light flex items-center justify-center shadow-inner">
-                    <ListMusic size={22} />
+      ) : (
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {playlists.map((playlist) => {
+            const totalDuration = playlist.tracks.reduce(
+              (total, track) => total + track.duration_secs,
+              0,
+            );
+            const audioCount = playlist.tracks.filter(
+              (track) => track.media_type === "audio",
+            ).length;
+            const videoCount = playlist.tracks.filter(
+              (track) => track.media_type === "video",
+            ).length;
+            return (
+              <div
+                key={playlist.id}
+                className="group relative flex h-52 flex-col justify-between overflow-hidden rounded-lg border border-white/5 bg-panel-bg/20 p-6 transition-all duration-300 hover:border-brand/20 hover:bg-panel-bg/40"
+              >
+                <div className="absolute -right-12 -top-12 h-24 w-24 rounded-full bg-brand/5 blur-xl transition-all group-hover:bg-brand/10" />
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand-light">
+                      <ListMusic size={22} />
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEditor(playlist)}
+                        className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 opacity-0 transition-all hover:bg-white/10 hover:text-zinc-200 group-hover:opacity-100"
+                        aria-label={`Edit ${playlist.name}`}
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handlePlayPlaylist(playlist)}
+                        disabled={playlist.tracks.length === 0}
+                        className="flex h-10 w-10 items-center justify-center rounded-full bg-brand text-zinc-200 opacity-0 shadow-md shadow-brand-glow transition-all group-hover:opacity-100 hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        <Play size={16} fill="currentColor" />
+                      </button>
+                    </div>
                   </div>
-
-                  {/* Play Button Hover overlay */}
-                  <button
-                    onClick={() => handlePlayPlaylist(pl)}
-                    disabled={pl.tracks.length === 0}
-                    className="w-10 h-10 rounded-full bg-brand text-zinc-200 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-all shadow-md shadow-brand-glow transform hover:scale-105 active:scale-95 disabled:opacity-40 disabled:scale-100 disabled:cursor-not-allowed cursor-pointer"
-                  >
-                    <Play
-                      size={16}
-                      fill="currentColor"
-                      className="translate-x-[0.5px]"
-                    />
-                  </button>
-                </div>
-
-                <div className="mt-4">
-                  <h3 className="text-lg font-medium text-zinc-200 truncate group-hover:text-brand-light transition-colors">
-                    {pl.name}
+                  <h3 className="mt-4 truncate text-lg font-medium text-zinc-200">
+                    {playlist.name}
                   </h3>
-                  <p className="text-sm text-zinc-450 mt-1 line-clamp-2 pr-4 font-medium">
-                    {pl.description}
-                  </p>
+                </div>
+                <div className="flex items-center gap-4 border-t border-white/5 pt-3 text-sm text-zinc-500">
+                  <span className="flex items-center gap-1.5">
+                    <Music size={14} />
+                    {audioCount}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <Film size={14} />
+                    {videoCount}
+                  </span>
+                  <span className="ml-auto flex items-center gap-1.5">
+                    <Clock size={14} />
+                    {formatDuration(totalDuration)}
+                  </span>
                 </div>
               </div>
+            );
+          })}
+        </div>
+      )}
 
-              {/* Footer specs details */}
-              <div className="flex items-center gap-4 text-sm text-zinc-500 pt-3 border-t border-white/5 mt-4">
-                <span className="flex items-center gap-1.5">
-                  <Music size={14} />
-                  <span>
-                    {pl.tracks.filter((t) => t.media_type === "audio").length}{" "}
-                    audio
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <Film size={14} />
-                  <span>
-                    {pl.tracks.filter((t) => t.media_type === "video").length}{" "}
-                    video
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5 ml-auto">
-                  <Clock size={14} />
-                  <span>{formatDuration(totalDuration)}</span>
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+      {activePlaylist && (
+        <PlaylistEditorModal
+          playlist={activePlaylist}
+          libraryTracks={tracks}
+          isOpen={isEditorOpen}
+          onClose={() => setIsEditorOpen(false)}
+          onExited={() => setEditingPlaylist(null)}
+          onRename={(name) => renamePlaylist(activePlaylist.id, name)}
+          onDelete={() => deletePlaylist(activePlaylist.id)}
+          onAddTrack={(track) => addTrackToPlaylist(activePlaylist.id, track)}
+          onRemoveTrack={(trackId) =>
+            removeTrackFromPlaylist(activePlaylist.id, trackId)
+          }
+        />
+      )}
     </div>
   );
 }
 
-function formatDuration(secs: number): string {
-  if (!secs || isNaN(secs)) return "0m";
-  const m = Math.floor(secs / 60);
-  if (m < 60) return `${m}m`;
-  const h = Math.floor(m / 60);
-  const remainingM = m % 60;
-  return `${h}h ${remainingM}m`;
+function formatDuration(seconds: number): string {
+  if (!seconds || Number.isNaN(seconds)) return "0m";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
