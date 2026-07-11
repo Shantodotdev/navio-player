@@ -9,6 +9,10 @@ export interface Playlist {
 
 interface LibraryDatabase {
   scanned_directories: string[];
+}
+
+interface LibraryView {
+  scanned_directories: string[];
   tracks: Track[];
 }
 
@@ -21,7 +25,7 @@ interface PlaylistsDatabase {
  * This state is shared globally across the frontend.
  */
 interface LibraryState {
-  /** The list of all recursively indexed tracks (audio and video files). */
+  /** The current media files derived from the configured folders. */
   tracks: Track[];
   /** The list of absolute paths of directories scanned by the user. */
   scannedDirs: string[];
@@ -33,8 +37,7 @@ interface LibraryState {
   isLoading: boolean;
 
   /**
-   * Loads the current library catalog state (scanned directories, playlists, and tracks)
-   * from the database file on disk (`$APPDATA/navio-player/library.json`).
+   * Loads configured folders from disk and derives current tracks from the filesystem.
    * Skips loading if the state is already initialized, unless `force` is set to true.
    *
    * @param force Set true to ignore initialization cache and load fresh from disk.
@@ -43,25 +46,18 @@ interface LibraryState {
 
   /**
    * Opens the native OS directory picker. If a directory is selected, this triggers
-   * the backend lofty scanner, merges the indexed files, saves the database to disk,
-   * and updates the local store state.
+   * the backend scanner, saves only the folder configuration, and updates the live view.
    */
   addFolder: () => Promise<void>;
 
   /**
-   * Removes a directory from the allowed registry list, purges all indexed tracks
-   * belonging to that path from the catalog, writes the changes to disk, and updates state.
+   * Removes a directory from the configured folder list, writes the change to disk,
+   * and removes its current files from the live view.
    * Keeps playlists intact.
    *
    * @param folder The absolute folder path string to remove.
    */
   deleteFolder: (folder: string) => Promise<void>;
-
-  /**
-   * Iterates through all previously scanned directories and invokes the backend lofty scanner
-   * sequentially to synchronize the catalog with any file additions/deletions on the host disk.
-   */
-  rescanAll: () => Promise<void>;
 
   createPlaylist: (name: string) => Promise<void>;
   renamePlaylist: (playlistId: string, name: string) => Promise<void>;
@@ -87,15 +83,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     try {
       const { invoke } = await import("@tauri-apps/api/core");
 
-      // Load the library and independent playlist catalog from AppData.
-      const db = await invoke<LibraryDatabase>("get_library");
-      const playlistsDb = await invoke<PlaylistsDatabase>("get_playlists");
+      // Load the live library view and independent playlist catalog from AppData.
+      const db = await invoke<LibraryView>("get_library");
       set({
         tracks: db.tracks || [],
         scannedDirs: db.scanned_directories || [],
-        playlists: playlistsDb.playlists || [],
         isInitialized: true,
       });
+
+      try {
+        const playlistsDb = await invoke<PlaylistsDatabase>("get_playlists");
+        set({ playlists: playlistsDb.playlists || [] });
+      } catch (err) {
+        console.warn("Failed to load playlists database from disk:", err);
+      }
     } catch (err) {
       console.warn("Failed to load library database from disk:", err);
     } finally {
@@ -122,7 +123,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           set({ isLoading: true });
 
           // Invoke the heavy I/O lofty recursive scanner in Rust
-          const db = await invoke<LibraryDatabase>("scan_folder", {
+          const db = await invoke<LibraryView>("scan_folder", {
             folderPath,
           });
 
@@ -145,17 +146,11 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     try {
       const { invoke } = await import("@tauri-apps/api/core");
 
-      // Fetch full database from disk to retrieve playlists (prevents losing playlist relations)
-      const db = await invoke<LibraryDatabase>("get_library");
-
-      const { scannedDirs, tracks } = get();
+      const { scannedDirs } = get();
 
       // Filter out the selected folder and all tracks residing within its path
       const updatedDirs = scannedDirs.filter((d) => d !== folder);
-      const updatedTracks = tracks.filter((t) => !t.path.startsWith(folder));
-
-      db.scanned_directories = updatedDirs;
-      db.tracks = updatedTracks;
+      const db: LibraryDatabase = { scanned_directories: updatedDirs };
 
       // Persist the changes to disk
       await invoke("save_library", { db });
@@ -163,40 +158,10 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       // Update memory store state
       set({
         scannedDirs: updatedDirs,
-        tracks: updatedTracks,
+        tracks: get().tracks.filter((track) => !isPathWithinDirectory(track.path, folder)),
       });
     } catch (err) {
       console.error("Error deleting folder from library catalog:", err);
-    }
-  },
-
-  rescanAll: async () => {
-    const { scannedDirs } = get();
-    if (scannedDirs.length === 0) return;
-
-    set({ isLoading: true });
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      let latestDb = null;
-
-      // Rescan folders sequentially to keep IO and RAM usage flat
-      for (const dir of scannedDirs) {
-        latestDb = await invoke<LibraryDatabase>("scan_folder", {
-          folderPath: dir,
-        });
-      }
-
-      // Sync the latest scanned results
-      if (latestDb) {
-        set({
-          tracks: latestDb.tracks || [],
-          scannedDirs: latestDb.scanned_directories || [],
-        });
-      }
-    } catch (err) {
-      console.error("Error rescanning library directories:", err);
-    } finally {
-      set({ isLoading: false });
     }
   },
 
@@ -287,4 +252,16 @@ function createPlaylistId(): string {
   return typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : `playlist-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/** Checks folder membership without treating similarly named sibling folders as children. */
+function isPathWithinDirectory(filePath: string, directoryPath: string): boolean {
+  const normalizedFile = filePath.replace(/[\\/]+$/, "").toLowerCase();
+  const normalizedDirectory = directoryPath.replace(/[\\/]+$/, "").toLowerCase();
+
+  return (
+    normalizedFile === normalizedDirectory ||
+    normalizedFile.startsWith(`${normalizedDirectory}\\`) ||
+    normalizedFile.startsWith(`${normalizedDirectory}/`)
+  );
 }

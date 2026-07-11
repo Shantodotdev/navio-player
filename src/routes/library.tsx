@@ -10,7 +10,6 @@ import {
   Music,
   Film,
   Trash2,
-  RefreshCcw,
   X,
   Grid2X2,
   List,
@@ -24,8 +23,7 @@ export const Route = createFileRoute("/library")({
 /** Renders the searchable local media catalog and its list/grid presentations. */
 function LibraryView() {
   const { playTrack, streamPort, streamToken } = usePlayerStore();
-  const { tracks, scannedDirs, addFolder, deleteFolder, rescanAll } =
-    useLibrary();
+  const { tracks, scannedDirs, addFolder, deleteFolder } = useLibrary();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "audio" | "video">(
@@ -61,14 +59,6 @@ function LibraryView() {
         </div>
 
         <div className="flex gap-3">
-          <button
-            onClick={rescanAll}
-            disabled={scannedDirs.length === 0}
-            className="flex items-center gap-2 px-4.5 py-2.5 bg-card-bg hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-xl text-base transition-all text-zinc-400 hover:text-zinc-200 font-medium cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <RefreshCcw size={16} />
-            <span>Rescan all</span>
-          </button>
           <button
             onClick={addFolder}
             className="flex items-center gap-2 px-4.5 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
