@@ -47,6 +47,10 @@ body {
   -webkit-user-select: none;
 }
 
+button {
+  cursor: pointer;
+}
+
 html:fullscreen,
 body:fullscreen,
 #app:fullscreen,
