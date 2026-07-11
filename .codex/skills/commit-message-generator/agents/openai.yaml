@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Message Generator"
+  short_description: "Draft granular repo-style commit messages."
+  default_prompt: "Use $commit-message-generator to group my current changes into granular commits and draft messages in this repository's style."
