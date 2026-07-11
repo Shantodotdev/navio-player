@@ -366,32 +366,38 @@ pub async fn extract_audio_track(
 /// overwrite a newer explicit language selection with stale UI state. Passing
 /// `subtitle_enabled = false` records an intentional "subtitles off" choice.
 /// Videos shorter than ten minutes retain preferences but never retain progress.
+pub struct TheaterStateUpdate {
+  pub path: String,
+  pub duration_secs: f64,
+  pub position_secs: f64,
+  pub audio_stream_index: Option<u32>,
+  pub subtitle_stream_index: Option<u32>,
+  pub subtitle_enabled: bool,
+  pub save_preferences: bool,
+}
+
 pub async fn save_theater_state(
   app_handle: &AppHandle,
   allowed_directories: &Arc<Mutex<HashSet<PathBuf>>>,
   cache: &MediaCache,
-  path: String,
-  duration_secs: f64,
-  position_secs: f64,
-  audio_stream_index: Option<u32>,
-  subtitle_stream_index: Option<u32>,
-  subtitle_enabled: bool,
-  save_preferences: bool,
+  update: TheaterStateUpdate,
 ) -> Result<(), String> {
-  let media_path = validate_media_path(path, allowed_directories)?;
+  let media_path = validate_media_path(update.path, allowed_directories)?;
   let fingerprint = media_fingerprint(&media_path)?;
   cache
     .update_media_entry(app_handle, &fingerprint, &media_path, |entry| {
-      entry.resume_position_secs = if duration_secs >= MIN_RESUMABLE_VIDEO_DURATION_SECS {
-        position_secs.max(0.0)
+      entry.resume_position_secs = if update.duration_secs >= MIN_RESUMABLE_VIDEO_DURATION_SECS {
+        update.position_secs.max(0.0)
       } else {
         0.0
       };
-      if save_preferences {
-        entry.preferred_audio_stream_index = audio_stream_index;
+      if update.save_preferences {
+        entry.preferred_audio_stream_index = update.audio_stream_index;
         entry.subtitle_preference_set = true;
-        entry.preferred_subtitle_stream_index =
-          subtitle_enabled.then_some(subtitle_stream_index).flatten();
+        entry.preferred_subtitle_stream_index = update
+          .subtitle_enabled
+          .then_some(update.subtitle_stream_index)
+          .flatten();
       }
     })
     .await

@@ -86,6 +86,7 @@ pub async fn cancel_media_preparation(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 pub async fn save_theater_state(
   path: String,
   duration_secs: f64,
@@ -101,13 +102,15 @@ pub async fn save_theater_state(
     &app_handle,
     &state.allowed_directories,
     &state.media_cache,
-    path,
-    duration_secs,
-    position_secs,
-    audio_stream_index,
-    subtitle_stream_index,
-    subtitle_enabled,
-    save_preferences,
+    media_tools::TheaterStateUpdate {
+      path,
+      duration_secs,
+      position_secs,
+      audio_stream_index,
+      subtitle_stream_index,
+      subtitle_enabled,
+      save_preferences,
+    },
   )
   .await
 }
