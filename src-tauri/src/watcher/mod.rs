@@ -4,7 +4,7 @@ use crate::library;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashSet;
 use std::path::PathBuf;
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use tokio::sync::mpsc;
 
 mod runtime;

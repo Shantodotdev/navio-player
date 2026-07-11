@@ -375,37 +375,7 @@ pub async fn start_download(
     );
 
     if success {
-      // Index the download folder to find the new track immediately
-      let cache_dir = app_handle_clone.path().app_cache_dir().unwrap_or_default();
-      let allowed_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm"];
-
-      let scanned_items = tokio::task::spawn_blocking(move || {
-        library::scan_dir_recursive(&download_dir, &cache_dir, &allowed_extensions)
-      })
-      .await
-      .unwrap_or_default();
-      println!(
-        "[Navio Downloader] Post-download library scan completed | id={} items={}",
-        id,
-        scanned_items.len()
-      );
-
-      if let Ok(mut db) = library::load_db(&app_handle_clone) {
-        for new_item in scanned_items {
-          if let Some(pos) = db.tracks.iter().position(|t| t.path == new_item.path) {
-            db.tracks[pos] = new_item;
-          } else {
-            db.tracks.push(new_item);
-          }
-        }
-        let _ = library::save_db(&app_handle_clone, &db);
-        println!(
-          "[Navio Downloader] Library DB updated after download | id={}",
-          id
-        );
-      }
-
-      // Notify database change globally to force reload frontend catalog
+      // A live library refresh will discover the download if its folder is configured.
       println!(
         "[Navio Event] emit library-updated | source=downloader id={}",
         id
