@@ -1,6 +1,17 @@
 import { create } from "zustand";
 import type { Track } from "./playerStore";
 
+interface Playlist {
+  name: string;
+  track_ids: string[];
+}
+
+interface LibraryDatabase {
+  scanned_directories: string[];
+  tracks: Track[];
+  playlists: Playlist[];
+}
+
 /**
  * Interface representing the state and actions of our local media library catalog.
  * This state is shared globally across the frontend.
@@ -11,7 +22,7 @@ interface LibraryState {
   /** The list of absolute paths of directories scanned by the user. */
   scannedDirs: string[];
   /** List of custom user-defined playlists. */
-  playlists: any[];
+  playlists: Playlist[];
   /** Flag showing if the library has been loaded from disk at least once in this session. */
   isInitialized: boolean;
   /** True when a background I/O database operation (saving or directory scanning) is active. */
@@ -64,11 +75,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { invoke } = await import("@tauri-apps/api/core");
 
       // Load current catalog from appdata json database
-      const db = await invoke<{
-        scanned_directories: string[];
-        tracks: Track[];
-        playlists: any[];
-      }>("get_library");
+      const db = await invoke<LibraryDatabase>("get_library");
       set({
         tracks: db.tracks || [],
         scannedDirs: db.scanned_directories || [],
@@ -101,11 +108,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           set({ isLoading: true });
 
           // Invoke the heavy I/O lofty recursive scanner in Rust
-          const db = await invoke<{
-            scanned_directories: string[];
-            tracks: Track[];
-            playlists: any[];
-          }>("scan_folder", {
+          const db = await invoke<LibraryDatabase>("scan_folder", {
             folderPath,
           });
 
@@ -130,11 +133,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       const { invoke } = await import("@tauri-apps/api/core");
 
       // Fetch full database from disk to retrieve playlists (prevents losing playlist relations)
-      const db = await invoke<{
-        scanned_directories: string[];
-        tracks: Track[];
-        playlists: any[];
-      }>("get_library");
+      const db = await invoke<LibraryDatabase>("get_library");
 
       const { scannedDirs, tracks } = get();
 
@@ -169,11 +168,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       // Rescan folders sequentially to keep IO and RAM usage flat
       for (const dir of scannedDirs) {
-        latestDb = await invoke<{
-          scanned_directories: string[];
-          tracks: Track[];
-          playlists: any[];
-        }>("scan_folder", {
+        latestDb = await invoke<LibraryDatabase>("scan_folder", {
           folderPath: dir,
         });
       }

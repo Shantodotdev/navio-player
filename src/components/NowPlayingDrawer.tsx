@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -325,7 +326,7 @@ export function NowPlayingDrawer() {
   }, [alternateAudioUrl, isPlaying, volume]);
 
   useEffect(() => {
-    const path = currentTrack?.path;
+    const path = currentTrackPath;
     return () => {
       if (persistTimer.current !== null) {
         window.clearTimeout(persistTimer.current);
@@ -392,10 +393,10 @@ export function NowPlayingDrawer() {
     nextTrack();
   };
 
-  const enterFullscreen = () => {
+  const enterFullscreen = useCallback(() => {
     const target = isTheaterOpen ? theaterRef.current : videoRef.current;
     void target?.requestFullscreen().catch(() => undefined);
-  };
+  }, [isTheaterOpen]);
 
   const openWatch = () => {
     if (!isVideo) return;
@@ -446,7 +447,14 @@ export function NowPlayingDrawer() {
 
     window.addEventListener("keydown", handleKeyboard);
     return () => window.removeEventListener("keydown", handleKeyboard);
-  }, [isPlaying, isTheaterOpen, setCurrentTime, setIsPlaying, setTheaterOpen]);
+  }, [
+    enterFullscreen,
+    isPlaying,
+    isTheaterOpen,
+    setCurrentTime,
+    setIsPlaying,
+    setTheaterOpen,
+  ]);
 
   const mediaPlayer = (
     <video

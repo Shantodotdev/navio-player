@@ -40,7 +40,7 @@ export function PlayerBar() {
         try {
           const { convertFileSrc } = await import("@tauri-apps/api/core");
           setCoverUrl(convertFileSrc(currentTrack.cover_cache_path!));
-        } catch (err) {
+        } catch {
           setCoverUrl("");
         }
       };

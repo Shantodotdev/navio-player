@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Minus, Square, X } from "lucide-react";
+import type { Window } from "@tauri-apps/api/window";
 
 // Check if we are running inside the Tauri shell environment
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
 export function Titlebar() {
-  const [appWindow, setAppWindow] = useState<any>(null);
+  const [appWindow, setAppWindow] = useState<Window | null>(null);
 
   // Dynamically load Tauri APIs only if running within the desktop container
   useEffect(() => {
