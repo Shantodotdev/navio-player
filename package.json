@@ -9,6 +9,7 @@
     "dev": "vite dev --port 3000",
     "generate-routes": "tsr generate",
     "build": "vite build",
+    "build:tauri": "npm run build && node scripts/prepare-tauri-entry.mjs",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "preview": "vite preview",
