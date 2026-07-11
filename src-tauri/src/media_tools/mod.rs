@@ -29,6 +29,16 @@ use assets::*;
 use models::*;
 use persistence::*;
 
+/// Prevent media helper processes from opening a console window on Windows.
+///
+/// Tauri's release binary is a GUI application, but child executables such as
+/// FFmpeg can still create a visible console unless this flag is applied to
+/// each process before it is spawned.
+pub(super) fn hide_console_window(command: &mut Command) {
+  #[cfg(windows)]
+  command.creation_flags(0x08000000);
+}
+
 pub use models::{EmbeddedTrack, MediaCache, MediaTools, TheaterMediaInfo, VideoTrackInfo};
 pub use operations::{
   extract_audio_track, extract_subtitle_track, get_video_thumbnail, inspect_video_tracks,

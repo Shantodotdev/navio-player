@@ -21,7 +21,9 @@ pub async fn inspect_video_tracks(
   } else {
     let tools = ensure_media_tools(app_handle).await?;
     let parsed = if let Some(ffprobe_path) = tools.ffprobe_path {
-      let output = Command::new(ffprobe_path)
+      let mut command = Command::new(ffprobe_path);
+      hide_console_window(&mut command);
+      let output = command
         .args([
           "-v",
           "error",
@@ -174,7 +176,9 @@ async fn inspect_streams_with_ffmpeg(
   ffmpeg_path: &Path,
   media_path: &Path,
 ) -> Result<FfprobeOutput, String> {
-  let output = Command::new(ffmpeg_path)
+  let mut command = Command::new(ffmpeg_path);
+  hide_console_window(&mut command);
+  let output = command
     .args(["-hide_banner", "-i"])
     .arg(media_path)
     .output()
@@ -252,6 +256,7 @@ async fn run_ffmpeg(
   mut cancel: oneshot::Receiver<()>,
   output_path: &Path,
 ) -> Result<(), String> {
+  hide_console_window(&mut command);
   command.kill_on_drop(true);
   let child = command
     .spawn()
