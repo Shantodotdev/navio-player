@@ -2,6 +2,8 @@
 
 ## Project
 
+This project is directed and developed under the name Ardio, but always refer to it as Navio in user-facing text, code comments, documentation, and conversations.
+
 Navio Player is a local-first desktop media player and downloader. It is built as a Tauri 2 application with a Vite/TanStack Start SPA frontend and a Rust backend.
 
 The frontend uses React 19, TypeScript, TanStack Router, Tailwind CSS 4, Zustand, and Vidstack. The Rust backend handles local library scanning, JSON persistence, media streaming, Tauri commands, and downloader operations.
@@ -56,6 +58,7 @@ For small tasks, read this file and the affected code.
 
 - Keep strict TypeScript enabled and use `import type` for type-only imports.
 - Use the `function` keyword for named React components and functions. Arrow functions are fine for callbacks and small local transformations.
+- Whenever creating or changing a TypeScript function or React component, add or update a meaningful doc comment and relevant inline comments explaining non-obvious behavior.
 - Prefer components that are focused and reusable; keep route-specific composition in the route file or a nearby component.
 - Use Zustand for shared client state and component state for local UI state.
 - Keep media/player state behavior centralized in the existing stores and media helpers; do not duplicate playback state in unrelated components.
@@ -75,6 +78,7 @@ For small tasks, read this file and the affected code.
 - Keep streaming behavior compatible with HTTP range requests so audio/video seeking continues to work.
 - Prefer typed Tauri command inputs and outputs with clear error handling; do not silently swallow backend failures.
 - Format Rust changes with `cargo fmt`. Use `cargo clippy` or Rust tests for major backend changes when the toolchain is available.
+- Whenever creating or changing a Rust function, add or update a meaningful Rust doc comment and relevant inline comments explaining non-obvious behavior.
 - Do not hand-edit `Cargo.lock`; update it through Cargo when dependency changes are requested.
 
 ## Commands
