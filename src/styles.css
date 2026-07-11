@@ -69,6 +69,45 @@ body:fullscreen,
   height: auto;
 }
 
+@keyframes playback-feedback-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  16% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+.playback-feedback {
+  animation: playback-feedback-in 700ms ease-out both;
+}
+
+.playback-feedback-side {
+  position: absolute;
+}
+
+.playback-feedback--rewind {
+  left: calc(25% - 48px);
+  top: calc(50% - 48px);
+}
+
+.playback-feedback--forward {
+  left: calc(75% - 48px);
+  top: calc(50% - 48px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .playback-feedback {
+    animation-duration: 1ms;
+  }
+}
+
 .theater-progress {
   appearance: none;
   height: 4px;

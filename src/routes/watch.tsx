@@ -8,6 +8,8 @@ import {
   Pause,
   Play,
   Rewind,
+  RotateCcw,
+  RotateCw,
   Volume2,
   VolumeX,
   X,
@@ -35,6 +37,68 @@ const emptyTrackInfo: VideoTrackInfo = {
   subtitle_tracks: [],
 };
 
+type PlaybackFeedbackKind = "play" | "pause" | "rewind" | "forward";
+
+type PlaybackFeedback = {
+  id: number;
+  kind: PlaybackFeedbackKind;
+};
+
+/** Renders the visual treatment for one playback feedback state. */
+function PlaybackFeedbackIcon({ kind }: { kind: PlaybackFeedbackKind }) {
+  if (kind === "play") {
+    return <Play size={60} fill="currentColor" className="" />;
+  }
+
+  if (kind === "pause") {
+    return <Pause size={60} fill="currentColor" />;
+  }
+
+  if (kind === "rewind") {
+    return (
+      <div className="relative grid place-items-center">
+        <RotateCcw size={48} strokeWidth={2.2} />
+        <span className="absolute text-base font-semibold tracking-tight">
+          10
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative grid place-items-center">
+      <RotateCw size={48} strokeWidth={2.2} />
+      <span className="absolute text-base font-semibold tracking-tight">
+        10
+      </span>
+    </div>
+  );
+}
+
+/** Renders one feedback control with center or side positioning based on its action. */
+function PlaybackFeedbackOverlay({
+  kind,
+  animated = false,
+}: {
+  kind: PlaybackFeedbackKind;
+  animated?: boolean;
+}) {
+  const isSkip = kind === "rewind" || kind === "forward";
+
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-40 grid place-items-center"
+      aria-hidden="true"
+    >
+      <div
+        className={`${animated ? "playback-feedback" : ""} ${isSkip ? `playback-feedback-side ${kind === "rewind" ? "playback-feedback--rewind" : "playback-feedback--forward"}` : ""} grid h-24 w-24 place-items-center rounded-full bg-black/55 text-white shadow-2xl backdrop-blur-md`}
+      >
+        <PlaybackFeedbackIcon kind={kind} />
+      </div>
+    </div>
+  );
+}
+
 export const Route = createFileRoute("/watch")({
   component: WatchView,
 });
@@ -45,6 +109,8 @@ function WatchView() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const alternateAudioRef = useRef<HTMLAudioElement>(null);
   const hideControlsTimer = useRef<number | null>(null);
+  const feedbackTimer = useRef<number | null>(null);
+  const feedbackId = useRef(0);
   const activeAudioRequest = useRef<string | null>(null);
   const activeSubtitleRequest = useRef<string | null>(null);
   const lastPlayerUpdate = useRef(0);
@@ -52,6 +118,8 @@ function WatchView() {
   const persistTimer = useRef<number | null>(null);
   const subtitleCursor = useRef(-1);
   const [showControls, setShowControls] = useState(true);
+  const [playbackFeedback, setPlaybackFeedback] =
+    useState<PlaybackFeedback | null>(null);
   const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
   const [trackInfo, setTrackInfo] = useState<VideoTrackInfo>(emptyTrackInfo);
   const [subtitleUrl, setSubtitleUrl] = useState<string | null>(null);
@@ -184,8 +252,7 @@ function WatchView() {
           info.audio_tracks.find((track) => track.is_default) ??
           info.audio_tracks[0];
         const preferredAudio = info.audio_tracks.find(
-          (track) =>
-            track.stream_index === info.preferred_audio_stream_index,
+          (track) => track.stream_index === info.preferred_audio_stream_index,
         );
         const audioTrack = preferredAudio ?? defaultAudio;
         setSelectedAudio(audioTrack?.stream_index ?? null);
@@ -385,6 +452,14 @@ function WatchView() {
     };
   }, [isPlaying, showControls]);
 
+  useEffect(() => {
+    return () => {
+      if (feedbackTimer.current !== null) {
+        window.clearTimeout(feedbackTimer.current);
+      }
+    };
+  }, []);
+
   const revealControls = () => setShowControls(true);
 
   const showTrackMenu = (menu: "audio" | "subtitles") => {
@@ -401,13 +476,30 @@ function WatchView() {
     menuCloseTimer.current = window.setTimeout(() => setOpenMenu(null), 180);
   };
 
+  /** Shows short-lived Netflix-style feedback for the latest player action. */
+  const showPlaybackFeedback = (kind: PlaybackFeedbackKind) => {
+    if (feedbackTimer.current !== null) {
+      window.clearTimeout(feedbackTimer.current);
+    }
+
+    feedbackId.current += 1;
+    setPlaybackFeedback({ id: feedbackId.current, kind });
+    feedbackTimer.current = window.setTimeout(() => {
+      setPlaybackFeedback(null);
+      feedbackTimer.current = null;
+    }, 700);
+  };
+
+  /** Toggles the video and keeps the visual feedback aligned with the media element. */
   const togglePlayback = () => {
     const media = videoRef.current;
     if (!media) return;
 
     if (media.paused) {
+      showPlaybackFeedback("play");
       void media.play().catch((error) => console.warn("Play failed:", error));
     } else {
+      showPlaybackFeedback("pause");
       media.pause();
     }
   };
@@ -430,6 +522,7 @@ function WatchView() {
     await navigate({ to: "/library" });
   };
 
+  /** Moves playback by a relative number of seconds and announces the direction onscreen. */
   const seekBy = (seconds: number) => {
     const media = videoRef.current;
     if (!media) return;
@@ -442,6 +535,7 @@ function WatchView() {
     if (alternateAudioRef.current)
       alternateAudioRef.current.currentTime = nextTime;
     setCurrentTime(nextTime);
+    showPlaybackFeedback(seconds < 0 ? "rewind" : "forward");
   };
 
   const toggleFullscreen = async () => {
@@ -588,7 +682,7 @@ function WatchView() {
 
     if (event.key === " " || event.key.toLowerCase() === "k") {
       event.preventDefault();
-      setIsPlaying(!isPlaying);
+      togglePlayback();
     } else if (event.key === "ArrowLeft" || event.key.toLowerCase() === "j") {
       event.preventDefault();
       seekBy(-10);
@@ -763,7 +857,7 @@ function WatchView() {
               </button>
               <button
                 type="button"
-                onClick={() => setIsPlaying(!isPlaying)}
+                onClick={togglePlayback}
                 aria-label={isPlaying ? "Pause video" : "Play video"}
                 className="grid h-14 w-14 place-items-center rounded-full bg-white text-black hover:bg-brand-light hover:text-white transition-colors cursor-pointer"
               >
@@ -906,6 +1000,12 @@ function WatchView() {
           <p className="max-w-4xl whitespace-pre-line rounded-md bg-black/75 px-4 py-2 text-xl font-medium leading-snug text-white shadow-lg">
             {activeSubtitleText}
           </p>
+        </div>
+      )}
+
+      {playbackFeedback && (
+        <div key={playbackFeedback.id} className="contents">
+          <PlaybackFeedbackOverlay kind={playbackFeedback.kind} animated />
         </div>
       )}
 
