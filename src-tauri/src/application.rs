@@ -87,6 +87,7 @@ pub fn run() {
       commands::get_stream_port,
       commands::get_stream_config,
       commands::inspect_video_tracks,
+      commands::get_video_thumbnail,
       commands::extract_subtitle_track,
       commands::extract_audio_track,
       commands::cancel_media_preparation,

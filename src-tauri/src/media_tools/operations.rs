@@ -106,6 +106,65 @@ pub async fn inspect_video_tracks(
   })
 }
 
+/// Creates or reuses a small JPEG still for one authorized video file.
+///
+/// The cache key includes the source path, size, and modification time, so a
+/// replaced video receives a fresh thumbnail without reading the full file.
+pub async fn get_video_thumbnail(
+  app_handle: &AppHandle,
+  allowed_directories: &Arc<Mutex<HashSet<PathBuf>>>,
+  path: String,
+) -> Result<String, String> {
+  let media_path = validate_media_path(path, allowed_directories)?;
+  let fingerprint = media_fingerprint(&media_path)?;
+  let thumbnail_directory = theater_cache_root(app_handle)?.join("thumbnails");
+  tokio::fs::create_dir_all(&thumbnail_directory)
+    .await
+    .map_err(|error| format!("Could not create the thumbnail cache: {}", error))?;
+
+  let output_path = thumbnail_directory.join(format!("{}.jpg", fingerprint));
+  if output_path.is_file() {
+    allowed_directories
+      .lock()
+      .unwrap()
+      .insert(thumbnail_directory);
+    return Ok(output_path.to_string_lossy().to_string());
+  }
+
+  let tools = ensure_media_tools(app_handle).await?;
+  let temporary_path = temporary_output_path(&output_path);
+  let mut command = Command::new(tools.ffmpeg_path);
+  command
+    .args(["-y", "-ss", "1", "-i"])
+    .arg(&media_path)
+    .args([
+      "-frames:v",
+      "1",
+      "-vf",
+      "scale='min(640,iw)':-2",
+      "-q:v",
+      "5",
+      "-an",
+    ])
+    .arg(&temporary_path);
+
+  // Thumbnail generation is deliberately a one-shot operation. The frontend
+  // displays the existing icon while this completes and never plays the source.
+  run_ffmpeg(command, oneshot::channel().1, &temporary_path).await?;
+  tokio::fs::rename(&temporary_path, &output_path)
+    .await
+    .map_err(|error| format!("Could not finalize video thumbnail: {}", error))?;
+
+  // The existing authenticated media server serves the JPEG to the WebView.
+  // Only this managed cache directory is added, never an arbitrary user path.
+  allowed_directories
+    .lock()
+    .unwrap()
+    .insert(thumbnail_directory);
+
+  Ok(output_path.to_string_lossy().to_string())
+}
+
 /// Discovers stream metadata by parsing FFmpeg's standard input summary.
 ///
 /// FFmpeg exits unsuccessfully when invoked without an output, but its stderr

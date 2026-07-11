@@ -36,6 +36,16 @@ pub async fn inspect_video_tracks(
   .await
 }
 
+/// Returns a cached still image for an authorized library video.
+#[tauri::command]
+pub async fn get_video_thumbnail(
+  path: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<String, String> {
+  media_tools::get_video_thumbnail(&app_handle, &state.allowed_directories, path).await
+}
+
 #[tauri::command]
 pub async fn extract_subtitle_track(
   path: String,

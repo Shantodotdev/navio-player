@@ -31,7 +31,7 @@ use persistence::*;
 
 pub use models::{EmbeddedTrack, MediaCache, MediaTools, TheaterMediaInfo, VideoTrackInfo};
 pub use operations::{
-  extract_audio_track, extract_subtitle_track, inspect_video_tracks, save_theater_state,
-  TheaterStateUpdate,
+  extract_audio_track, extract_subtitle_track, get_video_thumbnail, inspect_video_tracks,
+  save_theater_state, TheaterStateUpdate,
 };
 pub use persistence::ensure_media_tools;
