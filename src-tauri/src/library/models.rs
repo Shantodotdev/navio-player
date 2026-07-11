@@ -31,6 +31,47 @@ pub struct MediaItem {
 pub struct LibraryDb {
   /// Directories that the user has added to their scanned catalog.
   pub scanned_directories: Vec<String>,
-  /// Flattened list of all scanned media tracks.
+}
+
+/// A transient library response assembled from the current filesystem state.
+///
+/// Tracks are intentionally excluded from `LibraryDb`; this view is returned
+/// to the renderer but is never persisted as the library database.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct LibraryView {
+  /// Directories configured by the user for live scanning.
+  pub scanned_directories: Vec<String>,
+  /// Media currently present inside the configured directories.
   pub tracks: Vec<MediaItem>,
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn legacy_track_records_are_ignored_when_loading_library_configuration() {
+    let json = r#"{
+      "scanned_directories": ["C:\\Media"],
+      "tracks": [{"id":"old","path":"C:\\Media\\old.mp4"}]
+    }"#;
+
+    let db: LibraryDb = serde_json::from_str(json).expect("legacy JSON should remain readable");
+
+    assert_eq!(db.scanned_directories, vec!["C:\\Media"]);
+  }
+
+  #[test]
+  fn persisted_library_configuration_contains_no_track_array() {
+    let db = LibraryDb {
+      scanned_directories: vec!["C:\\Media".to_string()],
+    };
+
+    let json = serde_json::to_value(db).expect("library configuration should serialize");
+
+    assert_eq!(
+      json,
+      serde_json::json!({"scanned_directories": ["C:\\Media"]})
+    );
+  }
 }

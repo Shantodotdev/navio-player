@@ -7,12 +7,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tauri::Manager;
-use uuid::Uuid;
 
 mod models;
 mod scanner;
 mod storage;
 
-pub use models::{LibraryDb, MediaItem};
-pub use scanner::{process_media_file, scan_dir_recursive};
+pub use models::{LibraryDb, LibraryView, MediaItem};
+pub use scanner::build_library_view;
 pub use storage::{load_db, save_db};

@@ -1,5 +1,30 @@
 use super::*;
 
+const SUPPORTED_EXTENSIONS: [&str; 10] = [
+  "mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm", "avi", "mov",
+];
+
+/// Builds a transient library view from the current contents of every saved folder.
+pub fn build_library_view(db: &LibraryDb, app_cache_dir: &Path) -> LibraryView {
+  let mut tracks = Vec::new();
+
+  for directory in &db.scanned_directories {
+    let path = PathBuf::from(directory);
+    if path.is_dir() {
+      tracks.extend(scan_dir_recursive(
+        &path,
+        app_cache_dir,
+        &SUPPORTED_EXTENSIONS,
+      ));
+    }
+  }
+
+  LibraryView {
+    scanned_directories: db.scanned_directories.clone(),
+    tracks,
+  }
+}
+
 /// Recursively scans a system directory tree for supported media extensions.
 ///
 /// # Arguments
@@ -57,7 +82,7 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
     return None;
   };
 
-  let id = Uuid::new_v4().to_string();
+  let id = stable_media_id(path);
   let mut title = None;
   let mut duration_secs = 0.0;
   let mut cover_cache_path = None;
@@ -113,6 +138,16 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
     media_type: media_type.to_string(),
     cover_cache_path,
   })
+}
+
+/// Produces a stable client identity for a file path without persisting the path in the library DB.
+fn stable_media_id(path: &Path) -> String {
+  use std::collections::hash_map::DefaultHasher;
+  use std::hash::{Hash, Hasher};
+
+  let mut hasher = DefaultHasher::new();
+  path.to_string_lossy().hash(&mut hasher);
+  format!("media-{:016x}", hasher.finish())
 }
 
 /// Parses video headers to read duration (header-only, low-RAM, lightweight).
