@@ -158,16 +158,23 @@ pub fn toggle_theater_fullscreen(app_handle: tauri::AppHandle) -> Result<bool, S
   set_theater_fullscreen(app_handle, next_fullscreen)
 }
 
-/// Tauri command to retrieve the user's media library catalog.
+/// Retrieves a live media view assembled from the currently configured folders.
 #[tauri::command]
-pub fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryDb, String> {
+pub async fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryView, String> {
   let db = library::load_db(&app_handle)?;
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|e| e.to_string())?;
+  let view = tokio::task::spawn_blocking(move || library::build_library_view(&db, &cache_dir))
+    .await
+    .map_err(|e| e.to_string())?;
   println!(
     "[Navio Command] get_library | tracks={} scanned_dirs={}",
-    db.tracks.len(),
-    db.scanned_directories.len()
+    view.tracks.len(),
+    view.scanned_directories.len()
   );
-  Ok(db)
+  Ok(view)
 }
 
 /// Retrieves the independent playlist catalog from AppData.
@@ -213,7 +220,7 @@ pub fn save_playlists(
   Ok(())
 }
 
-/// Tauri command to save user's media library catalog (tracks and scanned folders).
+/// Tauri command to save the user's scanned-folder configuration.
 #[tauri::command]
 pub fn save_library(
   app_handle: tauri::AppHandle,
@@ -221,8 +228,7 @@ pub fn save_library(
   db: library::LibraryDb,
 ) -> Result<(), String> {
   println!(
-    "[Navio Command] save_library | tracks={} scanned_dirs={}",
-    db.tracks.len(),
+    "[Navio Command] save_library | scanned_dirs={}",
     db.scanned_directories.len()
   );
 
@@ -246,6 +252,37 @@ pub fn save_library(
   }
 
   library::save_db(&app_handle, &db)?;
+  let playlist_directories = playlists::load_db(&app_handle)
+    .ok()
+    .map(|playlist_db| {
+      playlist_db
+        .playlists
+        .iter()
+        .flat_map(|playlist| playlist.tracks.iter())
+        .filter_map(|track| PathBuf::from(&track.path).parent().map(PathBuf::from))
+        .filter_map(|directory| directory.canonicalize().ok())
+        .collect::<HashSet<_>>()
+    })
+    .unwrap_or_default();
+  let app_cache_dir = app_handle.path().app_cache_dir().ok();
+  {
+    let mut allowed = state.allowed_directories.lock().unwrap();
+    allowed.retain(|directory| {
+      let is_library_directory = db
+        .scanned_directories
+        .iter()
+        .map(PathBuf::from)
+        .any(|configured| directory == &configured);
+      let is_playlist_directory = playlist_directories.contains(directory);
+      let is_app_cache = app_cache_dir
+        .as_ref()
+        .map(|cache| directory.starts_with(cache))
+        .unwrap_or(false);
+
+      is_library_directory || is_playlist_directory || is_app_cache
+    });
+    allowed.extend(db.scanned_directories.iter().map(PathBuf::from));
+  }
   println!("[Navio Command] save_library completed");
   Ok(())
 }
@@ -296,28 +333,31 @@ pub fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
   Ok(())
 }
 
-/// Tauri command to recursively scan a local directory and merge it with the database.
+/// Tauri command to add a local directory and return the complete live library view.
 /// Runs the heavy I/O scan in a background thread pool to keep the UI fluid.
 #[tauri::command]
 pub async fn scan_folder(
   folder_path: String,
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
-) -> Result<library::LibraryDb, String> {
+) -> Result<library::LibraryView, String> {
   println!("[Navio Command] scan_folder | folder={}", folder_path);
 
   let path = PathBuf::from(&folder_path);
-  if !path.exists() {
+  if !path.is_dir() {
     return Err("Selected folder does not exist.".to_string());
   }
+  let canonical_path = path
+    .canonicalize()
+    .map_err(|e| format!("Could not resolve selected folder: {}", e))?;
 
   // Authorize this folder path in the streaming server's allowlist
   {
     let mut allowed = state.allowed_directories.lock().unwrap();
-    allowed.insert(path.clone());
+    allowed.insert(canonical_path.clone());
     println!(
       "[Navio Server] Allowed scanned directory for streaming: {:?}",
-      path
+      canonical_path
     );
   }
 
@@ -326,60 +366,39 @@ pub async fn scan_folder(
     let mut watcher_opt = state.watcher.lock().unwrap();
     if let Some(ref mut watcher) = *watcher_opt {
       use notify::Watcher;
-      let _ = watcher.watch(&path, notify::RecursiveMode::Recursive);
-      println!("[Navio Watcher] Watching scanned directory: {:?}", path);
+      let _ = watcher.watch(&canonical_path, notify::RecursiveMode::Recursive);
+      println!(
+        "[Navio Watcher] Watching scanned directory: {:?}",
+        canonical_path
+      );
     }
   }
 
   // Load the current database state
   let mut db = library::load_db(&app_handle)?;
 
-  // Cleanup: Retain only existing tracks currently present on host disk (removes manually deleted files)
-  db.tracks.retain(|t| {
-    let p = std::path::Path::new(&t.path);
-    p.exists()
-  });
-
   // Add the path to the scanned directories catalog if not already present
-  let canonical_path = path.to_string_lossy().to_string();
+  let canonical_path = canonical_path.to_string_lossy().to_string();
   if !db.scanned_directories.contains(&canonical_path) {
     db.scanned_directories.push(canonical_path);
   }
 
-  // Scan the folder recursively in a blocking worker thread pool to keep UI responsive
+  // Persist only folder configuration; media membership is always derived from disk.
+  library::save_db(&app_handle, &db)?;
   let cache_dir = app_handle
     .path()
     .app_cache_dir()
     .map_err(|e| e.to_string())?;
-  let scanned_items = tokio::task::spawn_blocking(move || {
-    let allowed_extensions = ["mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm"];
-    library::scan_dir_recursive(&path, &cache_dir, &allowed_extensions)
-  })
-  .await
-  .map_err(|e| e.to_string())?;
+  let view = tokio::task::spawn_blocking(move || library::build_library_view(&db, &cache_dir))
+    .await
+    .map_err(|e| e.to_string())?;
   println!(
-    "[Navio Command] scan_folder completed filesystem scan | items={}",
-    scanned_items.len()
+    "[Navio Command] scan_folder returned live view | tracks={} scanned_dirs={}",
+    view.tracks.len(),
+    view.scanned_directories.len()
   );
 
-  // Merge scanned tracks (update metadata if path is already indexed, otherwise append)
-  for new_item in scanned_items {
-    if let Some(pos) = db.tracks.iter().position(|t| t.path == new_item.path) {
-      db.tracks[pos] = new_item;
-    } else {
-      db.tracks.push(new_item);
-    }
-  }
-
-  // Write the updated catalog state to disk
-  library::save_db(&app_handle, &db)?;
-  println!(
-    "[Navio Command] scan_folder saved library | tracks={} scanned_dirs={}",
-    db.tracks.len(),
-    db.scanned_directories.len()
-  );
-
-  Ok(db)
+  Ok(view)
 }
 
 use super::*;
