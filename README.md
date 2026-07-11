@@ -47,7 +47,7 @@ The frontend runs as a static Single Page Application (SPA) inside the Tauri Web
 The Rust backend performs security-checked file actions and system access.
 
 - **Local HTTP Stream Server**: Running on a dynamic localhost port (via `axum`), it streams local files securely with full HTTP Range request support to allow smooth seeking and scrubbing on both audio and video files.
-- **JSON Local Database**: Scanned folders, tracks, and playlists are stored in a file-based JSON database at `$APPDATA/navio-player/library.json` managed via Rust IPC commands.
+- **JSON Local Database**: Scanned folder configuration is stored at `$APPDATA/navio-player/library.json`; the current media list is derived from those folders at startup and on filesystem changes. Independent playlists are stored in `$APPDATA/navio-player/playlists.json`.
 - **Dynamic yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust downloads it dynamically to `$APPDATA/navio-player/bin/` on first launch. This allows users to auto-update the downloader (via `yt-dlp -U`) whenever platforms change their algorithms, without requiring a complete app reinstall.
 
 ---
