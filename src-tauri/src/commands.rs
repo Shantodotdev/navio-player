@@ -153,15 +153,57 @@ pub fn toggle_theater_fullscreen(app_handle: tauri::AppHandle) -> Result<bool, S
 pub fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryDb, String> {
   let db = library::load_db(&app_handle)?;
   println!(
-    "[Navio Command] get_library | tracks={} playlists={} scanned_dirs={}",
+    "[Navio Command] get_library | tracks={} scanned_dirs={}",
     db.tracks.len(),
-    db.playlists.len(),
     db.scanned_directories.len()
   );
   Ok(db)
 }
 
-/// Tauri command to save user's media library catalog (tracks, scanned folders, playlists).
+/// Retrieves the independent playlist catalog from AppData.
+///
+/// This command is separate from `get_library` so a library refresh cannot
+/// accidentally replace playlist snapshots with library-derived records.
+#[tauri::command]
+pub fn get_playlists(app_handle: tauri::AppHandle) -> Result<playlists::PlaylistsDb, String> {
+  let db = playlists::load_db(&app_handle)?;
+  println!(
+    "[Navio Command] get_playlists | playlists={} tracks={}",
+    db.playlists.len(),
+    db.playlists
+      .iter()
+      .map(|playlist| playlist.tracks.len())
+      .sum::<usize>()
+  );
+  Ok(db)
+}
+
+/// Saves the independent playlist catalog and authorizes existing playlist
+/// media directories.
+///
+/// Persistence is completed before the allowlist is updated. If validation or
+/// writing fails, the in-memory stream boundary is left unchanged and the
+/// frontend can keep its previous playlist state.
+#[tauri::command]
+pub fn save_playlists(
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+  db: playlists::PlaylistsDb,
+) -> Result<(), String> {
+  // `save_db` validates the complete replacement document before writing it.
+  // The same validated document is then used to update stream authorization,
+  // avoiding a mismatch between what is persisted and what can be streamed.
+  playlists::save_db(&app_handle, &db)?;
+  let authorized = playlists::authorize_stream_directories(&db, &state.allowed_directories);
+  println!(
+    "[Navio Command] save_playlists | playlists={} new_stream_dirs={}",
+    db.playlists.len(),
+    authorized
+  );
+  Ok(())
+}
+
+/// Tauri command to save user's media library catalog (tracks and scanned folders).
 #[tauri::command]
 pub fn save_library(
   app_handle: tauri::AppHandle,
@@ -169,9 +211,8 @@ pub fn save_library(
   db: library::LibraryDb,
 ) -> Result<(), String> {
   println!(
-    "[Navio Command] save_library | tracks={} playlists={} scanned_dirs={}",
+    "[Navio Command] save_library | tracks={} scanned_dirs={}",
     db.tracks.len(),
-    db.playlists.len(),
     db.scanned_directories.len()
   );
 

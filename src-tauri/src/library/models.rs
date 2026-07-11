@@ -22,22 +22,15 @@ pub struct MediaItem {
   pub cover_cache_path: Option<String>,
 }
 
-/// Represents a custom user-defined playlist.
-#[derive(Serialize, Deserialize, Clone, Debug, Default)]
-pub struct Playlist {
-  /// User-defined unique playlist name.
-  pub name: String,
-  /// Ordered list of MediaItem IDs belonging to this playlist.
-  pub track_ids: Vec<String>,
-}
-
-/// Represents the structured layout of our local database file (`library.json`).
+/// Represents the structured layout of the library database (`library.json`).
+///
+/// Playlists are intentionally absent from this model. They are persisted in
+/// `playlists.json` so removing a scanned folder cannot remove the user's
+/// independent playlist snapshots.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
 pub struct LibraryDb {
   /// Directories that the user has added to their scanned catalog.
   pub scanned_directories: Vec<String>,
   /// Flattened list of all scanned media tracks.
   pub tracks: Vec<MediaItem>,
-  /// List of custom playlists.
-  pub playlists: Vec<Playlist>,
 }

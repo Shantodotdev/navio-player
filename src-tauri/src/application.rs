@@ -48,8 +48,10 @@ pub fn run() {
         )?;
       }
 
-      // Bootstrap Phase: Load previous catalog from disk and authorize directories for streaming.
-      // This ensures that previously indexed music/video files are playable immediately on launch.
+      // Bootstrap phase: restore both independent catalogs before the first
+      // renderer request. Library directories authorize indexed files, while
+      // playlist directories authorize saved snapshots whose source folder may
+      // no longer be part of the library.
       let app_handle = app.handle().clone();
       let state = app.state::<AppState>();
       if let Ok(db) = library::load_db(&app_handle) {
@@ -61,6 +63,15 @@ pub fn run() {
         }
         println!(
           "[Navio App] Restored stream allowlist from library | dirs={}",
+          restored_dirs
+        );
+      }
+
+      if let Ok(db) = playlists::load_db(&app_handle) {
+        let restored_dirs =
+          playlists::authorize_stream_directories(&db, &state.allowed_directories);
+        println!(
+          "[Navio App] Restored stream allowlist from playlists | new_dirs={}",
           restored_dirs
         );
       }
@@ -84,6 +95,8 @@ pub fn run() {
       commands::toggle_theater_fullscreen,
       commands::get_library,
       commands::save_library,
+      commands::get_playlists,
+      commands::save_playlists,
       commands::scan_folder,
       downloader::command::start_download,
       downloader::command::check_url_type,

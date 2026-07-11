@@ -3,6 +3,7 @@ mod commands;
 mod downloader;
 mod library;
 mod media_tools;
+mod playlists;
 mod server;
 mod watcher;
 
