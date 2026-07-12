@@ -1,11 +1,18 @@
-//! Remote download setup, verification, and process orchestration.
+//! Remote download setup, verification, persistence, and process orchestration.
+//!
+//! The downloader is split by trust boundary rather than by UI screen:
+//! `models` defines durable data, `manager` owns local state and process
+//! controls, `command` supervises yt-dlp attempts, `tools` installs verified
+//! external binaries, `verification` validates those binaries, and `events`
+//! publishes committed state. This arrangement keeps filesystem deletion and
+//! process control in Rust while the frontend interacts only through typed Tauri
+//! commands and complete persisted-job events.
 
 use crate::{library, AppState};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
@@ -28,6 +35,8 @@ const FFMPEG_ZIP_SHA256: &str = "4348301b0d5e18174925e2022da1823aebbdb07282bbe9a
 
 pub(crate) mod command;
 mod events;
+mod manager;
+mod models;
 mod tools;
 mod verification;
 
@@ -35,4 +44,6 @@ use events::*;
 use tools::*;
 use verification::*;
 
+pub use manager::{DownloadControl, DownloadManager, StopAction};
+pub use models::{DownloadJob, DownloadRequest, DownloadStatus};
 pub use tools::ensure_ffmpeg_installed;
