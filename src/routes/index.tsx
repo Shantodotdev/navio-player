@@ -112,9 +112,6 @@ function DashboardView() {
                   <h4 className="text-base font-medium text-zinc-200 truncate">
                     {track.title || track.name}
                   </h4>
-                  <p className="text-sm text-zinc-400 truncate mt-0.5">
-                    {track.media_type}
-                  </p>
                 </div>
               </div>
 
@@ -186,9 +183,20 @@ function ToolbarCard({
   );
 }
 
+/** Formats dashboard durations as compact, human-readable units. */
 function formatTime(secs: number): string {
-  if (!secs || isNaN(secs)) return "0:00";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
+  if (!Number.isFinite(secs) || secs <= 0) return "0s";
+
+  const totalSeconds = Math.floor(secs);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  }
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
+  }
+  return `${seconds}s`;
 }
