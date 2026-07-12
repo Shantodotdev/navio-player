@@ -1,3 +1,12 @@
+//! Native Navio application composition and shared cross-module state.
+//!
+//! This crate deliberately keeps the browser-facing renderer thin: local file
+//! authorization, streaming tokens, filesystem watchers, media preparation,
+//! downloader persistence, and operating-system process control stay in Rust.
+//! `AppState` is the narrow shared surface exposed to Tauri commands. Its fields
+//! are long-lived services or guarded resources, never unvalidated renderer
+//! inputs; commands validate and narrow their own parameters before using them.
+
 mod application;
 mod commands;
 mod downloader;
@@ -18,6 +27,8 @@ use tokio::sync::oneshot;
 /// Global state managed by the Tauri application.
 /// Available to frontend commands via Tauri's State Manager.
 pub struct AppState {
+  /// Durable queue and live process controls for downloader jobs.
+  pub download_manager: downloader::DownloadManager,
   /// Set of directories allowed for file streaming.
   /// Scanned folders are added here to authorize file accesses.
   pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,

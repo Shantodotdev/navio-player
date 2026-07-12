@@ -1,3 +1,12 @@
+//! Installation and verification for Navio's pinned downloader executables.
+//!
+//! yt-dlp and FFmpeg are application-managed binaries rather than renderer
+//! dependencies. This module resolves them under AppData, bounds remote payload
+//! sizes, verifies the configured SHA-256 digest, and installs only verified
+//! bytes. Download-job status remains the responsibility of `command`; keeping
+//! that policy out of this module also lets theater playback reuse FFmpeg setup
+//! without creating a fictitious downloader card.
+
 /// Verifies if `yt-dlp` is installed in the local AppData binary bin directory.
 /// If the binary is missing, it downloads it on-demand from the official GitHub releases.
 ///
@@ -10,6 +19,7 @@ pub(super) async fn ensure_ytdlp_installed(
   app_handle: &AppHandle,
   download_id: &str,
 ) -> Result<PathBuf, String> {
+  let _ = download_id;
   // Resolve AppData/bin folder path
   let app_data = app_handle
     .path()
@@ -38,19 +48,6 @@ pub(super) async fn ensure_ytdlp_installed(
 
   // If not present or hash-mismatched, download the pinned binary release.
   if needs_install {
-    // Notify the UI that setup is starting
-    let setup_payload = DownloadPayload {
-      id: download_id.to_string(),
-      url: "".to_string(),
-      title: "Preparing download support...".to_string(),
-      progress: 0.0,
-      speed: "One-time setup".to_string(),
-      eta: "â€”".to_string(),
-      size: "â€”".to_string(),
-      status: "downloading".to_string(),
-    };
-    emit_download_progress(app_handle, setup_payload);
-
     let download_url = if cfg!(windows) {
       format!(
         "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp.exe",
@@ -101,6 +98,7 @@ pub async fn ensure_ffmpeg_installed(
   app_handle: &AppHandle,
   download_id: &str,
 ) -> Result<PathBuf, String> {
+  let _ = download_id;
   // Resolve AppData/bin folder path
   let app_data = app_handle
     .path()
@@ -132,19 +130,6 @@ pub async fn ensure_ffmpeg_installed(
 
   // If not present or not installed from the pinned archive, verify and extract it.
   if !is_verified_install {
-    // Notify the UI that setup is starting
-    let setup_payload = DownloadPayload {
-      id: download_id.to_string(),
-      url: "".to_string(),
-      title: "Preparing media processing...".to_string(),
-      progress: 0.0,
-      speed: "One-time setup".to_string(),
-      eta: "â€”".to_string(),
-      size: "â€”".to_string(),
-      status: "downloading".to_string(),
-    };
-    emit_download_progress(app_handle, setup_payload);
-
     let ffmpeg_url = if cfg!(target_os = "windows") {
       "https://github.com/ffbinaries/ffbinaries-prebuilt/releases/download/v4.4.1/ffmpeg-4.4.1-win-64.zip"
     } else if cfg!(target_os = "macos") {

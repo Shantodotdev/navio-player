@@ -1,3 +1,17 @@
+//! Navio desktop application bootstrap, capability wiring, and shutdown hooks.
+//!
+//! Startup creates the local streaming server before the WebView loads, restores
+//! filesystem authorization from persisted library data, starts the filesystem
+//! watcher, and registers every Tauri command. Downloader recovery is part of
+//! this bootstrap sequence: active records from an earlier process are marked
+//! interrupted before the renderer can display them, while cancelled staging
+//! directories are cleaned without touching completed media.
+//!
+//! Shutdown follows the inverse responsibility order. It first persists active
+//! download records as interrupted, then signals the local stream server. A
+//! forced OS termination may bypass this hook, which is why the downloader also
+//! performs the same recovery check at the next startup.
+
 use super::*;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -24,20 +38,30 @@ pub fn run() {
     tauri::async_runtime::block_on(async { server::start_server(server_state, shutdown_rx).await })
       .expect("Failed to initialize stream server");
 
-  let app_state = AppState {
-    allowed_directories,
-    stream_port: port,
-    stream_token,
-    shutdown_tx: Mutex::new(Some(shutdown_tx)),
-    watcher: Arc::new(Mutex::new(None)),
-    media_cache: media_tools::MediaCache::default(),
-  };
-
   // Build the Tauri application context
   let app = tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
-    .manage(app_state)
-    .setup(|app| {
+    .setup(move |app| {
+      let app_handle = app.handle().clone();
+      let download_manager = downloader::DownloadManager::load(&app_handle)?;
+      // A process handle cannot survive a restart. Convert durable active jobs
+      // before the renderer requests the queue so users can retry honestly.
+      download_manager.recover_interrupted()?;
+      // If the OS stopped Navio immediately after Cancel, this completes the
+      // promised destructive cleanup before the job history is displayed.
+      download_manager.cleanup_cancelled_staging(&app_handle)?;
+      let app_state = AppState {
+        download_manager,
+        allowed_directories: allowed_directories.clone(),
+        stream_port: port,
+        stream_token: stream_token.clone(),
+        shutdown_tx: Mutex::new(Some(shutdown_tx)),
+        watcher: Arc::new(Mutex::new(None)),
+        media_cache: media_tools::MediaCache::default(),
+      };
+      if !app.manage(app_state) {
+        return Err("Failed to register application state.".into());
+      }
       // In development environments, initialize the logger plugin
       if cfg!(debug_assertions) {
         println!("[Navio App] Installing debug logger plugin");
@@ -52,7 +76,6 @@ pub fn run() {
       // renderer request. Library directories authorize indexed files, while
       // playlist directories authorize saved snapshots whose source folder may
       // no longer be part of the library.
-      let app_handle = app.handle().clone();
       let state = app.state::<AppState>();
       if let Ok(db) = library::load_db(&app_handle) {
         let mut allowed = state.allowed_directories.lock().unwrap();
@@ -100,6 +123,11 @@ pub fn run() {
       commands::save_playlists,
       commands::scan_folder,
       downloader::command::start_download,
+      downloader::command::resume_download,
+      downloader::command::pause_download,
+      downloader::command::cancel_download,
+      downloader::command::get_downloads,
+      downloader::command::remove_download,
       downloader::command::check_url_type,
       commands::open_folder
     ])
@@ -113,6 +141,11 @@ pub fn run() {
       // The application is exiting. Trigger the graceful shutdown of the Axum server
       // so it frees the dynamic port cleanly.
       let state = app_handle.state::<AppState>();
+      if let Err(error) = state.download_manager.recover_interrupted() {
+        // Persisting interruption is best-effort during shutdown; `kill_on_drop`
+        // and the startup recovery path still cover forced process termination.
+        eprintln!("[Navio Downloader] failed to persist interrupted downloads on exit: {error}");
+      }
       let mut tx_opt = state.shutdown_tx.lock().unwrap();
       if let Some(tx) = tx_opt.take() {
         // Send empty tuple to oneshot trigger
