@@ -125,6 +125,12 @@ pub async fn save_theater_state(
   .await
 }
 
+/// Enters or leaves native fullscreen with a single Windows window transition.
+///
+/// TAO clamps maximized frameless windows to the taskbar-excluding work area.
+/// A maximized window temporarily needs TAO's native decoration marker to
+/// calculate against the complete monitor. Restored windows skip that workaround,
+/// and the marker is removed before fullscreen exit so no titlebar frame is painted.
 #[tauri::command]
 pub fn set_theater_fullscreen(
   app_handle: tauri::AppHandle,
@@ -134,20 +140,26 @@ pub fn set_theater_fullscreen(
     .get_webview_window("main")
     .ok_or_else(|| "Main window was not found.".to_string())?;
 
+  let is_fullscreen = window.is_fullscreen().map_err(|e| e.to_string())?;
+  if fullscreen == is_fullscreen {
+    return Ok(is_fullscreen);
+  }
+
   if fullscreen {
-    window.set_decorations(false).map_err(|e| e.to_string())?;
-    window.set_resizable(false).map_err(|e| e.to_string())?;
+    if window.is_maximized().map_err(|e| e.to_string())? {
+      window.set_decorations(true).map_err(|e| e.to_string())?;
+    }
     window.set_fullscreen(true).map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
   } else {
-    window.set_fullscreen(false).map_err(|e| e.to_string())?;
-    window.set_resizable(true).map_err(|e| e.to_string())?;
     window.set_decorations(false).map_err(|e| e.to_string())?;
+    window.set_fullscreen(false).map_err(|e| e.to_string())?;
   }
 
   window.is_fullscreen().map_err(|e| e.to_string())
 }
 
+/// Toggles theater fullscreen using the same state-preserving transition.
 #[tauri::command]
 pub fn toggle_theater_fullscreen(app_handle: tauri::AppHandle) -> Result<bool, String> {
   let window = app_handle

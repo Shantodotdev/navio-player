@@ -40,6 +40,9 @@ const emptyTrackInfo: VideoTrackInfo = {
 
 const playbackRates = [0.5, 1, 1.5, 2] as const;
 
+// Distinguishes a real watch-route exit from React's immediate development remount.
+let theaterMountGeneration = 0;
+
 type PlaybackFeedbackKind = "play" | "pause" | "rewind" | "forward";
 
 type PlaybackFeedback = {
@@ -170,6 +173,7 @@ function WatchView() {
   const activeSubtitleText = activeSubtitle.text;
 
   useEffect(() => {
+    const mountGeneration = ++theaterMountGeneration;
     setTheaterOpen(isVideo);
     stageRef.current?.focus();
     const media = videoRef.current;
@@ -193,11 +197,18 @@ function WatchView() {
       setTheaterOpen(false);
       clearMediaElement(media);
       if (isTauri) {
-        void import("@tauri-apps/api/core")
-          .then(({ invoke }) =>
-            invoke("set_theater_fullscreen", { fullscreen: false }),
-          )
-          .catch(() => undefined);
+        window.setTimeout(() => {
+          // React replays effects in development. A synchronous remount advances
+          // the generation and must not briefly pull the native window out of
+          // fullscreen between two otherwise identical watch mounts.
+          if (mountGeneration !== theaterMountGeneration) return;
+
+          void import("@tauri-apps/api/core")
+            .then(({ invoke }) =>
+              invoke("set_theater_fullscreen", { fullscreen: false }),
+            )
+            .catch(() => undefined);
+        }, 0);
       }
     };
   }, [clearMediaElement, isVideo, setMediaElement, setTheaterOpen]);
