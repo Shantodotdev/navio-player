@@ -11,10 +11,10 @@ import {
   MonitorPlay,
   Minimize2,
   Pause,
+  PanelRightClose,
   Play,
   Rewind,
   Volume2,
-  X,
 } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -574,7 +574,7 @@ export function NowPlayingDrawer() {
         }
       >
         <div>
-          <span className="text-sm font-medium text-brand-light">
+          <span className="text-base font-medium text-brand-light">
             Now playing
           </span>
           {currentTrack && (
@@ -587,9 +587,9 @@ export function NowPlayingDrawer() {
           type="button"
           onClick={() => setDrawerOpen(false)}
           aria-label="Close now playing"
-          className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+          className="p-1.5 rounded-lg  hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
-          <X size={15} />
+          <PanelRightClose size={20} />
         </button>
       </header>
 
