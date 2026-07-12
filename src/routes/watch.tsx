@@ -139,7 +139,6 @@ function WatchView() {
   const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
-  const [dismissNextUp, setDismissNextUp] = useState(false);
   const menuCloseTimer = useRef<number | null>(null);
 
   const {
@@ -155,8 +154,6 @@ function WatchView() {
     setTheaterOpen,
     setVolume,
     volume,
-    playlist,
-    playIndex,
     streamPort,
     streamToken,
   } = usePlayerStore();
@@ -164,11 +161,6 @@ function WatchView() {
   const isVideo = currentTrack?.media_type === "video";
   const duration = currentTrack?.duration_secs ?? 0;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const nextUp =
-    playlist.length > 1 && playIndex >= 0
-      ? playlist[(playIndex + 1) % playlist.length]
-      : null;
-  const isNearEnd = duration > 0 && currentTime >= Math.max(duration - 30, 15);
   const activeSubtitle = findActiveSubtitle(
     subtitleCues,
     currentTime,
@@ -226,7 +218,6 @@ function WatchView() {
     setIsPreparingAudio(false);
     setAudioError(null);
     setSubtitleError(null);
-    setDismissNextUp(false);
     subtitleCursor.current = -1;
     latestPlaybackTime.current = 0;
 
@@ -1084,37 +1075,6 @@ function WatchView() {
         </div>
       )}
 
-      {nextUp && isNearEnd && !dismissNextUp && (
-        <aside className="absolute bottom-32 right-8 z-30 w-80 overflow-hidden rounded-xl border border-white/10 bg-zinc-950/90 shadow-2xl backdrop-blur">
-          <div className="p-4">
-            <p className="text-xs font-medium uppercase tracking-wider text-white/50">
-              Up next
-            </p>
-            <p className="mt-2 line-clamp-2 text-base font-medium text-white">
-              {nextUp.title || nextUp.name}
-            </p>
-            <p className="mt-1 text-sm text-white/55">
-              Starts when this video ends
-            </p>
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={nextTrack}
-                className="rounded-md bg-white px-3 py-2 text-sm font-medium text-black hover:bg-brand-light hover:text-white transition-colors cursor-pointer"
-              >
-                Play now
-              </button>
-              <button
-                type="button"
-                onClick={() => setDismissNextUp(true)}
-                className="rounded-md bg-white/10 px-3 py-2 text-sm text-white hover:bg-white/15 transition-colors cursor-pointer"
-              >
-                Not now
-              </button>
-            </div>
-          </div>
-        </aside>
-      )}
     </main>
   );
 }
