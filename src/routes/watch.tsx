@@ -4,6 +4,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FastForward,
+  Gauge,
   Languages,
   Pause,
   Play,
@@ -36,6 +37,8 @@ const emptyTrackInfo: VideoTrackInfo = {
   audio_tracks: [],
   subtitle_tracks: [],
 };
+
+const playbackRates = [0.5, 1, 1.5, 2] as const;
 
 type PlaybackFeedbackKind = "play" | "pause" | "rewind" | "forward";
 
@@ -133,6 +136,8 @@ function WatchView() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState<"audio" | "subtitles" | null>(null);
   const [isMenuVisible, setIsMenuVisible] = useState(false);
+  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState<number>(1);
   const [subtitleError, setSubtitleError] = useState<string | null>(null);
   const [dismissNextUp, setDismissNextUp] = useState(false);
   const menuCloseTimer = useRef<number | null>(null);
@@ -433,6 +438,13 @@ function WatchView() {
     return () =>
       alternateAudio.removeEventListener("loadedmetadata", synchronize);
   }, [alternateAudioUrl, isPlaying, volume]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const alternateAudio = alternateAudioRef.current;
+    if (video) video.playbackRate = playbackRate;
+    if (alternateAudio) alternateAudio.playbackRate = playbackRate;
+  }, [alternateAudioUrl, playbackRate]);
 
   useEffect(() => {
     if (!showControls || !isPlaying) return;
@@ -923,6 +935,38 @@ function WatchView() {
                   background: `linear-gradient(to right, #c72c4e 0%, #c72c4e ${volume}%, #34343d ${volume}%, #34343d 100%)`,
                 }}
               />
+              <div
+                className="relative"
+                onMouseEnter={() => setIsSpeedMenuOpen(true)}
+                onMouseLeave={() => setIsSpeedMenuOpen(false)}
+              >
+                <button
+                  type="button"
+                  className="flex h-11 items-center gap-1.5 rounded-full px-3 text-sm font-medium tabular-nums text-white/75 hover:bg-white/10 hover:text-brand-light transition-colors cursor-pointer"
+                  aria-label="Playback speed"
+                  aria-expanded={isSpeedMenuOpen}
+                >
+                  <Gauge size={21} />
+                  <span>{playbackRate}x</span>
+                </button>
+                <div
+                  className={`absolute bottom-12 right-0 w-32 overflow-hidden rounded-xl border border-white/15 bg-black/70 p-2 shadow-2xl backdrop-blur-2xl transition-all duration-180 ease-out ${isSpeedMenuOpen ? "translate-y-0 scale-100 opacity-100" : "pointer-events-none translate-y-2 scale-95 opacity-0"}`}
+                >
+                  <p className="px-3 py-2 text-xs font-medium uppercase tracking-wider text-white/45">
+                    Speed
+                  </p>
+                  {playbackRates.map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      onClick={() => setPlaybackRate(rate)}
+                      className={`w-full rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer ${playbackRate === rate ? "bg-brand/20 text-brand-light" : "text-white/75 hover:bg-white/10"}`}
+                    >
+                      {rate}x
+                    </button>
+                  ))}
+                </div>
+              </div>
               <div
                 className="relative flex items-center gap-1"
                 onMouseEnter={() => showTrackMenu("subtitles")}
