@@ -119,7 +119,7 @@ export function PlayerBar() {
           {currentTrack?.media_type === "video" ? (
             <div
               aria-label="Video now playing"
-              className="w-full h-full grid place-items-center bg-brand/10 text-brand-light"
+              className="w-full h-full grid place-items-center bg-brand/10 text-purple-400"
             >
               <Film size={22} />
             </div>
@@ -131,7 +131,7 @@ export function PlayerBar() {
               className="w-full h-full object-cover"
             />
           ) : (
-            <Music size={22} className="text-zinc-400" />
+            <Music size={22} className="text-emerald-400" />
           )}
           {currentTrack && (
             <button

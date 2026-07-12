@@ -114,11 +114,11 @@ function PlaylistsView() {
                 </div>
                 <div className="flex items-center gap-4 border-t border-white/5 pt-3 text-sm text-zinc-500">
                   <span className="flex items-center gap-1.5">
-                    <Music size={14} />
+                    <Music size={14} className="text-emerald-400" />
                     {audioCount}
                   </span>
                   <span className="flex items-center gap-1.5">
-                    <Film size={14} />
+                    <Film size={14} className="text-purple-400" />
                     {videoCount}
                   </span>
                   <span className="ml-auto flex items-center gap-1.5">

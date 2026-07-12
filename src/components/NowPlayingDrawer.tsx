@@ -723,7 +723,7 @@ export function NowPlayingDrawer() {
         <div className="flex-1 grid place-items-center p-8 text-center">
           <div className="max-w-xs space-y-4">
             <div className="mx-auto w-16 h-16 rounded-2xl bg-brand/10 border border-brand/20 text-brand-light grid place-items-center">
-              <Music size={28} />
+              <Music size={28} className="text-emerald-400" />
             </div>
             <div className="space-y-1.5">
               <h2 className="text-lg font-medium text-zinc-200">
@@ -774,9 +774,9 @@ function Queue({
             >
               <div className="w-9 h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
                 {track.media_type === "video" ? (
-                  <Film size={13} className="text-zinc-400" />
+                  <Film size={13} className="text-purple-400" />
                 ) : (
-                  <Music size={13} className="text-zinc-400" />
+                  <Music size={13} className="text-emerald-400" />
                 )}
               </div>
               <div className="flex-1 min-w-0">
@@ -807,7 +807,7 @@ function AudioOrbit() {
         </div>
         <div className="absolute inset-5 rounded-full border border-white/10 border-b-brand/40 animate-[spin_8s_linear_infinite_reverse]" />
         <div className="absolute inset-11 rounded-full bg-brand/15 border border-brand/30 shadow-[0_0_38px_rgba(168,28,60,0.3)] grid place-items-center text-brand-light">
-          <Music size={30} />
+          <Music size={30} className="text-emerald-400" />
         </div>
       </div>
     </div>

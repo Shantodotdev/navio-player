@@ -89,10 +89,17 @@ function DashboardView() {
             >
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-11 h-11 rounded bg-white/5 flex items-center justify-center shrink-0 relative overflow-hidden">
-                  <Music
-                    size={16}
-                    className="text-zinc-400 group-hover:opacity-0"
-                  />
+                  {track.media_type === "video" ? (
+                    <Film
+                      size={16}
+                      className="text-purple-400 group-hover:opacity-0"
+                    />
+                  ) : (
+                    <Music
+                      size={16}
+                      className="text-emerald-400 group-hover:opacity-0"
+                    />
+                  )}
                   <div className="absolute inset-0 bg-brand opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
                     <Play
                       size={14}

@@ -255,9 +255,9 @@ function LibraryView() {
                         <td className="p-4">
                           <span className="flex items-center gap-1.5 text-sm text-zinc-400 font-medium lowercase">
                             {track.media_type === "video" ? (
-                              <Film size={15} className="text-brand-light" />
+                              <Film size={15} className="text-purple-400" />
                             ) : (
-                              <Music size={15} className="text-brand-light" />
+                              <Music size={15} className="text-emerald-400" />
                             )}
                             <span>{track.media_type}</span>
                           </span>
@@ -400,9 +400,9 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-white/3">
             {isVideo ? (
-              <Film size={32} className="text-brand-light/80" />
+              <Film size={32} className="text-purple-400/80" />
             ) : (
-              <Music size={32} className="text-brand-light/80" />
+              <Music size={32} className="text-emerald-400/80" />
             )}
           </div>
         )}
@@ -425,9 +425,9 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
         <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
           <span className="flex min-w-0 items-center gap-1.5 lowercase">
             {isVideo ? (
-              <Film size={14} className="shrink-0 text-brand-light" />
+              <Film size={14} className="shrink-0 text-purple-400" />
             ) : (
-              <Music size={14} className="shrink-0 text-brand-light" />
+              <Music size={14} className="shrink-0 text-emerald-400" />
             )}
             <span>{track.media_type}</span>
           </span>

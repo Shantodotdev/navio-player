@@ -172,11 +172,11 @@ export function PlaylistEditorModal({
                   <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-2 truncate text-sm text-zinc-200">
                       {track.media_type === "video" ? (
-                        <Film size={14} className="shrink-0 text-brand-light" />
+                        <Film size={14} className="shrink-0 text-purple-400" />
                       ) : (
                         <Music
                           size={14}
-                          className="shrink-0 text-brand-light"
+                          className="shrink-0 text-emerald-400"
                         />
                       )}
                       <span className="truncate">
@@ -230,12 +230,12 @@ export function PlaylistEditorModal({
                         {track.media_type === "video" ? (
                           <Film
                             size={14}
-                            className="shrink-0 text-brand-light"
+                            className="shrink-0 text-purple-400"
                           />
                         ) : (
                           <Music
                             size={14}
-                            className="shrink-0 text-brand-light"
+                            className="shrink-0 text-emerald-400"
                           />
                         )}
                         <span className="truncate">
