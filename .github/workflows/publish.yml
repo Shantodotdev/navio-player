@@ -52,9 +52,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: v__VERSION__ # Automatically matches the version in tauri.conf.json
-          releaseName: 'Navio Player v__VERSION__'
+          tagName: ${{ github.ref_name }} # Uses the tag pushed (e.g. v0.1.0 or v0.1.0-rc.1)
+          releaseName: 'Navio Player ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install Navio Player for your operating system.'
           releaseDraft: true
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
           args: ${{ matrix.args }}
