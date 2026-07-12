@@ -462,6 +462,17 @@ function WatchView() {
 
   const revealControls = () => setShowControls(true);
 
+  /** Hides controls immediately when the pointer leaves a fullscreen watch surface. */
+  const hideControlsOnFullscreenLeave = () => {
+    if (!isNativeFullscreen && !document.fullscreenElement) return;
+
+    if (hideControlsTimer.current !== null) {
+      window.clearTimeout(hideControlsTimer.current);
+      hideControlsTimer.current = null;
+    }
+    setShowControls(false);
+  };
+
   const showTrackMenu = (menu: "audio" | "subtitles") => {
     if (menuCloseTimer.current) window.clearTimeout(menuCloseTimer.current);
     setOpenMenu(menu);
@@ -718,6 +729,8 @@ function WatchView() {
       tabIndex={0}
       onMouseMove={revealControls}
       onPointerMove={revealControls}
+      onMouseLeave={hideControlsOnFullscreenLeave}
+      onPointerLeave={hideControlsOnFullscreenLeave}
       onKeyDown={handleKeyDown}
       className="watch-stage fixed inset-0 overflow-hidden bg-black text-white outline-none"
     >
