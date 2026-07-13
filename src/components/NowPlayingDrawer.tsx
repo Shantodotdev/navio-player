@@ -43,12 +43,12 @@ import { type Track, usePlayerStore } from "../store/playerStore";
 import {
   clampDrawerWidth,
   DEFAULT_DRAWER_WIDTH,
-  DRAWER_WIDTH_STORAGE_KEY,
   getMaxDrawerWidth,
-  getStoredDrawerWidth,
   MAX_DRAWER_WIDTH,
   MIN_DRAWER_WIDTH,
 } from "../lib/nowPlayingDrawerSizing";
+import { useSettingsStore } from "../store/settingsStore";
+import { getTrackDisplayName } from "../lib/mediaLabels";
 
 export function NowPlayingDrawer() {
   const navigate = useNavigate();
@@ -72,6 +72,11 @@ export function NowPlayingDrawer() {
     streamToken,
     volume,
   } = usePlayerStore();
+  const {
+    settings,
+    isLoaded: settingsLoaded,
+    updateSettings,
+  } = useSettingsStore();
 
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
   const [isResizing, setIsResizing] = useState(false);
@@ -92,6 +97,8 @@ export function NowPlayingDrawer() {
   const persistTimer = useRef<number | null>(null);
 
   const isVideo = currentTrack?.media_type === "video";
+  const audioOnlySidebarVideo =
+    isVideo && settings.playback.playVideoInSidebar && !isTheaterOpen;
   const currentTrackPath = currentTrack?.path;
   const activeTrack: Track = currentTrack ?? {
     id: "",
@@ -125,16 +132,31 @@ export function NowPlayingDrawer() {
     const syncDrawerWidth = () => {
       setDrawerWidth((width) =>
         clampDrawerWidth(
-          width || getStoredDrawerWidth(window.innerWidth),
+          width || settings.interface.nowPlayingDrawerWidth,
           window.innerWidth,
         ),
       );
     };
 
-    setDrawerWidth(getStoredDrawerWidth(window.innerWidth));
+    setDrawerWidth(
+      clampDrawerWidth(
+        settings.interface.nowPlayingDrawerWidth,
+        window.innerWidth,
+      ),
+    );
     window.addEventListener("resize", syncDrawerWidth);
     return () => window.removeEventListener("resize", syncDrawerWidth);
-  }, []);
+  }, [settings.interface.nowPlayingDrawerWidth]);
+
+  useEffect(() => {
+    if (settingsLoaded)
+      setDrawerWidth(
+        clampDrawerWidth(
+          settings.interface.nowPlayingDrawerWidth,
+          window.innerWidth,
+        ),
+      );
+  }, [settings.interface.nowPlayingDrawerWidth, settingsLoaded]);
 
   useEffect(() => {
     setPlaybackError("");
@@ -172,7 +194,14 @@ export function NowPlayingDrawer() {
           setCurrentTime(resumePosition);
         }
 
+        const configuredAudio = settings.playback.defaultAudioLanguage
+          ? info.audio_tracks.find(
+              (track) =>
+                track.language === settings.playback.defaultAudioLanguage,
+            )
+          : undefined;
         const defaultAudio =
+          configuredAudio ??
           info.audio_tracks.find((track) => track.is_default) ??
           info.audio_tracks[0];
         const preferredAudio = info.audio_tracks.find(
@@ -213,12 +242,21 @@ export function NowPlayingDrawer() {
           }
         };
 
+        const configuredSubtitle = settings.playback.defaultSubtitleLanguage
+          ? info.subtitle_tracks.find(
+              (track) =>
+                track.language === settings.playback.defaultSubtitleLanguage,
+            )
+          : undefined;
         const subtitleTrack = info.subtitle_preference_set
           ? info.subtitle_tracks.find(
               (track) =>
                 track.stream_index === info.preferred_subtitle_stream_index,
             )
-          : info.subtitle_tracks.find((track) => track.is_default);
+          : settings.playback.subtitlesEnabled
+            ? (configuredSubtitle ??
+              info.subtitle_tracks.find((track) => track.is_default))
+            : undefined;
         const restoreSubtitles = async () => {
           if (!subtitleTrack || cancelled) return;
 
@@ -278,6 +316,9 @@ export function NowPlayingDrawer() {
     setCurrentTime,
     streamPort,
     streamToken,
+    settings.playback.defaultAudioLanguage,
+    settings.playback.defaultSubtitleLanguage,
+    settings.playback.subtitlesEnabled,
   ]);
 
   useEffect(() => {
@@ -350,7 +391,7 @@ export function NowPlayingDrawer() {
   const updateDrawerWidth = (nextWidth: number) => {
     const clampedWidth = clampDrawerWidth(nextWidth, window.innerWidth);
     setDrawerWidth(clampedWidth);
-    window.localStorage.setItem(DRAWER_WIDTH_STORAGE_KEY, String(clampedWidth));
+    void updateSettings({ interface: { nowPlayingDrawerWidth: clampedWidth } });
   };
 
   const handleResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -460,7 +501,7 @@ export function NowPlayingDrawer() {
     <video
       ref={videoRef}
       className={
-        isVideo
+        isVideo && !audioOnlySidebarVideo
           ? `absolute inset-0 w-full h-full object-contain ${
               isTheaterOpen ? "z-20" : ""
             }`
@@ -637,7 +678,7 @@ export function NowPlayingDrawer() {
               </div>
             )}
 
-            {!isVideo && <AudioOrbit />}
+            {(!isVideo || audioOnlySidebarVideo) && <AudioOrbit />}
 
             {isVideo && !isTheaterOpen && (
               <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
@@ -697,7 +738,10 @@ export function NowPlayingDrawer() {
 
           <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
             <h2 className="text-xl font-medium text-zinc-100 truncate">
-              {activeTrack.title || activeTrack.name}
+              {getTrackDisplayName(
+                activeTrack,
+                settings.library.showFileExtensions,
+              )}
             </h2>
             <p className="text-sm text-zinc-400 capitalize">
               {activeTrack.media_type}
@@ -714,6 +758,7 @@ export function NowPlayingDrawer() {
           <Queue
             tracks={activeQueue}
             currentTrackId={activeTrack.id}
+            showFileExtensions={settings.library.showFileExtensions}
             onSelect={playTrack}
           />
         )}
@@ -743,10 +788,12 @@ export function NowPlayingDrawer() {
 function Queue({
   tracks,
   currentTrackId,
+  showFileExtensions,
   onSelect,
 }: {
   tracks: Track[];
   currentTrackId: string;
+  showFileExtensions: boolean;
   onSelect: (track: Track, queue: Track[]) => void;
 }) {
   if (tracks.length === 0) return null;
@@ -781,7 +828,7 @@ function Queue({
               </div>
               <div className="flex-1 min-w-0">
                 <span className="block text-sm truncate">
-                  {track.title || track.name}
+                  {getTrackDisplayName(track, showFileExtensions)}
                 </span>
                 <span className="block text-xs text-zinc-500 truncate mt-0.5 capitalize">
                   {track.media_type}

@@ -31,7 +31,10 @@ import {
   type TheaterMediaInfo,
   type VideoTrackInfo,
 } from "../lib/theaterMedia";
+import { formatLanguage } from "../lib/mediaLanguages";
+import { getTrackDisplayName } from "../lib/mediaLabels";
 import { usePlayerStore } from "../store/playerStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 const emptyTrackInfo: VideoTrackInfo = {
   audio_tracks: [],
@@ -111,6 +114,7 @@ export const Route = createFileRoute("/watch")({
 
 function WatchView() {
   const navigate = useNavigate();
+  const { settings } = useSettingsStore();
   const stageRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const alternateAudioRef = useRef<HTMLAudioElement>(null);
@@ -255,7 +259,14 @@ function WatchView() {
           setCurrentTime(resumePosition);
         }
 
+        const configuredAudio = settings.playback.defaultAudioLanguage
+          ? info.audio_tracks.find(
+              (track) =>
+                track.language === settings.playback.defaultAudioLanguage,
+            )
+          : undefined;
         const defaultAudio =
+          configuredAudio ??
           info.audio_tracks.find((track) => track.is_default) ??
           info.audio_tracks[0];
         const preferredAudio = info.audio_tracks.find(
@@ -300,12 +311,21 @@ function WatchView() {
           setSelectedAudio(defaultAudio?.stream_index ?? null);
         }
 
+        const configuredSubtitle = settings.playback.defaultSubtitleLanguage
+          ? info.subtitle_tracks.find(
+              (track) =>
+                track.language === settings.playback.defaultSubtitleLanguage,
+            )
+          : undefined;
         const subtitleTrack = info.subtitle_preference_set
           ? info.subtitle_tracks.find(
               (track) =>
                 track.stream_index === info.preferred_subtitle_stream_index,
             )
-          : info.subtitle_tracks.find((track) => track.is_default);
+          : settings.playback.subtitlesEnabled
+            ? (configuredSubtitle ??
+              info.subtitle_tracks.find((track) => track.is_default))
+            : undefined;
         if (!subtitleTrack) return;
 
         const requestId = createRequestId();
@@ -346,6 +366,9 @@ function WatchView() {
     setCurrentTime,
     streamPort,
     streamToken,
+    settings.playback.defaultAudioLanguage,
+    settings.playback.defaultSubtitleLanguage,
+    settings.playback.subtitlesEnabled,
   ]);
 
   useEffect(() => {
@@ -841,7 +864,10 @@ function WatchView() {
 
           <div className="min-w-0 flex-1 px-2">
             <h1 className="truncate text-xl font-medium text-white">
-              {currentTrack.title || currentTrack.name}
+              {getTrackDisplayName(
+                currentTrack,
+                settings.library.showFileExtensions,
+              )}
             </h1>
           </div>
         </div>
@@ -1085,7 +1111,6 @@ function WatchView() {
           Switching audio track…
         </div>
       )}
-
     </main>
   );
 }
@@ -1094,33 +1119,6 @@ function formatTrackLabel(track: EmbeddedTrack): string {
   const language = formatLanguage(track.language);
   const title = track.title?.trim();
   return title || language || `${track.codec.toUpperCase()} track`;
-}
-
-function formatLanguage(language: string | null): string | null {
-  if (!language?.trim()) return null;
-
-  const names: Record<string, string> = {
-    ara: "Arabic",
-    ben: "Bengali",
-    deu: "German",
-    eng: "English",
-    fra: "French",
-    hin: "Hindi",
-    ita: "Italian",
-    jpn: "Japanese",
-    kor: "Korean",
-    por: "Portuguese",
-    rus: "Russian",
-    spa: "Spanish",
-    tam: "Tamil",
-    tel: "Telugu",
-    und: "Unknown language",
-    urd: "Urdu",
-    zho: "Chinese",
-  };
-
-  const normalized = language.trim().toLowerCase();
-  return names[normalized] || language.trim();
 }
 
 function formatTime(secs: number): string {
