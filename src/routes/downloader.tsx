@@ -448,10 +448,6 @@ function DownloadCard({
             <span className="text-sm text-zinc-300 mt-0.5">{item.speed}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-xs">ETA</span>
-            <span className="text-sm text-zinc-300 mt-0.5">{item.eta}</span>
-          </div>
-          <div className="flex flex-col">
             <span className="text-xs">Format</span>
             <span className="text-sm text-zinc-300 mt-0.5">
               {item.format === "bestaudio" ? "Audio" : "Video"}
