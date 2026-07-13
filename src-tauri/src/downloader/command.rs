@@ -195,7 +195,7 @@ async fn run_attempt_inner(
     .arg("--paths")
     .arg(format!("temp:{}", staging_dir.to_string_lossy()))
     .arg("--output")
-    .arg("%(title)s [%(id)s].%(ext)s")
+    .arg("%(title)s.%(ext)s")
     .arg("--ffmpeg-location")
     .arg(bin_dir)
     .arg("--newline")
@@ -449,11 +449,17 @@ fn ensure_download_directory(
   manager: &DownloadManager,
   id: &str,
 ) -> Result<PathBuf, String> {
-  let download_dir = app_handle
-    .path()
-    .download_dir()
-    .map_err(|error| error.to_string())?
-    .join("Navio Player");
+  let download_dir = crate::settings::load_db(app_handle)?
+    .downloads
+    .folder
+    .map(PathBuf::from)
+    .unwrap_or(
+      app_handle
+        .path()
+        .download_dir()
+        .map_err(|error| error.to_string())?
+        .join("Navio Player"),
+    );
   fs::create_dir_all(&download_dir)
     .map_err(|error| format!("Failed to create download folder: {error}"))?;
   let state = app_handle.state::<AppState>();
@@ -495,20 +501,58 @@ fn move_completed_media(staging_dir: &Path, download_dir: &Path) -> Result<Vec<S
     let filename = source
       .file_name()
       .ok_or_else(|| "Completed download has no file name.".to_string())?;
-    let target = download_dir.join(filename);
-    if target.exists() {
-      // The output template includes the remote media ID, but keep this guard
-      // because finalization must never replace a user-owned local file.
-      return Err(format!(
-        "Refusing to overwrite existing file: {}",
-        target.display()
-      ));
-    }
-    fs::rename(&source, &target)
+    let target = available_target_path(download_dir, filename);
+    move_file_with_cross_drive_fallback(&source, &target, |from, to| fs::rename(from, to))
       .map_err(|error| format!("Failed to finalize downloaded media: {error}"))?;
     moved.push(target.to_string_lossy().to_string());
   }
   Ok(moved)
+}
+
+/// Returns an unused sibling path by adding the familiar ` (1)`, ` (2)` suffix.
+fn available_target_path(directory: &Path, filename: &OsStr) -> PathBuf {
+  let requested = directory.join(filename);
+  if !requested.exists() {
+    return requested;
+  }
+
+  let filename_path = Path::new(filename);
+  let stem = filename_path
+    .file_stem()
+    .unwrap_or(filename)
+    .to_string_lossy();
+  let extension = filename_path.extension().and_then(OsStr::to_str);
+  let mut index = 1_u32;
+  loop {
+    let candidate_name = match extension {
+      Some(extension) => format!("{stem} ({index}).{extension}"),
+      None => format!("{stem} ({index})"),
+    };
+    let candidate = directory.join(candidate_name);
+    if !candidate.exists() {
+      return candidate;
+    }
+    index = index.saturating_add(1);
+  }
+}
+
+/// Moves a completed file, copying it first when the destination is on another volume.
+fn move_file_with_cross_drive_fallback<F>(
+  source: &Path,
+  target: &Path,
+  rename: F,
+) -> std::io::Result<()>
+where
+  F: FnOnce(&Path, &Path) -> std::io::Result<()>,
+{
+  match rename(source, target) {
+    Ok(()) => Ok(()),
+    Err(error) if error.raw_os_error() == Some(17) => {
+      fs::copy(source, target)?;
+      fs::remove_file(source)
+    }
+    Err(error) => Err(error),
+  }
 }
 
 /// Returns the combined byte size of every finalized media file in one completed job.
@@ -709,5 +753,40 @@ mod tests {
   #[test]
   fn formats_completed_media_size_from_the_final_file_bytes() {
     assert_eq!(format_bytes(159_902_239), "152.5 MiB");
+  }
+
+  #[test]
+  fn cross_drive_finalization_copies_then_removes_the_staging_file() {
+    let directory = std::env::temp_dir().join(format!("navio-move-test-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&directory).expect("test directory should exist");
+    let source = directory.join("source.mp4");
+    let target = directory.join("target.mp4");
+    fs::write(&source, b"video bytes").expect("source fixture should write");
+
+    move_file_with_cross_drive_fallback(&source, &target, |_, _| {
+      Err(std::io::Error::from_raw_os_error(17))
+    })
+    .expect("cross-drive moves should fall back to copy");
+
+    assert!(!source.exists());
+    assert_eq!(
+      fs::read(&target).expect("target should exist"),
+      b"video bytes"
+    );
+    fs::remove_dir_all(directory).expect("test directory should clean up");
+  }
+
+  #[test]
+  fn finalization_uses_the_next_numeric_suffix_for_duplicate_titles() {
+    let directory = std::env::temp_dir().join(format!("navio-name-test-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&directory).expect("test directory should exist");
+    fs::write(directory.join("Example.mp4"), b"existing").expect("first fixture should write");
+    fs::write(directory.join("Example (1).mp4"), b"existing").expect("second fixture should write");
+
+    assert_eq!(
+      available_target_path(&directory, std::ffi::OsStr::new("Example.mp4")),
+      directory.join("Example (2).mp4"),
+    );
+    fs::remove_dir_all(directory).expect("test directory should clean up");
   }
 }
