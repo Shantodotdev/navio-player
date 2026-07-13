@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useSettingsStore } from "./settingsStore";
 
 /// Representation of a media file track on the client side.
 export type Track = {
@@ -126,6 +127,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setVolume: (volume) => {
     const { mediaElement } = get();
     set({ volume });
+    void useSettingsStore.getState().updateSettings({ playback: { volume } });
     if (mediaElement) {
       mediaElement.volume = volume / 100;
     }

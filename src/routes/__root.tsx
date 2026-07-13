@@ -11,6 +11,7 @@ import { Sidebar } from "../components/Sidebar";
 import { PlayerBar } from "../components/PlayerBar";
 import { NowPlayingDrawer } from "../components/NowPlayingDrawer";
 import { usePlayerStore } from "../store/playerStore";
+import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
 import "../styles.css";
 
@@ -19,11 +20,18 @@ export const Route = createRootRoute({
 });
 
 export default function Root() {
-  const { setStreamConfig } = usePlayerStore();
+  const { setStreamConfig, setVolume } = usePlayerStore();
+  const { loadSettings } = useSettingsStore();
   useLibrarySync();
   const isWatchRoute = useRouterState({
     select: (state) => state.location.pathname === "/watch",
   });
+
+  useEffect(() => {
+    void loadSettings().then(() => {
+      setVolume(useSettingsStore.getState().settings.playback.volume);
+    });
+  }, [loadSettings, setVolume]);
 
   useEffect(() => {
     // Initialize tauri client port on client boot
