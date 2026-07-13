@@ -15,6 +15,8 @@ import {
   List,
 } from "lucide-react";
 import { buildStreamUrl } from "../lib/theaterMedia";
+import { getTrackDisplayName } from "../lib/mediaLabels";
+import { useSettingsStore } from "../store/settingsStore";
 
 export const Route = createFileRoute("/library")({
   component: LibraryView,
@@ -24,6 +26,11 @@ export const Route = createFileRoute("/library")({
 function LibraryView() {
   const { playTrack, streamPort, streamToken } = usePlayerStore();
   const { tracks, scannedDirs, addFolder, deleteFolder } = useLibrary();
+  const {
+    settings,
+    isLoaded: settingsLoaded,
+    updateSettings,
+  } = useSettingsStore();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "audio" | "video">(
@@ -32,7 +39,13 @@ function LibraryView() {
   const [selectedDirectory, setSelectedDirectory] = useState<string | null>(
     null,
   );
-  const [viewMode, setViewMode] = useState<"list" | "grid">("list");
+  const [viewMode, setViewMode] = useState<"list" | "grid">(
+    settings.library.viewMode,
+  );
+
+  useEffect(() => {
+    if (settingsLoaded) setViewMode(settings.library.viewMode);
+  }, [settings.library.viewMode, settingsLoaded]);
 
   const filteredTracks = tracks.filter((t) => {
     const query = searchQuery.toLowerCase();
@@ -185,14 +198,20 @@ function LibraryView() {
               <ViewButton
                 active={viewMode === "list"}
                 label="List view"
-                onClick={() => setViewMode("list")}
+                onClick={() => {
+                  setViewMode("list");
+                  void updateSettings({ library: { viewMode: "list" } });
+                }}
               >
                 <List size={16} />
               </ViewButton>
               <ViewButton
                 active={viewMode === "grid"}
                 label="Grid view"
-                onClick={() => setViewMode("grid")}
+                onClick={() => {
+                  setViewMode("grid");
+                  void updateSettings({ library: { viewMode: "grid" } });
+                }}
               >
                 <Grid2X2 size={16} />
               </ViewButton>
@@ -207,6 +226,8 @@ function LibraryView() {
                   track={track}
                   streamPort={streamPort}
                   streamToken={streamToken}
+                  showThumbnails={settings.library.showThumbnails}
+                  showFileExtensions={settings.library.showFileExtensions}
                   onPlay={() => playTrack(track, filteredTracks)}
                 />
               ))}
@@ -250,7 +271,10 @@ function LibraryView() {
                           </button>
                         </td>
                         <td className="p-4 text-zinc-300 font-medium text-base">
-                          {track.title || track.name}
+                          {getTrackDisplayName(
+                            track,
+                            settings.library.showFileExtensions,
+                          )}
                         </td>
                         <td className="p-4">
                           <span className="flex items-center gap-1.5 text-sm text-zinc-400 font-medium lowercase">
@@ -349,11 +373,20 @@ interface MediaCardProps {
   track: Track;
   streamPort: number;
   streamToken: string;
+  showThumbnails: boolean;
+  showFileExtensions: boolean;
   onPlay: () => void;
 }
 
 /** Displays a media track as a visual card with a cached video still when available. */
-function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
+function MediaCard({
+  track,
+  streamPort,
+  streamToken,
+  showThumbnails,
+  showFileExtensions,
+  onPlay,
+}: MediaCardProps) {
   const [thumbnailPath, setThumbnailPath] = useState("");
   const isVideo = track.media_type === "video";
   const thumbnailUrl =
@@ -362,7 +395,7 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
       : "";
 
   useEffect(() => {
-    if (!isVideo) return;
+    if (!isVideo || !showThumbnails) return;
 
     let cancelled = false;
     const loadThumbnail = async () => {
@@ -382,7 +415,7 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
     return () => {
       cancelled = true;
     };
-  }, [isVideo, track.path]);
+  }, [isVideo, showThumbnails, track.path]);
 
   return (
     <article
@@ -390,7 +423,7 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
       className="group overflow-hidden rounded-2xl border border-white/5 bg-panel-bg/30 transition-all hover:border-brand/30 hover:bg-panel-bg/50 cursor-pointer"
     >
       <div className="relative aspect-video overflow-hidden bg-black/40">
-        {thumbnailUrl ? (
+        {showThumbnails && thumbnailUrl ? (
           <img
             src={thumbnailUrl}
             alt=""
@@ -420,7 +453,7 @@ function MediaCard({ track, streamPort, streamToken, onPlay }: MediaCardProps) {
       </div>
       <div className="p-4">
         <h3 className="truncate text-base font-medium text-zinc-200">
-          {track.title || track.name}
+          {getTrackDisplayName(track, showFileExtensions)}
         </h3>
         <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
           <span className="flex min-w-0 items-center gap-1.5 lowercase">

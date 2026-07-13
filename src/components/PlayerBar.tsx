@@ -13,9 +13,12 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
+import { getTrackDisplayName } from "../lib/mediaLabels";
+import { useSettingsStore } from "../store/settingsStore";
 
 /// Global bottom player controller bar (full viewport width).
 export function PlayerBar() {
+  const { settings } = useSettingsStore();
   const {
     currentTrack,
     isPlaying,
@@ -149,7 +152,10 @@ export function PlayerBar() {
         >
           <span className="text-sm font-medium text-zinc-200 truncate hover:text-brand-light transition-colors">
             {currentTrack
-              ? currentTrack.title || currentTrack.name
+              ? getTrackDisplayName(
+                  currentTrack,
+                  settings.library.showFileExtensions,
+                )
               : "No track playing"}
           </span>
           <span className="text-xs text-zinc-400 truncate mt-0.5 font-medium">
@@ -261,6 +267,7 @@ function formatTime(secs: number): string {
   const hours = Math.floor(secs / 3600);
   const m = Math.floor((secs % 3600) / 60);
   const s = Math.floor(secs % 60);
-  if (hours > 0) return `${hours}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  if (hours > 0)
+    return `${hours}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${m}:${s < 10 ? "0" : ""}${s}`;
 }

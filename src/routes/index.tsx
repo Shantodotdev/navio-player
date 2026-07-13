@@ -11,6 +11,8 @@ import {
 } from "lucide-react";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibrary } from "../hooks/useLibrary";
+import { getTrackDisplayName } from "../lib/mediaLabels";
+import { useSettingsStore } from "../store/settingsStore";
 
 export const Route = createFileRoute("/")({
   component: DashboardView,
@@ -18,6 +20,7 @@ export const Route = createFileRoute("/")({
 
 function DashboardView() {
   const { playTrack } = usePlayerStore();
+  const { settings } = useSettingsStore();
   const { stats, recentTracks } = useLibrary();
 
   return (
@@ -110,7 +113,10 @@ function DashboardView() {
                 </div>
                 <div className="min-w-0">
                   <h4 className="text-base font-medium text-zinc-200 truncate">
-                    {track.title || track.name}
+                    {getTrackDisplayName(
+                      track,
+                      settings.library.showFileExtensions,
+                    )}
                   </h4>
                 </div>
               </div>

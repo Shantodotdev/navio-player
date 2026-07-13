@@ -19,6 +19,8 @@ import {
   startDownload,
   type DownloadJob,
 } from "../lib/downloads";
+import { getMediaDisplayName } from "../lib/mediaLabels";
+import { useSettingsStore } from "../store/settingsStore";
 
 export const Route = createFileRoute("/downloader")({
   component: DownloaderView,
@@ -28,6 +30,7 @@ type DownloadTab = "all" | "active" | "history";
 
 /** Renders Navio's persistent remote-download queue and controls. */
 function DownloaderView() {
+  const { settings } = useSettingsStore();
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<DownloadJob["format"]>("best");
   const [downloads, setDownloads] = useState<DownloadJob[]>([]);
@@ -257,6 +260,7 @@ function DownloaderView() {
             key={item.id}
             item={item}
             pending={pendingActionId === item.id}
+            showFileExtensions={settings.library.showFileExtensions}
             onAction={handleAction}
             onOpenFolder={handleOpenFolder}
           />
@@ -361,11 +365,13 @@ function PlaylistDownloadModal({
 function DownloadCard({
   item,
   pending,
+  showFileExtensions,
   onAction,
   onOpenFolder,
 }: {
   item: DownloadJob;
   pending: boolean;
+  showFileExtensions: boolean;
   onAction: (
     command:
       | "pause_download"
@@ -393,8 +399,8 @@ function DownloadCard({
   ].includes(item.status);
   const displayTitle =
     item.current_item && item.total_items
-      ? `[${item.current_item}/${item.total_items}] ${item.title}`
-      : item.title;
+      ? `[${item.current_item}/${item.total_items}] ${getMediaDisplayName(item.title, showFileExtensions)}`
+      : getMediaDisplayName(item.title, showFileExtensions);
   return (
     <div className="bg-panel-bg/20 backdrop-blur-md border border-white/5 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
       <div className="flex-1 min-w-0 space-y-1">
