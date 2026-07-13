@@ -11,6 +11,7 @@ import { Sidebar } from "../components/Sidebar";
 import { PlayerBar } from "../components/PlayerBar";
 import { NowPlayingDrawer } from "../components/NowPlayingDrawer";
 import { usePlayerStore } from "../store/playerStore";
+import { useLibrarySync } from "../hooks/useLibrarySync";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -19,6 +20,7 @@ export const Route = createRootRoute({
 
 export default function Root() {
   const { setStreamConfig } = usePlayerStore();
+  useLibrarySync();
   const isWatchRoute = useRouterState({
     select: (state) => state.location.pathname === "/watch",
   });
