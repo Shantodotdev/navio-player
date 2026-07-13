@@ -17,6 +17,7 @@ use super::*;
 use std::ffi::OsStr;
 
 const PROGRESS_PREFIX: &str = "NAVIO_PROGRESS:";
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// Tauri command that creates and starts one new durable download job.
 #[tauri::command]
@@ -164,11 +165,15 @@ async fn run_attempt_inner(
   let job = manager
     .get(id)
     .ok_or_else(|| "Download was not found.".to_string())?;
+  let selected_format = format_selector(&job.request.format);
   let staging_dir = manager.staging_dir(app_handle, id)?;
   tokio::fs::create_dir_all(&staging_dir)
     .await
     .map_err(|error| format!("Failed to create private download staging directory: {error}"))?;
   let mut command = Command::new(ytdlp_path);
+  // Release builds are GUI processes, but Windows gives console-subsystem child
+  // executables their own terminal unless CREATE_NO_WINDOW is explicitly set.
+  hide_console_window(&mut command);
   // Dropping the Tokio runtime during an app exit must not leave yt-dlp running
   // in the background without a Navio process to report its final state.
   command.kill_on_drop(true);
@@ -176,9 +181,13 @@ async fn run_attempt_inner(
     command.arg("--js-runtimes").arg("node");
   }
   command
+    // Navio owns the request contract. Ignoring user/global yt-dlp config files
+    // prevents an unrelated `-f`, postprocessor, or output-path rule from
+    // changing the queue's persisted behavior or producing opaque failures.
+    .arg("--ignore-config")
     .arg(&job.request.url)
     .arg("-f")
-    .arg(&job.request.format)
+    .arg(selected_format)
     .arg(if job.request.no_playlist { "--no-playlist" } else { "--yes-playlist" })
     .arg("--continue")
     .arg("--paths")
@@ -202,6 +211,11 @@ async fn run_attempt_inner(
     .arg("after_move:NAVIO_FILE:%(filepath)s")
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
+
+  println!(
+    "[Navio Downloader] launching yt-dlp | id={} mode={} selector={}",
+    id, job.request.format, selected_format
+  );
 
   let mut child = command
     .spawn()
@@ -242,11 +256,16 @@ async fn run_attempt_inner(
       if completed_paths.is_empty() {
         return Err("yt-dlp finished without producing a media file.".to_string());
       }
+      // Progress output describes one currently transferred stream. High-quality
+      // video downloads commonly finish with a small audio stream, so derive the
+      // completed card's size from the finalized media files instead.
+      let completed_size = format_bytes(total_completed_media_bytes(&completed_paths)?);
       update_job(app_handle, manager, id, |job| {
         job.status = DownloadStatus::Completed;
         job.progress = 100.0;
         job.speed = "Finished".to_string();
         job.eta = "00:00".to_string();
+        job.size = completed_size;
         job.error = None;
         job.completed_paths = completed_paths;
         Ok(())
@@ -492,6 +511,38 @@ fn move_completed_media(staging_dir: &Path, download_dir: &Path) -> Result<Vec<S
   Ok(moved)
 }
 
+/// Returns the combined byte size of every finalized media file in one completed job.
+///
+/// A playlist can move more than one file. Summing the final paths, rather than
+/// reusing yt-dlp's last progress line, reports the total user-visible result
+/// after FFmpeg merging has completed.
+fn total_completed_media_bytes(paths: &[String]) -> Result<u64, String> {
+  paths.iter().try_fold(0_u64, |total, path| {
+    let size = fs::metadata(path)
+      .map_err(|error| format!("Failed to inspect finalized downloaded media: {error}"))?
+      .len();
+    total
+      .checked_add(size)
+      .ok_or_else(|| "Finalized download size exceeded Navio's supported range.".to_string())
+  })
+}
+
+/// Formats a byte count using binary units for the downloader's completed-size label.
+fn format_bytes(bytes: u64) -> String {
+  const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let mut value = bytes as f64;
+  let mut unit_index = 0;
+  while value >= 1024.0 && unit_index < UNITS.len() - 1 {
+    value /= 1024.0;
+    unit_index += 1;
+  }
+  if unit_index == 0 {
+    format!("{bytes} B")
+  } else {
+    format!("{value:.1} {}", UNITS[unit_index])
+  }
+}
+
 /// Recursively selects media outputs while excluding yt-dlp resume and temporary artifacts.
 fn collect_completed_files(directory: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
   for entry in fs::read_dir(directory)
@@ -568,6 +619,38 @@ fn validate_start_request(id: &str, url: &str, format: &str) -> Result<(), Strin
   Ok(())
 }
 
+/// Maps Navio's two UI modes to explicit yt-dlp format-selection expressions.
+///
+/// `best` in yt-dlp means the best *single* audio+video file. YouTube commonly
+/// provides that only at a lower resolution, while 4K and other high-quality
+/// formats are separate video-only and audio-only streams. `bv*+ba/b` matches
+/// yt-dlp's normal download default: select the best video stream, merge the
+/// best audio stream through FFmpeg, and fall back to a combined file only when
+/// separate streams are unavailable.
+fn format_selector(format: &str) -> &'static str {
+  match format {
+    "best" => "bv*+ba/b",
+    "bestaudio" => "bestaudio",
+    _ => unreachable!("format is validated at the Tauri command boundary"),
+  }
+}
+
+/// Applies Windows' `CREATE_NO_WINDOW` flag to a subprocess without affecting other platforms.
+///
+/// This is required for release builds because the Navio executable is a GUI
+/// process. Without the flag, launching the standalone yt-dlp executable can
+/// flash a terminal window even though stdout and stderr are piped.
+fn hide_console_window(command: &mut Command) {
+  #[cfg(windows)]
+  {
+    command.creation_flags(CREATE_NO_WINDOW);
+  }
+  #[cfg(not(windows))]
+  {
+    let _ = command;
+  }
+}
+
 /// Tauri command that identifies playlist links without contacting a remote service.
 #[derive(serde::Serialize)]
 pub struct UrlTypeInfo {
@@ -615,5 +698,16 @@ mod tests {
     assert_eq!(update.progress, 42.5);
     assert_eq!(update.current_item, Some(2));
     assert_eq!(update.total_items, Some(8));
+  }
+
+  #[test]
+  fn video_mode_selects_best_video_and_audio_streams_for_merging() {
+    assert_eq!(format_selector("best"), "bv*+ba/b");
+    assert_eq!(format_selector("bestaudio"), "bestaudio");
+  }
+
+  #[test]
+  fn formats_completed_media_size_from_the_final_file_bytes() {
+    assert_eq!(format_bytes(159_902_239), "152.5 MiB");
   }
 }
