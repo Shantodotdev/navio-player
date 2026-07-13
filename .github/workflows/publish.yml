@@ -9,7 +9,42 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: create draft release if missing
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tagName = context.ref.replace('refs/tags/', '')
+            const releaseData = {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag_name: tagName,
+              name: `Navio Player ${tagName}`,
+              body: 'See the assets below to download and install Navio Player for your operating system.',
+              draft: true,
+              prerelease: tagName.includes('-rc') || tagName.includes('-alpha') || tagName.includes('-beta'),
+            }
+
+            try {
+              await github.rest.repos.getReleaseByTag({
+                owner: releaseData.owner,
+                repo: releaseData.repo,
+                tag: tagName,
+              })
+              core.info(`Release ${tagName} already exists; reusing it.`)
+            } catch (error) {
+              if (error.status !== 404) throw error
+              await github.rest.repos.createRelease(releaseData)
+              core.info(`Created draft release ${tagName}.`)
+            }
+
   publish-tauri:
+    needs: create-release
     permissions:
       contents: write
     strategy:
@@ -56,5 +91,4 @@ jobs:
           releaseName: 'Navio Player ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install Navio Player for your operating system.'
           releaseDraft: true
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-alpha') || contains(github.ref_name, '-beta') }}
           args: ${{ matrix.args }}
