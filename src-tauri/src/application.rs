@@ -109,6 +109,10 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       commands::get_stream_port,
       commands::get_stream_config,
+      commands::get_settings,
+      commands::save_settings,
+      commands::clear_download_history,
+      commands::reset_databases,
       commands::inspect_video_tracks,
       commands::get_video_thumbnail,
       commands::extract_subtitle_track,

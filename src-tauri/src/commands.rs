@@ -21,6 +21,53 @@ pub fn get_stream_config(state: tauri::State<'_, AppState>) -> StreamConfig {
   }
 }
 
+/// Returns the user's persisted application preferences.
+#[tauri::command]
+pub fn get_settings(app_handle: tauri::AppHandle) -> Result<settings::Settings, String> {
+  settings::load_db(&app_handle)
+}
+
+/// Persists the complete validated settings document.
+#[tauri::command]
+pub fn save_settings(
+  app_handle: tauri::AppHandle,
+  settings: settings::Settings,
+) -> Result<(), String> {
+  settings::save_db(&app_handle, &settings)
+}
+
+/// Clears the download database and optionally removes only files recorded as completed downloads.
+#[tauri::command]
+pub fn clear_download_history(
+  state: tauri::State<'_, AppState>,
+  delete_files: bool,
+) -> Result<(), String> {
+  if delete_files {
+    for job in state.download_manager.list() {
+      for path in job.completed_paths {
+        let file = std::path::PathBuf::from(path);
+        if file.is_file() {
+          std::fs::remove_file(file)
+            .map_err(|e| format!("Failed to delete downloaded file: {e}"))?;
+        }
+      }
+    }
+  }
+  state.download_manager.clear_history()
+}
+
+/// Resets Navio's databases and managed downloader tools while preserving media and downloads.
+#[tauri::command]
+pub fn reset_databases(
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+  state.download_manager.clear_history()?;
+  settings::reset_databases(&app_handle)?;
+  state.allowed_directories.lock().unwrap().clear();
+  Ok(())
+}
+
 #[tauri::command]
 pub async fn inspect_video_tracks(
   path: String,
@@ -304,11 +351,17 @@ pub fn save_library(
 pub fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
   println!("[Navio Command] open_folder");
 
-  let download_dir = app_handle
-    .path()
-    .download_dir()
-    .map_err(|e| e.to_string())?
-    .join("Navio Player");
+  let download_dir = settings::load_db(&app_handle)?
+    .downloads
+    .folder
+    .map(std::path::PathBuf::from)
+    .unwrap_or(
+      app_handle
+        .path()
+        .download_dir()
+        .map_err(|e| e.to_string())?
+        .join("Navio Player"),
+    );
 
   if !download_dir.exists() {
     std::fs::create_dir_all(&download_dir)

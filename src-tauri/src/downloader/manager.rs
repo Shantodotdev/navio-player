@@ -181,6 +181,16 @@ impl DownloadManager {
     jobs
   }
 
+  /// Removes every persisted queue record; downloaded media paths are untouched.
+  pub fn clear_history(&self) -> Result<(), String> {
+    let mut inner = self.inner.lock().expect("download manager lock poisoned");
+    if !inner.jobs.is_empty() {
+      inner.jobs.clear();
+      save_database(&inner.database_path, inner.jobs.values())?;
+    }
+    Ok(())
+  }
+
   /// Returns one durable job by ID.
   pub fn get(&self, id: &str) -> Option<DownloadJob> {
     self
