@@ -14,6 +14,7 @@ mod library;
 mod media_tools;
 mod playlists;
 mod server;
+mod settings;
 mod watcher;
 
 pub use application::run;
