@@ -82,21 +82,14 @@ function SettingsView() {
   if (!isLoaded) return <div className="text-zinc-400">Loading settings…</div>;
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto font-medium select-none text-zinc-405">
-      <div className="mb-10">
+    <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-405">
+      <div className="mb-6">
         <h1 className="text-4xl font-medium text-zinc-200 tracking-tight">
           Settings
         </h1>
       </div>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="flex flex-col gap-2 md:col-span-1">
-          <SettingsTab active icon={<SettingsIcon size={18} />}>
-            General settings
-          </SettingsTab>
-          <SettingsTab icon={<Info size={18} />}>About Navio</SettingsTab>
-        </div>
-        <div className="md:col-span-2 space-y-6">
-          <section className="bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 space-y-4">
+      <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+          <section className="bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 space-y-4 sm:col-span-2">
             <SectionTitle
               icon={<Volume2 size={20} />}
               title="Playback preferences"
@@ -250,7 +243,6 @@ function SettingsView() {
               preferences, and history remain on this computer.
             </p>
           </section>
-        </div>
       </div>
       <SettingsActionModal
         isOpen={activeAction === "clear-history"}
@@ -363,23 +355,5 @@ function LanguageSelect({
         ))}
       </select>
     </label>
-  );
-}
-function SettingsTab({
-  active,
-  children,
-  icon,
-}: {
-  active?: boolean;
-  children: string;
-  icon: React.ReactNode;
-}) {
-  return (
-    <button
-      className={`flex items-center gap-3 px-4.5 py-3 rounded-lg text-left text-base transition-all ${active ? "bg-brand/10 text-brand-light border-l-2 border-brand" : "text-zinc-400 hover:text-zinc-200 hover:bg-white/5 border-l-2 border-transparent"}`}
-    >
-      {icon}
-      <span>{children}</span>
-    </button>
   );
 }
