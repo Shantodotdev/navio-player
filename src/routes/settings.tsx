@@ -179,26 +179,28 @@ function SettingsView() {
               icon={<SettingsIcon size={20} />}
               title="Downloads and updates"
             />
-            <div className="flex items-center justify-between gap-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
               <div>
                 <div className="text-zinc-200">Downloads folder</div>
                 <div className="text-sm text-zinc-500 break-all">
                   {settings.downloads.folder ?? "System Downloads folder"}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex shrink-0 gap-2">
                 <button
+                  type="button"
                   onClick={() =>
                     void updateSettings({ downloads: { folder: null } })
                   }
                   disabled={!settings.downloads.folder}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-40 text-zinc-200"
+                  className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Reset
                 </button>
                 <button
+                  type="button"
                   onClick={() => void chooseDownloadFolder()}
-                  className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-zinc-200"
+                  className="inline-flex items-center justify-center rounded-lg border border-brand/40 bg-brand/15 px-3.5 py-2 text-sm font-medium text-brand-light shadow-sm shadow-brand-glow/30 transition-colors hover:border-brand/60 hover:bg-brand/25 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand/50"
                 >
                   Choose
                 </button>
@@ -219,18 +221,22 @@ function SettingsView() {
               icon={<ShieldAlert size={20} />}
               title="Local data actions"
             />
-            <button
-              onClick={() => openAction("clear-history")}
-              className="block text-left text-zinc-300 hover:text-white"
-            >
-              Clear download history
-            </button>
-            <button
-              onClick={() => openAction("full-reset")}
-              className="block text-left text-red-300 hover:text-red-200"
-            >
-              Full reset
-            </button>
+            <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+              <button
+                type="button"
+                onClick={() => openAction("clear-history")}
+                className="inline-flex items-center justify-center rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/30"
+              >
+                Clear download history
+              </button>
+              <button
+                type="button"
+                onClick={() => openAction("full-reset")}
+                className="inline-flex items-center justify-center rounded-lg border border-red-400/30 bg-red-500/10 px-3.5 py-2 text-sm font-medium text-red-300 transition-colors hover:border-red-400/50 hover:bg-red-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50"
+              >
+                Full reset
+              </button>
+            </div>
             {message && <p className="text-sm text-brand-light">{message}</p>}
           </section>
 
