@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex};
 mod models;
 mod storage;
 
-pub use models::PlaylistsDb;
+pub use models::{Playlist, PlaylistsDb};
 pub use storage::{load_db, save_db};
 
 /// Adds existing playlist track directories to the streaming allowlist.

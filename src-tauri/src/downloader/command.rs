@@ -36,6 +36,20 @@ pub async fn start_download(
     no_playlist: no_playlist.unwrap_or(true),
   };
   let job = state.download_manager.create(id, request)?;
+  if !job.request.no_playlist {
+    if let Err(error) = create_download_playlist(&app_handle, &job.id) {
+      update_job(&app_handle, &state.download_manager, &job.id, |job| {
+        job.status = DownloadStatus::Failed;
+        job.speed = "Failed".to_string();
+        job.error = Some(error.clone());
+        Ok(())
+      })?;
+      return Err(error);
+    }
+    if let Err(error) = app_handle.emit("library-updated", ()) {
+      eprintln!("[Navio Event] failed to emit library-updated: {error}");
+    }
+  }
   // Persist and publish the card before spawning work. This prevents a fast
   // setup failure from being invisible if the renderer has not yet subscribed.
   emit_download_update(&app_handle, &job);
@@ -185,7 +199,6 @@ async fn run_attempt_inner(
     // prevents an unrelated `-f`, postprocessor, or output-path rule from
     // changing the queue's persisted behavior or producing opaque failures.
     .arg("--ignore-config")
-    .arg(&job.request.url)
     .arg("-f")
     .arg(selected_format)
     .arg(if job.request.no_playlist { "--no-playlist" } else { "--yes-playlist" })
@@ -208,7 +221,18 @@ async fn run_attempt_inner(
     // `--print` may quiet ordinary output; force the structured progress template to stay enabled.
     .arg("--progress")
     .arg("--print")
-    .arg("after_move:NAVIO_FILE:%(filepath)s")
+    .arg("after_move:NAVIO_FILE:%(filepath)s\t%(playlist_title)s");
+  if !job.request.no_playlist {
+    // The archive persists beside partial files so resume never re-downloads
+    // items Navio already moved into the visible playlist.
+    command
+      .arg("--download-archive")
+      .arg(staging_dir.join(".navio-completed.txt"));
+  }
+  command
+    // Keep the URL after every option. It prevents extractors from treating
+    // subsequent command arguments as independent download targets.
+    .arg(&job.request.url)
     .stdout(Stdio::piped())
     .stderr(Stdio::piped());
 
@@ -236,7 +260,16 @@ async fn run_attempt_inner(
   })?;
 
   let stderr_task = tauri::async_runtime::spawn(collect_stderr(stderr));
-  read_markers(app_handle, manager, id, stdout).await?;
+  let output = read_markers(
+    app_handle,
+    manager,
+    id,
+    stdout,
+    &staging_dir,
+    &download_dir,
+    !job.request.no_playlist,
+  )
+  .await?;
   let status = control.wait_for_child().await?;
   let last_error = stderr_task.await.unwrap_or_else(|_| String::new());
   match control.action() {
@@ -252,7 +285,14 @@ async fn run_attempt_inner(
       // Files become visible in the user's Downloads folder only after a fully
       // successful process exit. Failed playlist attempts keep every staged
       // file in place so a retry can continue rather than duplicate content.
-      let completed_paths = move_completed_media(&staging_dir, &download_dir)?;
+      let mut completed_paths = output.completed_paths;
+      let remaining_paths = move_completed_media(&staging_dir, &download_dir, &[])?;
+      if !job.request.no_playlist {
+        for path in &remaining_paths {
+          append_downloaded_playlist_track(app_handle, id, output.playlist_title.as_deref(), path)?;
+        }
+      }
+      completed_paths.extend(remaining_paths);
       if completed_paths.is_empty() {
         return Err("yt-dlp finished without producing a media file.".to_string());
       }
@@ -354,14 +394,18 @@ fn finish_before_spawn_if_stopped(
   }
 }
 
-/// Reads only Navio's structured yt-dlp markers and ignores unrelated presentation output.
+/// Reads Navio's markers and finalizes playlist items as yt-dlp completes them.
 async fn read_markers(
   app_handle: &AppHandle,
   manager: &DownloadManager,
   id: &str,
   stdout: tokio::process::ChildStdout,
-) -> Result<(), String> {
+  staging_dir: &Path,
+  download_dir: &Path,
+  is_playlist_download: bool,
+) -> Result<DownloadOutput, String> {
   let mut reader = BufReader::new(stdout).lines();
+  let mut output = DownloadOutput::default();
   while let Some(line) = reader
     .next_line()
     .await
@@ -378,9 +422,32 @@ async fn read_markers(
         job.total_items = update.total_items;
         Ok(())
       })?;
+    } else if let Some(file) = parse_file_marker(&line) {
+      if output.playlist_title.is_none() {
+        output.playlist_title = file.playlist_title.clone();
+      }
+      if is_playlist_download && is_staged_completed_media(staging_dir, &file.path) {
+        let completed_path = move_completed_file(&file.path, download_dir)?;
+        append_downloaded_playlist_track(
+          app_handle,
+          id,
+          file.playlist_title.as_deref(),
+          &completed_path,
+        )?;
+        update_job(app_handle, manager, id, |job| {
+          if !job.completed_paths.contains(&completed_path) {
+            job.completed_paths.push(completed_path.clone());
+          }
+          Ok(())
+        })?;
+        if let Err(error) = app_handle.emit("library-updated", ()) {
+          eprintln!("[Navio Event] failed to emit library-updated: {error}");
+        }
+        output.completed_paths.push(completed_path);
+      }
     }
   }
-  Ok(())
+  Ok(output)
 }
 
 /// Collects yt-dlp diagnostics without exposing the raw stream to the renderer.
@@ -404,6 +471,19 @@ struct ProgressUpdate {
   size: String,
   current_item: Option<u32>,
   total_items: Option<u32>,
+}
+
+/// Ordered media output reported by yt-dlp after each item's post-processing completes.
+#[derive(Default)]
+struct DownloadOutput {
+  playlist_title: Option<String>,
+  completed_paths: Vec<String>,
+}
+
+/// A single completed-file marker with optional source playlist metadata.
+struct DownloadedFile {
+  path: PathBuf,
+  playlist_title: Option<String>,
 }
 
 /// Parses a machine-owned tab-delimited marker, never a human-readable yt-dlp progress line.
@@ -431,6 +511,25 @@ fn parse_progress_marker(line: &str) -> Option<ProgressUpdate> {
     size: empty_marker(fields[4], "—"),
     current_item: fields[5].parse().ok(),
     total_items: fields[6].parse().ok(),
+  })
+}
+
+/// Parses Navio's post-move file marker without relying on yt-dlp presentation output.
+fn parse_file_marker(line: &str) -> Option<DownloadedFile> {
+  const FILE_PREFIX: &str = "NAVIO_FILE:";
+  let marker = line.find(FILE_PREFIX)?;
+  let (path, playlist_title) = line[marker + FILE_PREFIX.len()..].split_once('\t')?;
+  let path = PathBuf::from(path.trim());
+  if path.as_os_str().is_empty() {
+    return None;
+  }
+  let playlist_title = match playlist_title.trim() {
+    "" | "NA" => None,
+    title => Some(title.to_string()),
+  };
+  Some(DownloadedFile {
+    path,
+    playlist_title,
   })
 }
 
@@ -492,21 +591,167 @@ fn ensure_download_directory(
   Ok(download_dir)
 }
 
-/// Moves all completed regular files out of an isolated attempt directory only after yt-dlp succeeds.
-fn move_completed_media(staging_dir: &Path, download_dir: &Path) -> Result<Vec<String>, String> {
-  let mut files = Vec::new();
-  collect_completed_files(staging_dir, &mut files)?;
+/// Moves completed media out of the staging directory in yt-dlp's playlist order.
+fn move_completed_media(
+  staging_dir: &Path,
+  download_dir: &Path,
+  ordered_files: &[PathBuf],
+) -> Result<Vec<String>, String> {
+  let mut files = ordered_files
+    .iter()
+    .filter(|path| is_staged_completed_media(staging_dir, path))
+    .fold(Vec::new(), |mut files, path| {
+      if !files.contains(path) {
+        files.push(path.clone());
+      }
+      files
+    });
+  // Older yt-dlp versions may omit `after_move` markers. Continue supporting
+  // those downloads, although only marker-backed jobs can retain playlist order.
+  if files.is_empty() {
+    collect_completed_files(staging_dir, &mut files)?;
+  }
   let mut moved = Vec::new();
   for source in files {
-    let filename = source
-      .file_name()
-      .ok_or_else(|| "Completed download has no file name.".to_string())?;
-    let target = available_target_path(download_dir, filename);
-    move_file_with_cross_drive_fallback(&source, &target, |from, to| fs::rename(from, to))
-      .map_err(|error| format!("Failed to finalize downloaded media: {error}"))?;
-    moved.push(target.to_string_lossy().to_string());
+    moved.push(move_completed_file(&source, download_dir)?);
   }
   Ok(moved)
+}
+
+/// Moves one marker-confirmed media file into the user-visible downloads directory.
+fn move_completed_file(source: &Path, download_dir: &Path) -> Result<String, String> {
+  let filename = source
+    .file_name()
+    .ok_or_else(|| "Completed download has no file name.".to_string())?;
+  let target = available_target_path(download_dir, filename);
+  move_file_with_cross_drive_fallback(source, &target, |from, to| fs::rename(from, to))
+    .map_err(|error| format!("Failed to finalize downloaded media: {error}"))?;
+  Ok(target.to_string_lossy().to_string())
+}
+
+/// Accepts only finalized media files contained in Navio's private staging directory.
+fn is_staged_completed_media(staging_dir: &Path, path: &Path) -> bool {
+  path.starts_with(staging_dir) && path.is_file() && is_completed_media(path)
+}
+
+/// Creates the immediately visible playlist record for a newly queued playlist download.
+fn create_download_playlist(app_handle: &AppHandle, playlist_id: &str) -> Result<(), String> {
+  let mut db = crate::playlists::load_db(app_handle)?;
+  if db
+    .playlists
+    .iter()
+    .any(|playlist| playlist.id == playlist_id)
+  {
+    return Ok(());
+  }
+  let name = available_playlist_name(&db, "Downloading playlist", None);
+  db.playlists.push(crate::playlists::Playlist {
+    id: playlist_id.to_string(),
+    name,
+    tracks: Vec::new(),
+  });
+  crate::playlists::save_db(app_handle, &db)
+}
+
+/// Appends a completed media item and source title to its visible Navio playlist.
+fn append_downloaded_playlist_track(
+  app_handle: &AppHandle,
+  playlist_id: &str,
+  playlist_title: Option<&str>,
+  completed_path: &str,
+) -> Result<(), String> {
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|error| format!("Failed to resolve application cache directory: {error}"))?;
+  let track = playlist_track_from_download(completed_path, &cache_dir)?;
+  let mut db = crate::playlists::load_db(app_handle)?;
+  let requested_name = playlist_title
+    .filter(|title| !title.trim().is_empty())
+    .unwrap_or("Downloading playlist");
+  let name = available_playlist_name(&db, requested_name, Some(playlist_id));
+  let playlist = db
+    .playlists
+    .iter_mut()
+    .find(|playlist| playlist.id == playlist_id)
+    .ok_or_else(|| {
+      "The playlist download was removed before its item was finalized.".to_string()
+    })?;
+  playlist.name = name;
+  if !playlist.tracks.iter().any(|item| item.path == track.path) {
+    playlist.tracks.push(track);
+  }
+  crate::playlists::save_db(app_handle, &db)
+}
+
+/// Builds a playable snapshot even when a downloaded format has no metadata reader.
+fn playlist_track_from_download(
+  path: &str,
+  cache_dir: &Path,
+) -> Result<crate::library::MediaItem, String> {
+  if let Some(track) = crate::library::process_media_file(Path::new(path), cache_dir) {
+    return Ok(track);
+  }
+
+  let media_path = Path::new(path);
+  let extension = media_path
+    .extension()
+    .and_then(OsStr::to_str)
+    .map(str::to_ascii_lowercase)
+    .ok_or_else(|| format!("Downloaded media has no file extension: {path}"))?;
+  let media_type = match extension.as_str() {
+    "mp3" | "m4a" | "aac" | "opus" | "ogg" | "flac" | "wav" => "audio",
+    "mp4" | "mkv" | "webm" | "mov" | "avi" | "m4v" => "video",
+    _ => return Err(format!("Unsupported downloaded media format: {path}")),
+  };
+  let name = media_path
+    .file_name()
+    .and_then(OsStr::to_str)
+    .ok_or_else(|| format!("Downloaded media has no file name: {path}"))?;
+  let file_size_bytes = fs::metadata(media_path)
+    .map_err(|error| format!("Failed to inspect downloaded media: {error}"))?
+    .len();
+  Ok(crate::library::MediaItem {
+    id: format!("download-{}", uuid::Uuid::new_v4()),
+    path: path.to_string(),
+    name: name.to_string(),
+    title: None,
+    duration_secs: 0.0,
+    file_size_bytes,
+    media_type: media_type.to_string(),
+    cover_cache_path: None,
+  })
+}
+
+/// Produces a readable, unique name when a downloaded source matches an existing playlist.
+fn available_playlist_name(
+  db: &crate::playlists::PlaylistsDb,
+  requested_name: &str,
+  excluded_playlist_id: Option<&str>,
+) -> String {
+  let base_name = requested_name.trim();
+  let base_name = if base_name.is_empty() {
+    "Downloaded playlist"
+  } else {
+    base_name
+  };
+  if !db.playlists.iter().any(|playlist| {
+    Some(playlist.id.as_str()) != excluded_playlist_id
+      && playlist.name.eq_ignore_ascii_case(base_name)
+  }) {
+    return base_name.to_string();
+  }
+  let mut suffix = 2_u32;
+  loop {
+    let candidate = format!("{base_name} ({suffix})");
+    if !db.playlists.iter().any(|playlist| {
+      Some(playlist.id.as_str()) != excluded_playlist_id
+        && playlist.name.eq_ignore_ascii_case(&candidate)
+    }) {
+      return candidate;
+    }
+    suffix = suffix.saturating_add(1);
+  }
 }
 
 /// Returns an unused sibling path by adding the familiar ` (1)`, ` (2)` suffix.

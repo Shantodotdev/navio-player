@@ -62,7 +62,24 @@ export async function startDownload(
   job: Pick<DownloadJob, "id" | "url" | "format" | "no_playlist">,
 ): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");
-  await invoke("start_download", job);
+  await invoke("start_download", createStartDownloadPayload(job));
+}
+
+/** Converts Navio's persisted snake_case record into Tauri's camelCase command arguments. */
+export function createStartDownloadPayload(
+  job: Pick<DownloadJob, "id" | "url" | "format" | "no_playlist">,
+): {
+  id: string;
+  url: string;
+  format: DownloadJob["format"];
+  noPlaylist: boolean;
+} {
+  return {
+    id: job.id,
+    url: job.url,
+    format: job.format,
+    noPlaylist: job.no_playlist,
+  };
 }
 
 /** Dispatches a durable backend action for an existing job. */

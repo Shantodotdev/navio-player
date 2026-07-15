@@ -13,5 +13,5 @@ mod scanner;
 mod storage;
 
 pub use models::{LibraryDb, LibraryView, MediaItem};
-pub use scanner::build_library_view;
+pub use scanner::{build_library_view, process_media_file};
 pub use storage::{load_db, save_db};

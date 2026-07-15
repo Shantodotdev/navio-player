@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getDownloadActions, type DownloadJob } from "./downloads";
+import {
+  createStartDownloadPayload,
+  getDownloadActions,
+  type DownloadJob,
+} from "./downloads";
 
 /** Builds a minimal job record for testing the exhaustive action policy. */
 function createJob(status: DownloadJob["status"]): DownloadJob {
@@ -42,6 +46,24 @@ describe("getDownloadActions", () => {
       cancel: false,
       resume: false,
       remove: true,
+    });
+  });
+});
+
+describe("createStartDownloadPayload", () => {
+  it("uses Tauri's camelCase argument name for playlist downloads", () => {
+    expect(
+      createStartDownloadPayload({
+        id: "00000000-0000-4000-8000-000000000001",
+        url: "https://example.test/playlist",
+        format: "best",
+        no_playlist: false,
+      }),
+    ).toEqual({
+      id: "00000000-0000-4000-8000-000000000001",
+      url: "https://example.test/playlist",
+      format: "best",
+      noPlaylist: false,
     });
   });
 });
