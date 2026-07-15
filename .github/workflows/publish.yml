@@ -1,6 +1,7 @@
 name: 'publish'
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*' # Triggers on stable version tags (e.g. v1.0.0)
@@ -13,13 +14,58 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-22.04
+    outputs:
+      release_id: ${{ steps.release.outputs.release_id }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: create draft release if missing
-        uses: actions/github-script@v7
+        id: release
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const tagName = context.ref.replace('refs/tags/', '')
+            const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/
+            let tagName = context.ref.replace('refs/tags/', '')
+
+            if (context.eventName === 'workflow_dispatch') {
+              const tags = await github.paginate(github.rest.repos.listTags, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                per_page: 100,
+              })
+              const stableTags = tags
+                .map((tag) => {
+                  const match = tag.name.match(stableTagPattern)
+                  return match
+                    ? { name: tag.name, version: match.slice(1).map(Number) }
+                    : null
+                })
+                .filter(Boolean)
+                .sort((left, right) => {
+                  for (let index = 0; index < 3; index += 1) {
+                    const difference = right.version[index] - left.version[index]
+                    if (difference !== 0) return difference
+                  }
+                  return 0
+                })
+
+              if (stableTags.length === 0) {
+                core.setFailed('No stable version tag was found.')
+                return
+              }
+              tagName = stableTags[0].name
+            }
+
+            if (!stableTagPattern.test(tagName)) {
+              core.setFailed(`Release tag ${tagName} is not a stable vMAJOR.MINOR.PATCH tag.`)
+              return
+            }
+
+            const releases = await github.paginate(github.rest.repos.listReleases, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100,
+            })
             const releaseData = {
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -30,18 +76,17 @@ jobs:
               prerelease: false,
             }
 
-            try {
-              await github.rest.repos.getReleaseByTag({
-                owner: releaseData.owner,
-                repo: releaseData.repo,
-                tag: tagName,
-              })
+            let release = releases.find((candidate) => candidate.tag_name === tagName)
+            if (release) {
               core.info(`Release ${tagName} already exists; reusing it.`)
-            } catch (error) {
-              if (error.status !== 404) throw error
-              await github.rest.repos.createRelease(releaseData)
+            } else {
+              const response = await github.rest.repos.createRelease(releaseData)
+              release = response.data
               core.info(`Created draft release ${tagName}.`)
             }
+
+            core.setOutput('release_id', release.id)
+            core.setOutput('tag_name', tagName)
 
   publish-tauri:
     needs: create-release
@@ -62,10 +107,12 @@ jobs:
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.create-release.outputs.tag_name }}
 
       - name: setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: lts/*
 
@@ -87,35 +134,30 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }} # Uses the stable tag pushed (e.g. v0.1.0)
-          releaseName: 'Navio Player ${{ github.ref_name }}'
+          tagName: ${{ needs.create-release.outputs.tag_name }}
+          releaseName: 'Navio Player ${{ needs.create-release.outputs.tag_name }}'
           releaseBody: 'See the assets below to download and install Navio Player for your operating system.'
           releaseDraft: true
           args: ${{ matrix.args }}
 
   publish-release:
-    needs: publish-tauri
+    needs:
+      - create-release
+      - publish-tauri
     permissions:
       contents: write
     runs-on: ubuntu-22.04
     steps:
       - name: publish completed release
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const tagName = context.ref.replace('refs/tags/', '')
-            const { data: release } = await github.rest.repos.getReleaseByTag({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag: tagName,
-            })
-
             await github.rest.repos.updateRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              release_id: release.id,
+              release_id: Number('${{ needs.create-release.outputs.release_id }}'),
               draft: false,
               prerelease: false,
             })
-            core.info(`Published stable release ${tagName}.`)
+            core.info(`Published stable release ${{ needs.create-release.outputs.tag_name }}.`)
