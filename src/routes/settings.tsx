@@ -7,6 +7,7 @@ import {
   Volume2,
 } from "lucide-react";
 import { Switch } from "../components/Switch";
+import { Select } from "../components/Select";
 import { SettingsActionModal } from "../components/SettingsActionModal";
 import { NAVIO_LANGUAGE_OPTIONS } from "../lib/mediaLanguages";
 import { useSettingsStore } from "../store/settingsStore";
@@ -156,20 +157,20 @@ function SettingsView() {
             />
             <div className="flex items-center justify-between py-2">
               <span className="text-zinc-200">Default library view</span>
-              <select
-                value={settings.library.viewMode}
-                onChange={(event) =>
-                  void updateSettings({
-                    library: {
-                      viewMode: event.target.value as "list" | "grid",
-                    },
-                  })
-                }
-                className="bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-zinc-200"
-              >
-                <option value="list">List</option>
-                <option value="grid">Grid</option>
-              </select>
+              <div className="w-36 shrink-0">
+                <Select
+                  options={[
+                    { value: "list", label: "List" },
+                    { value: "grid", label: "Grid" },
+                  ]}
+                  value={settings.library.viewMode}
+                  onChange={(value) =>
+                    void updateSettings({
+                      library: { viewMode: value as "list" | "grid" },
+                    })
+                  }
+                />
+              </div>
             </div>
           </section>
 
@@ -342,18 +343,19 @@ function LanguageSelect({
   return (
     <label className="flex items-center justify-between gap-4 py-2 text-zinc-200">
       <span>{label}</span>
-      <select
-        value={value ?? ""}
-        onChange={(event) => onChange(event.target.value || null)}
-        className="bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-zinc-200"
-      >
-        <option value="">Auto</option>
-        {NAVIO_LANGUAGE_OPTIONS.map(([code, name]) => (
-          <option key={code} value={code}>
-            {name}
-          </option>
-        ))}
-      </select>
+      <div className="w-36 shrink-0">
+        <Select
+          options={[
+            { value: "", label: "Auto" },
+            ...NAVIO_LANGUAGE_OPTIONS.map(([code, name]) => ({
+              value: code,
+              label: name,
+            })),
+          ]}
+          value={value ?? ""}
+          onChange={(selectedValue) => onChange(selectedValue || null)}
+        />
+      </div>
     </label>
   );
 }
