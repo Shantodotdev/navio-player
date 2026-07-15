@@ -3,7 +3,7 @@ name: 'publish'
 on:
   push:
     tags:
-      - 'v*' # Triggers on version tags (e.g. v1.0.0)
+      - 'v*' # Triggers on stable version tags (e.g. v1.0.0)
 
 permissions:
   contents: write
@@ -27,7 +27,7 @@ jobs:
               name: `Navio Player ${tagName}`,
               body: 'See the assets below to download and install Navio Player for your operating system.',
               draft: true,
-              prerelease: tagName.includes('-rc') || tagName.includes('-alpha') || tagName.includes('-beta'),
+              prerelease: false,
             }
 
             try {
@@ -87,8 +87,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_name }} # Uses the tag pushed (e.g. v0.1.0 or v0.1.0-rc.1)
+          tagName: ${{ github.ref_name }} # Uses the stable tag pushed (e.g. v0.1.0)
           releaseName: 'Navio Player ${{ github.ref_name }}'
           releaseBody: 'See the assets below to download and install Navio Player for your operating system.'
           releaseDraft: true
           args: ${{ matrix.args }}
+
+  publish-release:
+    needs: publish-tauri
+    permissions:
+      contents: write
+    runs-on: ubuntu-22.04
+    steps:
+      - name: publish completed release
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const tagName = context.ref.replace('refs/tags/', '')
+            const { data: release } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tagName,
+            })
+
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.id,
+              draft: false,
+              prerelease: false,
+            })
+            core.info(`Published stable release ${tagName}.`)
