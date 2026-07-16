@@ -275,15 +275,11 @@ a {
   transform-origin: bottom;
 }
 
-.product-preview {
-  position: relative;
-  overflow: hidden;
+.hero-preview-image {
+  display: block;
   width: 100%;
-  min-height: 560px;
+  height: auto;
   border-radius: 16px;
-  background: #09090c;
-  text-align: left;
-  user-select: none;
 }
 
 .preview-titlebar {
@@ -1055,10 +1051,6 @@ a {
     padding-top: 92px;
   }
 
-  .product-preview {
-    min-height: 470px;
-  }
-
   .preview-workspace {
     height: 355px;
   }
@@ -1148,10 +1140,6 @@ a {
 
   .hero-preview-wrap {
     margin-top: 62px;
-  }
-
-  .product-preview {
-    min-height: 403px;
   }
 
   .preview-titlebar {

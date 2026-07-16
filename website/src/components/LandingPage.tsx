@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { usePlatform } from "../hooks/usePlatform";
 import type { DesktopPlatform } from "../hooks/usePlatform";
-import { ProductPreview } from "./ProductPreview";
 
 const DOWNLOAD_URL =
   "https://github.com/Shantodotdev/navio-player/releases/latest";
@@ -124,7 +123,11 @@ function HeroSection({
       </div>
 
       <div className="hero-preview-wrap">
-        <ProductPreview />
+        <img
+          className="hero-preview-image"
+          src="/Navio-screenshot.png"
+          alt="Navio media library with video playback queue and player controls"
+        />
       </div>
 
       <div className="principles" aria-label="Navio product principles">
