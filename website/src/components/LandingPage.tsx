@@ -1,15 +1,9 @@
 import {
   ArrowRight,
-  Check,
   CircleCheck,
   Download,
-  FolderSearch,
   Github,
-  Globe2,
-  ListMusic,
   LockKeyhole,
-  MonitorDown,
-  Play,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -21,28 +15,19 @@ const GITHUB_URL = "https://github.com/Shantodotdev/navio-player";
 
 const features = [
   {
-    number: "01",
-    icon: <Play size={22} />,
     title: "Play without compromise",
     description:
       "Move from music to full-resolution video in the same polished player, with fast seeking and controls that stay out of your way.",
-    detail: "Audio and video, beautifully handled",
   },
   {
-    number: "02",
-    icon: <FolderSearch size={22} />,
     title: "A library that builds itself",
     description:
       "Point Navio at your folders. It reads your media, organizes the details, and keeps everything ready without uploading a single file.",
-    detail: "Automatic local folder scanning",
   },
   {
-    number: "03",
-    icon: <MonitorDown size={22} />,
     title: "Save media in a few clicks",
     description:
       "Download individual videos, audio tracks, or complete playlists, then play them immediately from your local collection.",
-    detail: "Built-in video and playlist downloader",
   },
 ];
 
@@ -58,7 +43,6 @@ export function LandingPage({
       <main>
         <HeroSection operatingSystem={operatingSystem} />
         <FeatureSection />
-        <PrivacySection />
         <DownloadSection operatingSystem={operatingSystem} />
       </main>
       <SiteFooter />
@@ -73,32 +57,19 @@ function SiteHeader({
   operatingSystem: DesktopPlatform | null;
 }) {
   return (
-    <header className="relative z-20 mx-auto grid h-20.5 w-[calc(100%-48px)] max-w-295 grid-cols-[1fr_auto] items-center border-b border-white/10 max-sm:h-17.5 max-sm:w-[calc(100%-30px)] md:grid-cols-[1fr_auto_1fr]">
-      <BrandLink />
-      <nav
-        className="hidden items-center gap-8 text-[15px] text-zinc-300 md:flex"
-        aria-label="Main navigation"
-      >
-        <a className="transition-colors hover:text-white" href="#features">
-          Features
-        </a>
-        <a className="transition-colors hover:text-white" href="#privacy">
-          Privacy
-        </a>
+    <header className="relative z-20 mx-auto grid h-20.5 w-[calc(100%-48px)] max-w-295 grid-cols-[1fr_auto] items-center border-b border-white/10 max-sm:h-17.5 max-sm:w-[calc(100%-30px)]">
+      <BrandLink className="justify-self-start" />
+      <div className="flex items-center gap-3 justify-self-end">
         <a
-          className="transition-colors hover:text-white"
+          className="inline-flex min-h-9.5 items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 text-sm text-zinc-200 transition-colors hover:border-white/20 hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ed315e] max-sm:px-3 max-sm:text-[0]"
           href={GITHUB_URL}
           target="_blank"
           rel="noreferrer"
         >
-          GitHub
+          <Github size={17} /> GitHub
         </a>
-      </nav>
-      <DownloadLink
-        className="justify-self-end"
-        compact
-        operatingSystem={operatingSystem}
-      />
+        <DownloadLink compact operatingSystem={operatingSystem} />
+      </div>
     </header>
   );
 }
@@ -151,20 +122,20 @@ function HeroSection({
       </div>
 
       <div
-        className="mt-12 flex w-[min(100%,920px)] justify-center divide-x divide-white/10 border-y border-white/10 max-sm:flex-col max-sm:divide-x-0 max-sm:divide-y"
+        className="mt-16 grid w-full max-w-190 divide-y divide-white/10 border-y border-white/10"
         aria-label="Navio product principles"
       >
         <Principle
-          icon={<LockKeyhole size={15} />}
+          icon={<LockKeyhole size={20} />}
           label="No account required"
         />
         <Principle
-          icon={<ShieldCheck size={15} />}
-          label="Local-first by default"
+          icon={<ShieldCheck size={20} />}
+          label="Your library stays on-device"
         />
         <Principle
-          icon={<Sparkles size={15} />}
-          label="Built for everyday media"
+          icon={<Sparkles size={20} />}
+          label="Music, video, and downloads in one app"
         />
       </div>
     </section>
@@ -174,7 +145,7 @@ function HeroSection({
 /** Renders one concise product principle. */
 function Principle({ icon, label }: { icon: React.ReactNode; label: string }) {
   return (
-    <span className="flex min-h-17.5 flex-1 items-center justify-center gap-2 text-xs text-zinc-400 max-sm:min-h-13.5 [&_svg]:text-[#b62648]">
+    <span className="flex min-h-20 items-center gap-4 px-2 text-lg leading-7 text-zinc-200 max-sm:min-h-18 max-sm:px-1 max-sm:text-base [&_svg]:shrink-0 [&_svg]:text-[#d32952]">
       {icon} {label}
     </span>
   );
@@ -184,16 +155,15 @@ function Principle({ icon, label }: { icon: React.ReactNode; label: string }) {
 function FeatureSection() {
   return (
     <section
-      className="mx-auto w-[calc(100%-48px)] max-w-270 py-44 max-sm:w-[calc(100%-30px)] max-sm:py-30"
+      className="mx-auto grid w-[calc(100%-48px)] max-w-295 grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-24 pt-44 pb-16 max-lg:grid-cols-1 max-lg:gap-16 max-sm:w-[calc(100%-30px)] max-sm:gap-12 max-sm:pt-30 max-sm:pb-12"
       id="features"
       aria-label="Navio features"
     >
-      <div className="mb-19.25 max-w-167.5 max-sm:mb-13">
-        <SectionLabel>Everything you need</SectionLabel>
-        <h2 className="text-[clamp(2.6rem,5vw,4.6rem)] leading-[1.02] tracking-[-0.065em] text-balance max-sm:text-[clamp(2.6rem,13vw,4rem)]">
+      <div className="max-w-120 self-start lg:sticky lg:top-24">
+        <h2 className="text-[clamp(3rem,5vw,4.75rem)] leading-[1.08] tracking-[-0.04em] text-balance max-sm:text-[clamp(2.8rem,13vw,4rem)] max-sm:leading-[1.1]">
           One player. Your whole collection.
         </h2>
-        <p className="mt-6 max-w-140 text-base leading-7 text-zinc-400">
+        <p className="mt-9 max-w-110 text-lg leading-8.5 text-zinc-400 max-sm:mt-7 max-sm:text-base max-sm:leading-7.5">
           Navio brings playback, organization, and downloading into one focused
           desktop experience.
         </p>
@@ -202,109 +172,19 @@ function FeatureSection() {
       <div className="border-t border-white/10">
         {features.map((feature) => (
           <article
-            className="grid grid-cols-[55px_60px_minmax(280px,1fr)_minmax(190px,0.62fr)] items-start gap-6.5 border-b border-white/10 py-11.5 max-sm:grid-cols-[42px_1fr] max-sm:gap-4.5 max-sm:py-9 md:max-lg:grid-cols-[42px_52px_1fr]"
-            key={feature.number}
+            className="grid grid-cols-[minmax(190px,0.75fr)_minmax(0,1fr)] gap-16 border-b border-white/10 py-16 max-sm:grid-cols-1 max-sm:gap-6 max-sm:py-11"
+            key={feature.title}
           >
-            <span className="text-[11px] text-zinc-600 max-sm:col-span-full">
-              {feature.number}
-            </span>
-            <div className="flex h-11 w-11 items-center justify-center rounded-[10px] border border-[#ce274f]/20 bg-[#b51f43]/10 text-[#dc2d57]">
-              {feature.icon}
-            </div>
-            <div>
-              <h3 className="mb-3 text-[21px] tracking-[-0.035em] max-sm:text-[19px]">
-                {feature.title}
-              </h3>
-              <p className="max-w-[520px] text-sm leading-6 text-zinc-400">
-                {feature.description}
-              </p>
-            </div>
-            <span className="pt-1.5 text-xs leading-5 text-zinc-500 max-lg:hidden">
-              {feature.detail}
-            </span>
+            <h3 className="text-[26px] leading-[1.35] tracking-[-0.015em] text-zinc-100 max-sm:text-2xl max-sm:leading-[1.35]">
+              {feature.title}
+            </h3>
+            <p className="max-w-135 text-[17px] leading-8 text-zinc-400 max-sm:text-base max-sm:leading-7.5">
+              {feature.description}
+            </p>
           </article>
         ))}
       </div>
     </section>
-  );
-}
-
-/** Highlights the local-first privacy model without overstating security guarantees. */
-function PrivacySection() {
-  return (
-    <section
-      className="mx-auto grid min-h-[660px] w-[calc(100%_-_48px)] max-w-[1180px] grid-cols-[minmax(360px,1fr)_minmax(360px,0.85fr)] items-center gap-[100px] overflow-hidden rounded-[22px] border border-white/10 bg-[radial-gradient(circle_at_16%_50%,rgba(143,18,50,0.16),transparent_38%),linear-gradient(145deg,#0b0b0e,#08080a)] p-[82px] max-sm:w-[calc(100%_-_30px)] max-sm:grid-cols-1 max-sm:gap-9 max-sm:px-6 max-sm:py-12 md:max-lg:grid-cols-2 md:max-lg:gap-12 md:max-lg:p-[52px]"
-      id="privacy"
-    >
-      <PrivacyVisual />
-      <div>
-        <SectionLabel>Private by design</SectionLabel>
-        <h2 className="text-[clamp(2.6rem,5vw,4.6rem)] leading-[1.02] tracking-[-0.065em] text-balance max-sm:text-[clamp(2.6rem,13vw,4rem)]">
-          Your library stays yours.
-        </h2>
-        <p className="mt-6 text-[15px] leading-7 text-zinc-400">
-          Navio works locally and doesn’t require an account or remote
-          application backend. Your scanned folders, playlists, and playback
-          history stay on your computer.
-        </p>
-        <ul className="mt-8 grid gap-3 p-0 text-[13px] text-zinc-300">
-          <PrivacyPoint>No sign-up or profile</PrivacyPoint>
-          <PrivacyPoint>No media uploads</PrivacyPoint>
-          <PrivacyPoint>Local library storage</PrivacyPoint>
-        </ul>
-      </div>
-    </section>
-  );
-}
-
-/** Renders the decorative local-first privacy illustration. */
-function PrivacyVisual() {
-  return (
-    <div
-      className="relative mx-auto aspect-square w-[min(100%,430px)] max-sm:w-[min(100%,340px)]"
-      aria-hidden="true"
-    >
-      <div className="absolute left-1/2 top-1/2 h-[58%] w-[58%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
-      <div className="absolute left-1/2 top-1/2 h-[92%] w-[92%] -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-white/10 opacity-70" />
-      <div className="absolute left-1/2 top-1/2 z-10 flex h-28 w-28 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-[29px] border border-[#ff517a]/25 bg-[linear-gradient(145deg,rgba(192,29,68,0.15),rgba(62,9,24,0.25))] shadow-[0_0_80px_rgba(181,31,67,0.18),inset_0_1px_rgba(255,255,255,0.08)]">
-        <img className="h-[67px] w-[67px]" src="/navio-logo.png" alt="" />
-      </div>
-      <PrivacyNode className="left-[47%] top-[17%]">
-        <ListMusic size={16} />
-      </PrivacyNode>
-      <PrivacyNode className="bottom-[28%] right-[5%]">
-        <Globe2 size={16} />
-      </PrivacyNode>
-      <PrivacyNode className="bottom-[11%] left-[17%] text-[#d72a54]">
-        <LockKeyhole size={16} />
-      </PrivacyNode>
-    </div>
-  );
-}
-
-/** Renders one orbiting privacy illustration node. */
-function PrivacyNode({
-  children,
-  className,
-}: {
-  children: React.ReactNode;
-  className: string;
-}) {
-  return (
-    <div
-      className={`absolute z-20 flex h-10 w-10 items-center justify-center rounded-[11px] border border-white/10 bg-[#111116] text-zinc-500 shadow-[0_10px_30px_rgba(0,0,0,0.4)] ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
-
-/** Renders one privacy guarantee. */
-function PrivacyPoint({ children }: { children: React.ReactNode }) {
-  return (
-    <li className="flex items-center gap-2.5">
-      <Check className="text-[#57b883]" size={15} /> {children}
-    </li>
   );
 }
 
@@ -316,31 +196,21 @@ function DownloadSection({
 }) {
   return (
     <section
-      className="mx-auto flex w-[calc(100%_-_48px)] max-w-[950px] flex-col items-center py-[180px] text-center max-sm:w-[calc(100%_-_30px)] max-sm:py-[125px]"
+      className="mx-auto flex w-[calc(100%-48px)] max-w-237.5 flex-col items-center pt-16 pb-45 text-center max-sm:w-[calc(100%-30px)] max-sm:pt-12 max-sm:pb-31.25"
       id="download"
     >
-      <div className="mb-9 flex h-[70px] w-[70px] items-center justify-center rounded-[20px] border border-[#ff4b76]/20 bg-[#b51f43]/10 shadow-[0_0_70px_rgba(181,31,67,0.15)]">
-        <img className="h-[47px] w-[47px]" src="/navio-logo.png" alt="" />
+      <div className="mb-9 flex h-17.5 w-17.5 items-center justify-center rounded-[20px] border border-[#ff4b76]/20 bg-[#b51f43]/10 shadow-[0_0_70px_rgba(181,31,67,0.15)]">
+        <img className="h-11.75 w-11.75" src="/navio-logo.png" alt="" />
       </div>
-      <h2 className="max-w-[720px] text-[clamp(2.6rem,5vw,4.6rem)] leading-[1.02] tracking-[-0.065em] text-balance max-sm:text-[clamp(2.6rem,13vw,4rem)]">
+      <h2 className="max-w-180 text-[clamp(2.6rem,5vw,4.6rem)] leading-[1.02] tracking-[-0.065em] text-balance max-sm:text-[clamp(2.6rem,13vw,4rem)]">
         Make your media feel at home.
       </h2>
-      <p className="mb-8 mt-6 max-w-[560px] text-base leading-7 text-zinc-400">
+      <p className="mb-8 mt-6 max-w-140 text-base leading-7 text-zinc-400">
         Download Navio and bring your videos, music, playlists, and saved media
         together.
       </p>
       <DownloadLink operatingSystem={operatingSystem} />
-      <ProductTags />
     </section>
-  );
-}
-
-/** Renders a small uppercase section label. */
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mb-4 text-[11px] tracking-[0.14em] text-[#ed315e] uppercase">
-      {children}
-    </p>
   );
 }
 
@@ -348,7 +218,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 function ProductTags() {
   return (
     <div
-      className="mt-[22px] flex flex-wrap items-center justify-center gap-2.5"
+      className="mt-5.5 flex flex-wrap items-center justify-center gap-2.5"
       aria-label="Navio availability"
     >
       <ProductTag>Open source</ProductTag>
@@ -360,7 +230,7 @@ function ProductTags() {
 /** Renders one availability tag. */
 function ProductTag({ children }: { children: React.ReactNode }) {
   return (
-    <span className="inline-flex min-h-[34px] items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-[13px] text-[13px] text-zinc-400">
+    <span className="inline-flex min-h-8.5 items-center gap-2 rounded-full border border-white/10 bg-white/[0.035] px-3.25 text-[13px] text-zinc-400">
       <CircleCheck className="text-[#5ec28c]" size={15} /> {children}
     </span>
   );
@@ -392,18 +262,20 @@ function DownloadLink({
 }
 
 /** Renders the Navio brand link. */
-function BrandLink({ footer = false }: { footer?: boolean }) {
+function BrandLink({
+  className = "",
+  prominent = false,
+}: {
+  className?: string;
+  prominent?: boolean;
+}) {
   return (
     <a
-      className={`inline-flex w-max items-center gap-2.5 text-lg tracking-[-0.04em] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ed315e] ${footer ? "[grid-area:brand]" : "justify-self-start"}`}
+      className={`inline-flex w-max items-center gap-2.5 tracking-[-0.04em] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#ed315e] ${prominent ? "text-2xl" : "text-xl"} ${className}`}
       href="#top"
       aria-label="Navio home"
     >
-      <img
-        className="h-[29px] w-[29px] object-contain"
-        src="/navio-logo.png"
-        alt=""
-      />
+      <img className="h-10 w-10 object-contain" src="/navio-logo.png" alt="" />
       <span>Navio</span>
     </a>
   );
@@ -412,30 +284,42 @@ function BrandLink({ footer = false }: { footer?: boolean }) {
 /** Renders repository and product links at the bottom of the page. */
 function SiteFooter() {
   return (
-    <footer className="mx-auto grid min-h-[120px] w-[calc(100%_-_48px)] max-w-[1180px] grid-cols-[auto_1fr_auto] grid-rows-2 items-center gap-x-6 border-t border-white/10 max-sm:w-[calc(100%_-_30px)] max-sm:grid-cols-[1fr_auto] max-sm:grid-rows-none max-sm:gap-3 max-sm:py-8">
-      <BrandLink footer />
-      <p className="self-end text-xs text-zinc-500 max-sm:col-span-full max-sm:self-auto">
-        Local media, thoughtfully played.
-      </p>
-      <div className="row-span-2 flex items-center gap-6 text-xs text-zinc-400 max-sm:row-span-1 [&_a]:transition-colors [&_a]:hover:text-white">
+    <footer className="mx-auto w-[calc(100%-48px)] max-w-295 border-t border-white/10 py-9 max-sm:w-[calc(100%-30px)]">
+      <div className="flex min-h-16 items-center justify-between gap-10 max-sm:flex-col max-sm:items-start max-sm:gap-7">
+        <BrandLink prominent />
+
+        <nav
+          className="flex items-center gap-9 text-[15px] text-zinc-300 max-sm:flex-wrap max-sm:gap-x-6 max-sm:gap-y-4 [&_a]:transition-colors [&_a]:hover:text-white"
+          aria-label="Footer navigation"
+        >
+          <a href="#features">Features</a>
+          <a href="#download">Download</a>
+          <a
+            className="inline-flex items-center gap-2"
+            href={GITHUB_URL}
+            target="_blank"
+            rel="noreferrer"
+          >
+            <Github size={17} /> GitHub
+          </a>
+        </nav>
+
+        <span className="shrink-0 text-sm text-zinc-500">
+          © 2026 Navio Player
+        </span>
+      </div>
+
+      <p className="mt-7 text-center text-base text-zinc-400">
+        Developed and maintained by{" "}
         <a
-          className="inline-flex items-center gap-1.5"
-          href={GITHUB_URL}
+          className="text-[#ed315e] transition-colors hover:text-[#ff4b76]"
+          href="https://krshanto.dev"
           target="_blank"
           rel="noreferrer"
         >
-          <Github size={15} /> GitHub
+          KR Shanto
         </a>
-        <a className="max-sm:hidden" href="#features">
-          Features
-        </a>
-        <a className="max-sm:hidden" href="#privacy">
-          Privacy
-        </a>
-      </div>
-      <span className="self-start text-[10px] text-zinc-600 max-sm:col-span-full max-sm:self-auto">
-        © 2026 Navio
-      </span>
+      </p>
     </footer>
   );
 }
