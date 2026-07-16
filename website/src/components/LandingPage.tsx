@@ -1,6 +1,7 @@
 import {
   ArrowRight,
   Check,
+  CircleCheck,
   Download,
   FolderSearch,
   Github,
@@ -115,12 +116,7 @@ function HeroSection({
             Explore features <ArrowRight size={16} />
           </a>
         </div>
-        <div className="download-note">
-          <span>
-            <Check size={13} /> Free and open source
-          </span>
-          <span>Version 0.1.0 · {operatingSystem ?? "Desktop"}</span>
-        </div>
+        <ProductTags />
       </div>
 
       <div className="hero-preview-wrap">
@@ -241,10 +237,22 @@ function DownloadSection({
         together.
       </p>
       <DownloadLink operatingSystem={operatingSystem} />
-      <span>
-        Free · Open source · {operatingSystem ?? "Windows, macOS, and Linux"}
-      </span>
+      <ProductTags />
     </section>
+  );
+}
+
+/** Renders the product's permanent availability highlights. */
+function ProductTags() {
+  return (
+    <div className="product-tags" aria-label="Navio availability">
+      <span>
+        <CircleCheck size={15} /> Open source
+      </span>
+      <span>
+        <CircleCheck size={15} /> Free forever
+      </span>
+    </div>
   );
 }
 

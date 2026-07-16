@@ -91,7 +91,7 @@ a {
   align-items: center;
   gap: 32px;
   color: var(--muted-strong);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -154,7 +154,7 @@ a {
   min-height: 38px;
   padding: 0 15px;
   border-radius: 8px;
-  font-size: 12px;
+  font-size: 14px;
 }
 
 .hero {
@@ -236,23 +236,28 @@ a {
   transform: translateX(3px);
 }
 
-.download-note {
+.product-tags {
   display: flex;
   align-items: center;
-  gap: 19px;
-  margin-top: 20px;
-  color: #716d70;
-  font-size: 11px;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 22px;
 }
 
-.download-note span:first-child {
+.product-tags span {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  color: #918c8f;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.035);
+  color: #aaa5a8;
+  font-size: 13px;
 }
 
-.download-note svg {
+.product-tags svg {
   color: #5ec28c;
 }
 
@@ -986,10 +991,8 @@ a {
   line-height: 1.7;
 }
 
-.download-section > span {
-  margin-top: 16px;
-  color: #666164;
-  font-size: 11px;
+.download-section .product-tags {
+  margin-top: 18px;
 }
 
 .site-footer {
@@ -1133,9 +1136,8 @@ a {
     width: 100%;
   }
 
-  .download-note {
-    flex-direction: column;
-    gap: 7px;
+  .product-tags {
+    flex-wrap: wrap;
   }
 
   .hero-preview-wrap {
