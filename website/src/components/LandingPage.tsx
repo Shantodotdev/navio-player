@@ -12,8 +12,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { usePlatform } from "../hooks/usePlatform";
-import type { DesktopPlatform } from "../hooks/usePlatform";
+import type { DesktopPlatform } from "../lib/platform.functions";
 
 const DOWNLOAD_URL =
   "https://github.com/Shantodotdev/navio-player/releases/latest";
@@ -47,9 +46,11 @@ const features = [
 ];
 
 /** Renders Navio's public product landing page. */
-export function LandingPage() {
-  const operatingSystem = usePlatform();
-
+export function LandingPage({
+  operatingSystem = null,
+}: {
+  operatingSystem?: DesktopPlatform | null;
+}) {
   return (
     <div className="site-shell">
       <SiteHeader operatingSystem={operatingSystem} />
