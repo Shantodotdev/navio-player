@@ -5,7 +5,7 @@
   "identifier": "com.navioplayer.com",
   "build": {
     "frontendDist": "../dist/client",
-    "devUrl": "http://localhost:3000",
+    "devUrl": "http://localhost:1420",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build:tauri"
   },

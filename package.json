@@ -6,7 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "vite dev --port 1420",
     "dev:website": "npm --prefix website run dev",
     "generate-routes": "tsr generate",
     "build": "vite build",
