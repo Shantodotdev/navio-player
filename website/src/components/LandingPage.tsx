@@ -12,6 +12,8 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
+import { usePlatform } from "../hooks/usePlatform";
+import type { DesktopPlatform } from "../hooks/usePlatform";
 import { ProductPreview } from "./ProductPreview";
 
 const DOWNLOAD_URL =
@@ -47,14 +49,16 @@ const features = [
 
 /** Renders Navio's public product landing page. */
 export function LandingPage() {
+  const operatingSystem = usePlatform();
+
   return (
     <div className="site-shell">
-      <SiteHeader />
+      <SiteHeader operatingSystem={operatingSystem} />
       <main>
-        <HeroSection />
+        <HeroSection operatingSystem={operatingSystem} />
         <FeatureSection />
         <PrivacySection />
-        <DownloadSection />
+        <DownloadSection operatingSystem={operatingSystem} />
       </main>
       <SiteFooter />
     </div>
@@ -62,7 +66,11 @@ export function LandingPage() {
 }
 
 /** Renders the compact marketing-site navigation. */
-function SiteHeader() {
+function SiteHeader({
+  operatingSystem,
+}: {
+  operatingSystem: DesktopPlatform | null;
+}) {
   return (
     <header className="site-header">
       <a className="brand" href="#top" aria-label="Navio home">
@@ -76,13 +84,21 @@ function SiteHeader() {
           GitHub
         </a>
       </nav>
-      <DownloadLink className="header-download" compact />
+      <DownloadLink
+        className="header-download"
+        compact
+        operatingSystem={operatingSystem}
+      />
     </header>
   );
 }
 
 /** Introduces Navio and its primary download action. */
-function HeroSection() {
+function HeroSection({
+  operatingSystem,
+}: {
+  operatingSystem: DesktopPlatform | null;
+}) {
   return (
     <section className="hero" id="top">
       <div className="hero-glow" aria-hidden="true" />
@@ -94,7 +110,7 @@ function HeroSection() {
           device.
         </p>
         <div className="hero-actions">
-          <DownloadLink />
+          <DownloadLink operatingSystem={operatingSystem} />
           <a className="secondary-link" href="#features">
             Explore features <ArrowRight size={16} />
           </a>
@@ -103,7 +119,7 @@ function HeroSection() {
           <span>
             <Check size={13} /> Free and open source
           </span>
-          <span>Version 0.1.0 · Windows 10 or later</span>
+          <span>Version 0.1.0 · {operatingSystem ?? "Desktop"}</span>
         </div>
       </div>
 
@@ -205,7 +221,11 @@ function PrivacySection() {
 }
 
 /** Closes the page with a direct product download invitation. */
-function DownloadSection() {
+function DownloadSection({
+  operatingSystem,
+}: {
+  operatingSystem: DesktopPlatform | null;
+}) {
   return (
     <section className="download-section" id="download">
       <div className="download-mark">
@@ -216,19 +236,23 @@ function DownloadSection() {
         Download Navio and bring your videos, music, playlists, and saved media
         together.
       </p>
-      <DownloadLink />
-      <span>Free · Open source · Windows 10 or later</span>
+      <DownloadLink operatingSystem={operatingSystem} />
+      <span>
+        Free · Open source · {operatingSystem ?? "Windows, macOS, and Linux"}
+      </span>
     </section>
   );
 }
 
-/** Renders the shared Windows release link with consistent CTA treatment. */
+/** Renders the shared desktop release link with an OS-aware label. */
 function DownloadLink({
   className = "",
   compact = false,
+  operatingSystem,
 }: {
   className?: string;
   compact?: boolean;
+  operatingSystem: DesktopPlatform | null;
 }) {
   return (
     <a
@@ -236,7 +260,7 @@ function DownloadLink({
       href={DOWNLOAD_URL}
     >
       <Download size={compact ? 15 : 17} />
-      Download for Windows
+      {operatingSystem ? `Download for ${operatingSystem}` : "Download Navio"}
     </a>
   );
 }
