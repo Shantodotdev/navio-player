@@ -43,11 +43,11 @@ export const Route = createRootRoute({
 /** Defines the shared HTML document and metadata shell. */
 function RootDocument({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html className="min-w-80 scroll-smooth bg-[#050507]" lang="en">
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="m-0 min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_50%_-10%,rgba(143,21,50,0.14),transparent_34rem)] bg-[#050507] font-['Inter_Variable'] font-medium text-[#f5f3f4] antialiased scheme-dark">
         {children}
         <Scripts />
       </body>
