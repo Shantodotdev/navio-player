@@ -26,7 +26,7 @@ pub struct Settings {
 pub struct PlaybackSettings {
   #[serde(default = "default_volume")]
   pub volume: u8,
-  #[serde(default = "default_true")]
+  #[serde(default)]
   pub play_video_in_sidebar: bool,
   #[serde(default)]
   pub default_audio_language: Option<String>,
@@ -81,7 +81,7 @@ impl Default for PlaybackSettings {
   fn default() -> Self {
     Self {
       volume: 80,
-      play_video_in_sidebar: true,
+      play_video_in_sidebar: false,
       default_audio_language: None,
       default_subtitle_language: None,
       subtitles_enabled: false,
@@ -201,7 +201,7 @@ mod tests {
     let settings = Settings::default();
 
     assert_eq!(settings.playback.volume, 80);
-    assert!(settings.playback.play_video_in_sidebar);
+    assert!(!settings.playback.play_video_in_sidebar);
     assert_eq!(settings.library.view_mode, "list");
     assert!(settings.library.show_thumbnails);
     assert!(!settings.library.show_file_extensions);

@@ -25,7 +25,7 @@ export const DEFAULT_SETTINGS: NavioSettings = {
   version: 1,
   playback: {
     volume: 80,
-    playVideoInSidebar: true,
+    playVideoInSidebar: false,
     defaultAudioLanguage: null,
     defaultSubtitleLanguage: null,
     subtitlesEnabled: false,
