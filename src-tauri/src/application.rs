@@ -132,7 +132,7 @@ pub fn run() {
       downloader::command::cancel_download,
       downloader::command::get_downloads,
       downloader::command::remove_download,
-      downloader::command::check_url_type,
+      downloader::inspection::inspect_download_url,
       commands::open_folder
     ])
     .build(tauri::generate_context!())

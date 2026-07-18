@@ -13,6 +13,8 @@
 //! only the staging directory derived from the manager-owned UUID, never a path
 //! supplied by the renderer.
 
+#[cfg(test)]
+use super::DownloadFormat;
 use super::{DownloadJob, DownloadRequest, DownloadStatus};
 use std::collections::HashMap;
 use std::fs;
@@ -173,11 +175,11 @@ impl DownloadManager {
     })
   }
 
-  /// Returns all records with newest updates first.
+  /// Returns all records in stable newest-created-first order.
   pub fn list(&self) -> Vec<DownloadJob> {
     let inner = self.inner.lock().expect("download manager lock poisoned");
     let mut jobs = inner.jobs.values().cloned().collect::<Vec<_>>();
-    jobs.sort_by_key(|job| std::cmp::Reverse(job.updated_at_ms));
+    jobs.sort_by_key(|job| std::cmp::Reverse(job.created_at_ms));
     jobs
   }
 
@@ -465,8 +467,9 @@ mod tests {
         "active".to_string(),
         DownloadRequest {
           url: "https://example.test/a".to_string(),
-          format: "best".to_string(),
+          format: DownloadFormat::Best,
           no_playlist: true,
+          ..DownloadRequest::default()
         },
       )
       .expect("job should persist");
@@ -481,8 +484,9 @@ mod tests {
         "paused".to_string(),
         DownloadRequest {
           url: "https://example.test/b".to_string(),
-          format: "bestaudio".to_string(),
+          format: DownloadFormat::Bestaudio,
           no_playlist: true,
+          ..DownloadRequest::default()
         },
       )
       .expect("paused job should persist");
@@ -517,8 +521,9 @@ mod tests {
         "retry".to_string(),
         DownloadRequest {
           url: "https://example.test/retry".to_string(),
-          format: "bestaudio".to_string(),
+          format: DownloadFormat::Bestaudio,
           no_playlist: false,
+          ..DownloadRequest::default()
         },
       )
       .expect("job should persist");
@@ -539,6 +544,58 @@ mod tests {
     assert_eq!(retried.progress, 0.0);
     assert!(retried.error.is_none());
     assert_eq!(retried.request.url, "https://example.test/retry");
+    let _ = fs::remove_file(path);
+  }
+
+  #[test]
+  fn list_order_does_not_change_when_an_older_job_reports_progress() {
+    let path = test_database_path();
+    let manager = DownloadManager::for_path(path.clone()).expect("manager should load");
+    let older = manager
+      .create(
+        "older".to_string(),
+        DownloadRequest {
+          url: "https://example.test/older".to_string(),
+          ..DownloadRequest::default()
+        },
+      )
+      .expect("older job should persist");
+    manager
+      .update(&older.id, |job| {
+        job.created_at_ms = 1;
+        Ok(())
+      })
+      .expect("older timestamp should persist");
+    let newer = manager
+      .create(
+        "newer".to_string(),
+        DownloadRequest {
+          url: "https://example.test/newer".to_string(),
+          ..DownloadRequest::default()
+        },
+      )
+      .expect("newer job should persist");
+    manager
+      .update(&newer.id, |job| {
+        job.created_at_ms = 2;
+        Ok(())
+      })
+      .expect("newer timestamp should persist");
+    manager
+      .update(&older.id, |job| {
+        job.progress = 50.0;
+        Ok(())
+      })
+      .expect("progress should persist");
+
+    assert_eq!(
+      manager
+        .list()
+        .into_iter()
+        .map(|job| job.id)
+        .collect::<Vec<_>>(),
+      vec!["newer", "older"]
+    );
     let _ = fs::remove_file(path);
   }
 }

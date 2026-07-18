@@ -18,6 +18,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 const YTDLP_VERSION: &str = "2026.07.04";
+const YTDLP_OUTPUT_ENCODING_ARGS: [&str; 2] = ["--encoding", "utf-8"];
 const MIN_NODE_JS_RUNTIME_MAJOR: u32 = 22;
 const MAX_YTDLP_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_FFMPEG_ZIP_BYTES: u64 = 128 * 1024 * 1024;
@@ -35,6 +36,7 @@ const FFMPEG_ZIP_SHA256: &str = "4348301b0d5e18174925e2022da1823aebbdb07282bbe9a
 
 pub(crate) mod command;
 mod events;
+pub(crate) mod inspection;
 mod manager;
 mod models;
 mod tools;
@@ -45,5 +47,8 @@ use tools::*;
 use verification::*;
 
 pub use manager::{DownloadControl, DownloadManager, StopAction};
-pub use models::{DownloadJob, DownloadRequest, DownloadStatus};
+pub use models::{
+  AudioFormat, DownloadFormat, DownloadJob, DownloadQuality, DownloadRequest, DownloadStatus,
+  SubtitleMode, VideoContainer,
+};
 pub use tools::ensure_ffmpeg_installed;

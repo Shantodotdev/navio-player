@@ -15,26 +15,49 @@
 
 use super::*;
 use std::ffi::OsStr;
+use tokio::io::AsyncBufRead;
 
 const PROGRESS_PREFIX: &str = "NAVIO_PROGRESS:";
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
+/// Renderer-owned values accepted when creating a new universal download.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StartDownloadArgs {
+  id: String,
+  url: String,
+  format: DownloadFormat,
+  no_playlist: Option<bool>,
+  quality: Option<DownloadQuality>,
+  video_container: Option<VideoContainer>,
+  audio_format: Option<AudioFormat>,
+  subtitle_mode: Option<SubtitleMode>,
+  subtitle_languages: Option<Vec<String>>,
+  playlist_start: Option<u32>,
+  playlist_end: Option<u32>,
+}
+
 /// Tauri command that creates and starts one new durable download job.
 #[tauri::command]
 pub async fn start_download(
-  id: String,
-  url: String,
-  format: String,
-  no_playlist: Option<bool>,
+  request: StartDownloadArgs,
   app_handle: AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
-  validate_start_request(&id, &url, &format)?;
+  let id = request.id;
   let request = DownloadRequest {
-    url,
-    format,
-    no_playlist: no_playlist.unwrap_or(true),
+    url: request.url,
+    format: request.format,
+    no_playlist: request.no_playlist.unwrap_or(true),
+    quality: request.quality.unwrap_or_default(),
+    video_container: request.video_container.unwrap_or_default(),
+    audio_format: request.audio_format.unwrap_or_default(),
+    subtitle_mode: request.subtitle_mode.unwrap_or_default(),
+    subtitle_languages: request.subtitle_languages.unwrap_or_default(),
+    playlist_start: request.playlist_start,
+    playlist_end: request.playlist_end,
   };
+  validate_start_request(&id, &request)?;
   let job = state.download_manager.create(id, request)?;
   if !job.request.no_playlist {
     if let Err(error) = create_download_playlist(&app_handle, &job.id) {
@@ -179,7 +202,7 @@ async fn run_attempt_inner(
   let job = manager
     .get(id)
     .ok_or_else(|| "Download was not found.".to_string())?;
-  let selected_format = format_selector(&job.request.format);
+  let selected_format = format_selector(&job.request);
   let staging_dir = manager.staging_dir(app_handle, id)?;
   tokio::fs::create_dir_all(&staging_dir)
     .await
@@ -199,8 +222,9 @@ async fn run_attempt_inner(
     // prevents an unrelated `-f`, postprocessor, or output-path rule from
     // changing the queue's persisted behavior or producing opaque failures.
     .arg("--ignore-config")
+    .args(YTDLP_OUTPUT_ENCODING_ARGS)
     .arg("-f")
-    .arg(selected_format)
+    .arg(&selected_format)
     .arg(if job.request.no_playlist { "--no-playlist" } else { "--yes-playlist" })
     .arg("--continue")
     .arg("--paths")
@@ -217,11 +241,12 @@ async fn run_attempt_inner(
     .arg("--progress-template")
     // Normal yt-dlp console output is presentation text and can change between
     // releases. This fixed marker is the only progress shape Navio parses.
-    .arg("download:NAVIO_PROGRESS:%(info.title)s\t%(progress._percent_str)s\t%(progress._speed_str)s\t%(progress._eta_str)s\t%(progress._total_bytes_str)s\t%(info.playlist_index)s\t%(info.n_entries)s")
+    .arg("download:NAVIO_PROGRESS:%(info.title)s\t%(progress._percent_str)s\t%(progress._speed_str)s\t%(progress._eta_str)s\t%(progress._total_bytes_str)s\t%(info.playlist_index)s\t%(info.n_entries)s\t%(info.format_id)s\t%(info.requested_formats.1.format_id)s")
     // `--print` may quiet ordinary output; force the structured progress template to stay enabled.
     .arg("--progress")
     .arg("--print")
     .arg("after_move:NAVIO_FILE:%(filepath)s\t%(playlist_title)s");
+  command.args(build_ytdlp_options(&job.request));
   if !job.request.no_playlist {
     // The archive persists beside partial files so resume never re-downloads
     // items Navio already moved into the visible playlist.
@@ -237,7 +262,7 @@ async fn run_attempt_inner(
     .stderr(Stdio::piped());
 
   println!(
-    "[Navio Downloader] launching yt-dlp | id={} mode={} selector={}",
+    "[Navio Downloader] launching yt-dlp | id={} mode={:?} selector={}",
     id, job.request.format, selected_format
   );
 
@@ -404,17 +429,19 @@ async fn read_markers(
   download_dir: &Path,
   is_playlist_download: bool,
 ) -> Result<DownloadOutput, String> {
-  let mut reader = BufReader::new(stdout).lines();
+  let mut reader = BufReader::new(stdout);
+  let mut line_buffer = Vec::new();
   let mut output = DownloadOutput::default();
-  while let Some(line) = reader
-    .next_line()
+  let mut progress_accumulator = ProgressAccumulator::default();
+  while let Some(line) = read_lossy_line(&mut reader, &mut line_buffer)
     .await
     .map_err(|error| format!("Failed to read yt-dlp output: {error}"))?
   {
     if let Some(update) = parse_progress_marker(&line) {
+      let aggregate_progress = progress_accumulator.aggregate(&update);
       update_job(app_handle, manager, id, |job| {
         job.title = update.title;
-        job.progress = update.progress;
+        job.progress = aggregate_progress;
         job.speed = update.speed;
         job.eta = update.eta;
         job.size = update.size;
@@ -452,14 +479,33 @@ async fn read_markers(
 
 /// Collects yt-dlp diagnostics without exposing the raw stream to the renderer.
 async fn collect_stderr(stderr: tokio::process::ChildStderr) -> String {
-  let mut reader = BufReader::new(stderr).lines();
+  let mut reader = BufReader::new(stderr);
+  let mut line_buffer = Vec::new();
   let mut last_error = String::new();
-  while let Ok(Some(line)) = reader.next_line().await {
+  while let Ok(Some(line)) = read_lossy_line(&mut reader, &mut line_buffer).await {
     if !line.trim().is_empty() {
       last_error = line;
     }
   }
   last_error
+}
+
+/// Reads one external-process line without trusting the child to emit valid UTF-8.
+async fn read_lossy_line<R>(reader: &mut R, buffer: &mut Vec<u8>) -> std::io::Result<Option<String>>
+where
+  R: AsyncBufRead + Unpin,
+{
+  buffer.clear();
+  if reader.read_until(b'\n', buffer).await? == 0 {
+    return Ok(None);
+  }
+  if buffer.last() == Some(&b'\n') {
+    buffer.pop();
+  }
+  if buffer.last() == Some(&b'\r') {
+    buffer.pop();
+  }
+  Ok(Some(String::from_utf8_lossy(buffer).into_owned()))
 }
 
 /// Parsed form of Navio's fixed yt-dlp progress template.
@@ -471,6 +517,62 @@ struct ProgressUpdate {
   size: String,
   current_item: Option<u32>,
   total_items: Option<u32>,
+  stream_id: String,
+  stream_count: u32,
+}
+
+/// Per-job state that turns yt-dlp's per-stream percentages into one monotonic percentage.
+#[derive(Default)]
+struct ProgressAccumulator {
+  current_item: Option<u32>,
+  stream_ids: Vec<String>,
+  last_stream_id: Option<String>,
+  last_stream_progress: f32,
+  last_progress: f32,
+}
+
+impl ProgressAccumulator {
+  /// Aggregates video/audio streams and playlist items without allowing backward movement.
+  fn aggregate(&mut self, update: &ProgressUpdate) -> f32 {
+    if self.current_item != update.current_item {
+      self.current_item = update.current_item;
+      self.stream_ids.clear();
+      self.last_stream_id = None;
+      self.last_stream_progress = 0.0;
+    }
+
+    let mut stream_id = update.stream_id.clone();
+    if self.last_stream_id.as_deref() == Some(stream_id.as_str())
+      && update.progress < self.last_stream_progress
+      && self.stream_ids.len() < update.stream_count as usize
+    {
+      stream_id = format!("{}#{}", stream_id, self.stream_ids.len() + 1);
+    }
+    let stream_index = self
+      .stream_ids
+      .iter()
+      .position(|existing| existing == &stream_id)
+      .unwrap_or_else(|| {
+        self.stream_ids.push(stream_id.clone());
+        self.stream_ids.len() - 1
+      });
+    self.last_stream_id = Some(stream_id);
+    self.last_stream_progress = update.progress;
+
+    let stream_count = (update.stream_count as usize)
+      .max(self.stream_ids.len())
+      .max(1);
+    let item_progress = (stream_index as f32 + update.progress / 100.0) / stream_count as f32;
+    let aggregate = match (update.current_item, update.total_items) {
+      (Some(current), Some(total)) if total > 0 => {
+        ((current.saturating_sub(1) as f32 + item_progress) / total as f32) * 100.0
+      }
+      _ => item_progress * 100.0,
+    }
+    .clamp(0.0, 100.0);
+    self.last_progress = self.last_progress.max(aggregate);
+    self.last_progress
+  }
 }
 
 /// Ordered media output reported by yt-dlp after each item's post-processing completes.
@@ -495,7 +597,7 @@ fn parse_progress_marker(line: &str) -> Option<ProgressUpdate> {
     .split('\t')
     .map(str::trim)
     .collect::<Vec<_>>();
-  if fields.len() != 7 {
+  if fields.len() != 9 {
     return None;
   }
   let progress = fields[1]
@@ -511,6 +613,12 @@ fn parse_progress_marker(line: &str) -> Option<ProgressUpdate> {
     size: empty_marker(fields[4], "—"),
     current_item: fields[5].parse().ok(),
     total_items: fields[6].parse().ok(),
+    stream_id: empty_marker(fields[7], "default"),
+    stream_count: if fields[8].is_empty() || fields[8].eq_ignore_ascii_case("na") {
+      1
+    } else {
+      2
+    },
   })
 }
 
@@ -762,11 +870,20 @@ fn available_target_path(directory: &Path, filename: &OsStr) -> PathBuf {
   }
 
   let filename_path = Path::new(filename);
-  let stem = filename_path
+  let original_stem = filename_path
     .file_stem()
     .unwrap_or(filename)
     .to_string_lossy();
   let extension = filename_path.extension().and_then(OsStr::to_str);
+  let stem = numeric_copy_base(&original_stem)
+    .filter(|base| {
+      let base_filename = match extension {
+        Some(extension) => format!("{base}.{extension}"),
+        None => (*base).to_string(),
+      };
+      directory.join(base_filename).exists()
+    })
+    .unwrap_or(&original_stem);
   let mut index = 1_u32;
   loop {
     let candidate_name = match extension {
@@ -779,6 +896,16 @@ fn available_target_path(directory: &Path, filename: &OsStr) -> PathBuf {
     }
     index = index.saturating_add(1);
   }
+}
+
+/// Returns the unsuffixed stem when a filename ends in a numeric copy marker.
+fn numeric_copy_base(stem: &str) -> Option<&str> {
+  let without_closing = stem.strip_suffix(')')?;
+  let (base, suffix) = without_closing.rsplit_once(" (")?;
+  (!base.is_empty()
+    && !suffix.is_empty()
+    && suffix.chars().all(|character| character.is_ascii_digit()))
+  .then_some(base)
 }
 
 /// Moves a completed file, copying it first when the destination is on another volume.
@@ -897,13 +1024,35 @@ fn normalize_error(error: &str) -> String {
 }
 
 /// Rejects malformed IDs and unsupported UI formats before they reach file/process boundaries.
-fn validate_start_request(id: &str, url: &str, format: &str) -> Result<(), String> {
+fn validate_start_request(id: &str, request: &DownloadRequest) -> Result<(), String> {
   if uuid::Uuid::parse_str(id).is_err() {
     return Err("Invalid download ID.".to_string());
   }
-  reqwest::Url::parse(url).map_err(|_| "Enter a valid download URL.".to_string())?;
-  if !matches!(format, "best" | "bestaudio") {
-    return Err("Unsupported download format.".to_string());
+  super::inspection::validate_public_media_url(&request.url)?;
+  if request.playlist_start == Some(0) || request.playlist_end == Some(0) {
+    return Err("Collection item numbers must start at 1.".to_string());
+  }
+  if let (Some(start), Some(end)) = (request.playlist_start, request.playlist_end) {
+    if start > end {
+      return Err("Collection start must not be after its end.".to_string());
+    }
+  }
+  if request.subtitle_languages.len() > 12
+    || request.subtitle_languages.iter().any(|language| {
+      language.is_empty()
+        || language.len() > 16
+        || !language
+          .chars()
+          .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    })
+  {
+    return Err("Unsupported subtitle language selection.".to_string());
+  }
+  if request.subtitle_mode == SubtitleMode::Selected && request.subtitle_languages.is_empty() {
+    return Err("Select at least one subtitle language.".to_string());
+  }
+  if request.format == DownloadFormat::Bestaudio && request.subtitle_mode != SubtitleMode::None {
+    return Err("Subtitles are available only for video downloads.".to_string());
   }
   Ok(())
 }
@@ -916,12 +1065,73 @@ fn validate_start_request(id: &str, url: &str, format: &str) -> Result<(), Strin
 /// yt-dlp's normal download default: select the best video stream, merge the
 /// best audio stream through FFmpeg, and fall back to a combined file only when
 /// separate streams are unavailable.
-fn format_selector(format: &str) -> &'static str {
-  match format {
-    "best" => "bv*+ba/b",
-    "bestaudio" => "bestaudio",
-    _ => unreachable!("format is validated at the Tauri command boundary"),
+fn format_selector(request: &DownloadRequest) -> String {
+  if request.format == DownloadFormat::Bestaudio {
+    return "bestaudio".to_string();
   }
+  let height = match request.quality {
+    DownloadQuality::Best => return "bv*+ba/b".to_string(),
+    DownloadQuality::P2160 => 2160,
+    DownloadQuality::P1440 => 1440,
+    DownloadQuality::P1080 => 1080,
+    DownloadQuality::P720 => 720,
+    DownloadQuality::P480 => 480,
+    DownloadQuality::P360 => 360,
+  };
+  format!("bv*[height<={height}]+ba/b[height<={height}]")
+}
+
+/// Builds only curated yt-dlp options represented by Navio's typed request model.
+fn build_ytdlp_options(request: &DownloadRequest) -> Vec<String> {
+  let mut options = Vec::new();
+  if request.format == DownloadFormat::Best {
+    let container = match request.video_container {
+      VideoContainer::Auto => None,
+      VideoContainer::Mp4 => Some("mp4"),
+      VideoContainer::Mkv => Some("mkv"),
+      VideoContainer::Webm => Some("webm"),
+    };
+    if let Some(container) = container {
+      options.extend(["--merge-output-format".to_string(), container.to_string()]);
+    }
+  } else {
+    let audio_format = match request.audio_format {
+      AudioFormat::Original => None,
+      AudioFormat::Mp3 => Some("mp3"),
+      AudioFormat::M4a => Some("m4a"),
+      AudioFormat::Opus => Some("opus"),
+      AudioFormat::Flac => Some("flac"),
+      AudioFormat::Wav => Some("wav"),
+    };
+    if let Some(audio_format) = audio_format {
+      options.extend([
+        "--extract-audio".to_string(),
+        "--audio-format".to_string(),
+        audio_format.to_string(),
+      ]);
+    }
+  }
+
+  if request.subtitle_mode != SubtitleMode::None {
+    options.extend(["--write-subs".to_string(), "--write-auto-subs".to_string()]);
+    let languages = match request.subtitle_mode {
+      SubtitleMode::Selected => request.subtitle_languages.join(","),
+      SubtitleMode::All => "all,-live_chat".to_string(),
+      SubtitleMode::None => unreachable!(),
+    };
+    options.extend(["--sub-langs".to_string(), languages]);
+    options.push("--embed-subs".to_string());
+  }
+
+  if !request.no_playlist {
+    if let Some(start) = request.playlist_start {
+      options.extend(["--playlist-start".to_string(), start.to_string()]);
+    }
+    if let Some(end) = request.playlist_end {
+      options.extend(["--playlist-end".to_string(), end.to_string()]);
+    }
+  }
+  options
 }
 
 /// Applies Windows' `CREATE_NO_WINDOW` flag to a subprocess without affecting other platforms.
@@ -929,7 +1139,7 @@ fn format_selector(format: &str) -> &'static str {
 /// This is required for release builds because the Navio executable is a GUI
 /// process. Without the flag, launching the standalone yt-dlp executable can
 /// flash a terminal window even though stdout and stderr are piped.
-fn hide_console_window(command: &mut Command) {
+pub(super) fn hide_console_window(command: &mut Command) {
   #[cfg(windows)]
   {
     command.creation_flags(CREATE_NO_WINDOW);
@@ -940,59 +1150,155 @@ fn hide_console_window(command: &mut Command) {
   }
 }
 
-/// Tauri command that identifies playlist links without contacting a remote service.
-#[derive(serde::Serialize)]
-pub struct UrlTypeInfo {
-  pub is_playlist: bool,
-  pub has_video: bool,
-}
-
-/// Classifies a URL only to choose between single-video and playlist UX.
-#[tauri::command]
-pub fn check_url_type(url: String) -> Result<UrlTypeInfo, String> {
-  let mut is_playlist = false;
-  let mut has_video = false;
-  if let Ok(parsed) = reqwest::Url::parse(&url) {
-    let host = parsed.host_str().unwrap_or("");
-    if host.contains("youtube.com") || host.contains("youtu.be") {
-      has_video = host.contains("youtu.be") && !parsed.path().trim_start_matches('/').is_empty();
-      for (key, _) in parsed.query_pairs() {
-        is_playlist |= key == "list";
-        has_video |= key == "v";
-      }
-    } else {
-      let path = parsed.path().to_lowercase();
-      is_playlist = ["/playlist/", "/album/", "/set/", "/sets/"]
-        .iter()
-        .any(|part| path.contains(part));
-      has_video = !is_playlist;
-    }
-  }
-  Ok(UrlTypeInfo {
-    is_playlist,
-    has_video,
-  })
-}
-
 #[cfg(test)]
 mod tests {
   use super::*;
 
   #[test]
   fn parses_structured_progress_marker_without_human_output_regexes() {
-    let update =
-      parse_progress_marker("NAVIO_PROGRESS:Example title\t42.5%\t2.0MiB/s\t00:12\t15.0MiB\t2\t8")
-        .expect("marker should parse");
+    let update = parse_progress_marker(
+      "NAVIO_PROGRESS:Example title\t42.5%\t2.0MiB/s\t00:12\t15.0MiB\t2\t8\t399\t251",
+    )
+    .expect("marker should parse");
     assert_eq!(update.title, "Example title");
     assert_eq!(update.progress, 42.5);
     assert_eq!(update.current_item, Some(2));
     assert_eq!(update.total_items, Some(8));
   }
 
+  #[tokio::test]
+  async fn process_output_reader_tolerates_non_utf8_title_bytes() {
+    let output =
+      b"NAVIO_PROGRESS:Messy \xAE\t42.5%\t2.0MiB/s\t00:12\t15.0MiB\tNA\tNA\t401\t251\r\n";
+    let mut reader = BufReader::new(&output[..]);
+    let mut buffer = Vec::new();
+
+    let line = read_lossy_line(&mut reader, &mut buffer)
+      .await
+      .expect("raw process output should remain readable")
+      .expect("one line should be available");
+    let update = parse_progress_marker(&line).expect("the Navio marker should remain parseable");
+
+    assert_eq!(update.progress, 42.5);
+    assert_eq!(update.title, "Messy �");
+  }
+
+  #[test]
+  fn multi_stream_progress_is_aggregated_without_decreasing() {
+    let mut accumulator = ProgressAccumulator::default();
+    let markers = [
+      "NAVIO_PROGRESS:Example\t80%\t2MiB/s\t00:02\t10MiB\tNA\tNA\t399\t251",
+      "NAVIO_PROGRESS:Example\t100%\t2MiB/s\t00:00\t10MiB\tNA\tNA\t399\t251",
+      "NAVIO_PROGRESS:Example\t10%\t1MiB/s\t00:04\t2MiB\tNA\tNA\t251\t251",
+      "NAVIO_PROGRESS:Example\t100%\t1MiB/s\t00:00\t2MiB\tNA\tNA\t251\t251",
+    ];
+    let aggregate = markers.map(|marker| {
+      let update = parse_progress_marker(marker).expect("marker should parse");
+      accumulator.aggregate(&update)
+    });
+
+    assert_eq!(aggregate, [40.0, 50.0, 55.0, 100.0]);
+  }
+
+  #[test]
+  fn structured_ytdlp_streams_force_utf8_output() {
+    assert_eq!(YTDLP_OUTPUT_ENCODING_ARGS, ["--encoding", "utf-8"]);
+  }
+
   #[test]
   fn video_mode_selects_best_video_and_audio_streams_for_merging() {
-    assert_eq!(format_selector("best"), "bv*+ba/b");
-    assert_eq!(format_selector("bestaudio"), "bestaudio");
+    let video = DownloadRequest::default();
+    assert_eq!(format_selector(&video), "bv*+ba/b");
+
+    let audio = DownloadRequest {
+      format: DownloadFormat::Bestaudio,
+      ..DownloadRequest::default()
+    };
+    assert_eq!(format_selector(&audio), "bestaudio");
+  }
+
+  #[test]
+  fn quality_ceiling_and_advanced_options_generate_allowlisted_arguments() {
+    let request = DownloadRequest {
+      format: DownloadFormat::Best,
+      quality: DownloadQuality::P1080,
+      video_container: VideoContainer::Mkv,
+      subtitle_mode: SubtitleMode::Selected,
+      subtitle_languages: vec!["en".to_string(), "bn".to_string()],
+      playlist_start: Some(2),
+      playlist_end: Some(5),
+      no_playlist: false,
+      ..DownloadRequest::default()
+    };
+
+    assert_eq!(
+      format_selector(&request),
+      "bv*[height<=1080]+ba/b[height<=1080]"
+    );
+    assert_eq!(
+      build_ytdlp_options(&request),
+      vec![
+        "--merge-output-format",
+        "mkv",
+        "--write-subs",
+        "--write-auto-subs",
+        "--sub-langs",
+        "en,bn",
+        "--embed-subs",
+        "--playlist-start",
+        "2",
+        "--playlist-end",
+        "5",
+      ]
+    );
+  }
+
+  #[test]
+  fn audio_conversion_and_all_subtitles_generate_safe_options() {
+    let audio_request = DownloadRequest {
+      format: DownloadFormat::Bestaudio,
+      audio_format: AudioFormat::Flac,
+      ..DownloadRequest::default()
+    };
+    assert_eq!(
+      build_ytdlp_options(&audio_request),
+      vec!["--extract-audio", "--audio-format", "flac"]
+    );
+
+    let subtitle_request = DownloadRequest {
+      subtitle_mode: SubtitleMode::All,
+      ..DownloadRequest::default()
+    };
+    assert_eq!(
+      build_ytdlp_options(&subtitle_request),
+      vec![
+        "--write-subs",
+        "--write-auto-subs",
+        "--sub-langs",
+        "all,-live_chat",
+        "--embed-subs",
+      ]
+    );
+  }
+
+  #[test]
+  fn request_validation_rejects_bad_ranges_and_subtitle_codes() {
+    let request = DownloadRequest {
+      url: "https://example.test/collection".to_string(),
+      no_playlist: false,
+      playlist_start: Some(5),
+      playlist_end: Some(2),
+      ..DownloadRequest::default()
+    };
+    assert!(validate_start_request("00000000-0000-4000-8000-000000000001", &request).is_err());
+
+    let request = DownloadRequest {
+      url: "https://example.test/video".to_string(),
+      subtitle_mode: SubtitleMode::Selected,
+      subtitle_languages: vec!["../../secret".to_string()],
+      ..DownloadRequest::default()
+    };
+    assert!(validate_start_request("00000000-0000-4000-8000-000000000001", &request).is_err());
   }
 
   #[test]
@@ -1030,6 +1336,10 @@ mod tests {
 
     assert_eq!(
       available_target_path(&directory, std::ffi::OsStr::new("Example.mp4")),
+      directory.join("Example (2).mp4"),
+    );
+    assert_eq!(
+      available_target_path(&directory, std::ffi::OsStr::new("Example (1).mp4")),
       directory.join("Example (2).mp4"),
     );
     fs::remove_dir_all(directory).expect("test directory should clean up");

@@ -50,12 +50,107 @@ impl DownloadStatus {
   }
 }
 
+/// High-level media mode retained under Navio's legacy `format` field.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadFormat {
+  #[default]
+  Best,
+  Bestaudio,
+}
+
+/// Maximum video height selected by the user, or yt-dlp's best default.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum DownloadQuality {
+  #[default]
+  #[serde(rename = "best")]
+  Best,
+  #[serde(rename = "2160p")]
+  P2160,
+  #[serde(rename = "1440p")]
+  P1440,
+  #[serde(rename = "1080p")]
+  P1080,
+  #[serde(rename = "720p")]
+  P720,
+  #[serde(rename = "480p")]
+  P480,
+  #[serde(rename = "360p")]
+  P360,
+}
+
+/// Safe output containers Navio allows yt-dlp to merge into.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum VideoContainer {
+  #[default]
+  Auto,
+  Mp4,
+  Mkv,
+  Webm,
+}
+
+/// Safe audio outputs available through yt-dlp and Navio's managed FFmpeg.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AudioFormat {
+  #[default]
+  Original,
+  Mp3,
+  M4a,
+  Opus,
+  Flac,
+  Wav,
+}
+
+/// Whether yt-dlp should omit, select, or download every ordinary subtitle track.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SubtitleMode {
+  #[default]
+  None,
+  Selected,
+  All,
+}
+
 /// Immutable user choices needed to repeat a download attempt safely.
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct DownloadRequest {
   pub url: String,
-  pub format: String,
+  #[serde(default)]
+  pub format: DownloadFormat,
   pub no_playlist: bool,
+  #[serde(default)]
+  pub quality: DownloadQuality,
+  #[serde(default)]
+  pub video_container: VideoContainer,
+  #[serde(default)]
+  pub audio_format: AudioFormat,
+  #[serde(default)]
+  pub subtitle_mode: SubtitleMode,
+  #[serde(default)]
+  pub subtitle_languages: Vec<String>,
+  #[serde(default)]
+  pub playlist_start: Option<u32>,
+  #[serde(default)]
+  pub playlist_end: Option<u32>,
+}
+
+impl Default for DownloadRequest {
+  fn default() -> Self {
+    Self {
+      url: String::new(),
+      format: DownloadFormat::default(),
+      no_playlist: true,
+      quality: DownloadQuality::default(),
+      video_container: VideoContainer::default(),
+      audio_format: AudioFormat::default(),
+      subtitle_mode: SubtitleMode::default(),
+      subtitle_languages: Vec::new(),
+      playlist_start: None,
+      playlist_end: None,
+    }
+  }
 }
 
 /// Durable state and display data for a single Navio download.
@@ -125,6 +220,25 @@ pub fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn legacy_requests_receive_universal_download_defaults() {
+    let request: DownloadRequest = serde_json::from_value(serde_json::json!({
+      "url": "https://example.com/video",
+      "format": "best",
+      "no_playlist": true
+    }))
+    .expect("legacy request should deserialize");
+
+    assert_eq!(request.format, DownloadFormat::Best);
+    assert_eq!(request.quality, DownloadQuality::Best);
+    assert_eq!(request.video_container, VideoContainer::Auto);
+    assert_eq!(request.audio_format, AudioFormat::Original);
+    assert_eq!(request.subtitle_mode, SubtitleMode::None);
+    assert!(request.subtitle_languages.is_empty());
+    assert_eq!(request.playlist_start, None);
+    assert_eq!(request.playlist_end, None);
+  }
 
   #[test]
   fn active_statuses_recover_as_interrupted() {
