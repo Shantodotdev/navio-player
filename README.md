@@ -7,7 +7,7 @@
 - 🎬 **Universal Playback**: A premium, custom-styled media player for both audio tracks and video streams.
 - 📂 **Local Library Scanning**: Automatically scans your folders for music and videos, extracting metadata and organizing them into a unified catalog.
 - 📋 **Custom Playlists**: Create and manage custom, user-defined local playlists stored securely on your desktop.
-- 📥 **Integrated Downloader**: Downloads videos, audio-only tracks, and entire playlists from YouTube (and thousands of other sites) using a self-updating backend utility inspired by `yt-dlp`.
+- 📥 **Universal Media Downloader**: Inspects and downloads public videos, audio tracks, and collections supported by Navio's managed `yt-dlp`, with quality, format, subtitle, and collection-range controls.
 - ⚡ **High-Performance Streaming**: Uses a native Rust-based HTTP server to feed local files to the UI, enabling instant seek-scrubbing for large high-definition video files.
 
 ---
@@ -48,7 +48,7 @@ The Rust backend performs security-checked file actions and system access.
 
 - **Local HTTP Stream Server**: Running on a dynamic localhost port (via `axum`), it streams local files securely with full HTTP Range request support to allow smooth seeking and scrubbing on both audio and video files.
 - **JSON Local Database**: Scanned folder configuration is stored at `$APPDATA/navio-player/library.json`; the current media list is derived from those folders at startup and on filesystem changes. Independent playlists are stored in `$APPDATA/navio-player/playlists.json`.
-- **Dynamic yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust downloads it dynamically to `$APPDATA/navio-player/bin/` on first launch. This allows users to auto-update the downloader (via `yt-dlp -U`) whenever platforms change their algorithms, without requiring a complete app reinstall.
+- **Verified yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust installs a pinned, checksum-verified release into `$APPDATA/navio-player/bin/` on demand. Navio updates the pinned version through application releases so an unverified executable cannot silently replace it.
 
 ---
 
