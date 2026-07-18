@@ -3,21 +3,32 @@ import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Download,
   Folder,
+  LoaderCircle,
   Pause,
   Play,
   RotateCcw,
   X,
 } from "lucide-react";
-import { Select } from "../components/Select";
+import { Select, type SelectOption } from "../components/Select";
 import {
+  DEFAULT_DOWNLOAD_OPTIONS,
   controlDownload,
   getDownloadActions,
+  inspectDownloadUrl,
   listenToDownloads,
   loadDownloads,
+  mergeDownloadJob,
   startDownload,
+  type AudioFormat,
+  type DownloadInspection,
   type DownloadJob,
+  type DownloadOptions,
+  type DownloadQuality,
+  type SubtitleMode,
+  type VideoContainer,
 } from "../lib/downloads";
 import { getMediaDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
@@ -28,18 +39,38 @@ export const Route = createFileRoute("/downloader")({
 
 type DownloadTab = "all" | "active" | "history";
 
+interface PendingDownload {
+  url: string;
+  format: DownloadJob["format"];
+  options: DownloadOptions;
+  inspection: DownloadInspection;
+}
+
 /** Renders Navio's persistent remote-download queue and controls. */
 function DownloaderView() {
   const { settings } = useSettingsStore();
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<DownloadJob["format"]>("best");
+  const [quality, setQuality] = useState<DownloadQuality>(
+    DEFAULT_DOWNLOAD_OPTIONS.quality,
+  );
+  const [videoContainer, setVideoContainer] = useState<VideoContainer>(
+    DEFAULT_DOWNLOAD_OPTIONS.video_container,
+  );
+  const [audioFormat, setAudioFormat] = useState<AudioFormat>(
+    DEFAULT_DOWNLOAD_OPTIONS.audio_format,
+  );
+  const [subtitleMode, setSubtitleMode] = useState<SubtitleMode>(
+    DEFAULT_DOWNLOAD_OPTIONS.subtitle_mode,
+  );
+  const [subtitleLanguages, setSubtitleLanguages] = useState("");
+  const [playlistStart, setPlaylistStart] = useState("");
+  const [playlistEnd, setPlaylistEnd] = useState("");
   const [downloads, setDownloads] = useState<DownloadJob[]>([]);
   const [activeTab, setActiveTab] = useState<DownloadTab>("all");
   const [isChecking, setIsChecking] = useState(false);
-  const [pendingDownload, setPendingDownload] = useState<{
-    url: string;
-    format: DownloadJob["format"];
-  } | null>(null);
+  const [pendingDownload, setPendingDownload] =
+    useState<PendingDownload | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -48,12 +79,7 @@ function DownloaderView() {
     let unlisten: () => void = () => {};
     /** Merges a durable update without relying on the renderer's previous lifecycle. */
     function mergeJob(job: DownloadJob) {
-      setDownloads((previous) => {
-        const withoutUpdated = previous.filter((item) => item.id !== job.id);
-        return [job, ...withoutUpdated].sort(
-          (left, right) => right.updated_at_ms - left.updated_at_ms,
-        );
-      });
+      setDownloads((previous) => mergeDownloadJob(previous, job));
     }
 
     void (async () => {
@@ -76,7 +102,8 @@ function DownloaderView() {
     targetUrl: string,
     targetFormat: DownloadJob["format"],
     noPlaylist: boolean,
-  ) {
+    options: DownloadOptions,
+  ): Promise<boolean> {
     setFormError(null);
     try {
       await startDownload({
@@ -84,13 +111,12 @@ function DownloaderView() {
         url: targetUrl,
         format: targetFormat,
         no_playlist: noPlaylist,
+        ...options,
       });
+      return true;
     } catch (error) {
-      setFormError(
-        error instanceof Error
-          ? error.message
-          : "Could not start the download.",
-      );
+      setFormError(getDownloadErrorMessage(error, "Could not start the download."));
+      return false;
     }
   }
 
@@ -100,27 +126,85 @@ function DownloaderView() {
     if (!url.trim() || isChecking) return;
     const targetUrl = url.trim();
     const targetFormat = format;
+    const parsedStart = parseOptionalItemNumber(playlistStart);
+    const parsedEnd = parseOptionalItemNumber(playlistEnd);
+    if (
+      (playlistStart.trim() && parsedStart === null) ||
+      (playlistEnd.trim() && parsedEnd === null)
+    ) {
+      setFormError("Collection item numbers must start at 1.");
+      return;
+    }
+    if (parsedStart !== null && parsedEnd !== null && parsedStart > parsedEnd) {
+      setFormError("Collection start must not be after its end.");
+      return;
+    }
+    const options: DownloadOptions = {
+      quality,
+      video_container: videoContainer,
+      audio_format: audioFormat,
+      subtitle_mode: targetFormat === "best" ? subtitleMode : "none",
+      subtitle_languages:
+        targetFormat === "best" && subtitleMode === "selected"
+          ? Array.from(
+              new Set(
+                subtitleLanguages
+                  .split(",")
+                  .map((language) => language.trim())
+                  .filter(Boolean),
+              ),
+            )
+          : [],
+      playlist_start: parsedStart,
+      playlist_end: parsedEnd,
+    };
     setIsChecking(true);
     setFormError(null);
     try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const type = await invoke<{ is_playlist: boolean; has_video: boolean }>(
-        "check_url_type",
-        { url: targetUrl },
-      );
-      if (type.is_playlist && type.has_video) {
-        setPendingDownload({ url: targetUrl, format: targetFormat });
+      const inspection = await inspectDownloadUrl(targetUrl);
+      if (inspection.is_collection) {
+        setPendingDownload({
+          url: targetUrl,
+          format: targetFormat,
+          options,
+          inspection,
+        });
       } else {
-        await triggerDownload(targetUrl, targetFormat, !type.is_playlist);
+        const started = await triggerDownload(
+          targetUrl,
+          targetFormat,
+          true,
+          options,
+        );
+        if (started) setUrl("");
       }
-      setUrl("");
-    } catch {
-      // Browser development has no Tauri URL classifier; let yt-dlp validate the URL itself.
-      await triggerDownload(targetUrl, targetFormat, true);
-      setUrl("");
+    } catch (error) {
+      setFormError(
+        getDownloadErrorMessage(error, "Could not inspect this media URL."),
+      );
     } finally {
       setIsChecking(false);
     }
+  }
+
+  /** Resolves the collection modal while preserving the inspected advanced options. */
+  async function handleCollectionSelection(downloadCollection: boolean) {
+    if (!pendingDownload) return;
+    const selected = pendingDownload;
+    setPendingDownload(null);
+    const started = await triggerDownload(
+      selected.url,
+      selected.format,
+      false,
+      downloadCollection
+        ? selected.options
+        : {
+            ...selected.options,
+            playlist_start: 1,
+            playlist_end: 1,
+          },
+    );
+    if (started) setUrl("");
   }
 
   /** Executes one backend state transition and keeps the action row single-click safe. */
@@ -179,7 +263,7 @@ function DownloaderView() {
     <div className="max-w-5xl mx-auto font-medium select-none text-zinc-450">
       <div>
         <h1 className="text-4xl font-medium text-zinc-200 tracking-tight mb-20">
-          Download from <span className="text-brand-light">YouTube</span>
+          Download <span className="text-brand-light">media</span>
         </h1>
       </div>
 
@@ -198,7 +282,7 @@ function DownloaderView() {
               disabled={isChecking}
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="Paste YouTube, Vimeo, or generic video stream link..."
+              placeholder="Paste a public media or collection URL..."
               className="flex-1 bg-black/40 border border-white/5 rounded-lg px-4 py-2.5 text-base text-zinc-200 focus:outline-none focus:border-brand/40 placeholder-zinc-550 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <div className="w-full md:w-64 shrink-0">
@@ -218,17 +302,105 @@ function DownloaderView() {
               className="flex items-center justify-center gap-2 px-6 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isChecking ? (
-                <span>Checking...</span>
+                <LoaderCircle size={16} className="animate-spin" />
               ) : (
-                <>
-                  <Download size={16} />
-                  <span>Download</span>
-                </>
+                <Download size={16} />
               )}
+              <span>Download</span>
             </button>
           </div>
           {formError && <p className="text-sm text-red-400">{formError}</p>}
         </div>
+        <details className="group border-t border-white/5 pt-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200">
+            <ChevronDown
+              size={16}
+              className="transition-transform group-open:rotate-180"
+            />
+            Advanced options
+          </summary>
+          <div className="grid grid-cols-1 gap-4 pt-4 md:grid-cols-2">
+            {format === "best" ? (
+              <>
+                <AdvancedSelect
+                  label="Maximum quality"
+                  value={quality}
+                  onChange={(value) => setQuality(value as DownloadQuality)}
+                  options={[
+                    { value: "best", label: "Best available (default)" },
+                    { value: "2160p", label: "Up to 4K" },
+                    { value: "1440p", label: "Up to 1440p" },
+                    { value: "1080p", label: "Up to 1080p" },
+                    { value: "720p", label: "Up to 720p" },
+                    { value: "480p", label: "Up to 480p" },
+                    { value: "360p", label: "Up to 360p" },
+                  ]}
+                />
+                <AdvancedSelect
+                  label="Video container"
+                  value={videoContainer}
+                  onChange={(value) =>
+                    setVideoContainer(value as VideoContainer)
+                  }
+                  options={[
+                    { value: "auto", label: "Automatic (default)" },
+                    { value: "mp4", label: "MP4" },
+                    { value: "mkv", label: "MKV" },
+                    { value: "webm", label: "WebM" },
+                  ]}
+                />
+                <AdvancedSelect
+                  label="Subtitles"
+                  value={subtitleMode}
+                  onChange={(value) => setSubtitleMode(value as SubtitleMode)}
+                  options={[
+                    { value: "none", label: "None (default)" },
+                    { value: "selected", label: "Selected languages" },
+                    { value: "all", label: "All available" },
+                  ]}
+                />
+                {subtitleMode === "selected" && (
+                  <AdvancedInput
+                    label="Subtitle languages"
+                    value={subtitleLanguages}
+                    onChange={setSubtitleLanguages}
+                    placeholder="For example: en, bn"
+                  />
+                )}
+              </>
+            ) : (
+              <AdvancedSelect
+                label="Audio format"
+                value={audioFormat}
+                onChange={(value) => setAudioFormat(value as AudioFormat)}
+                options={[
+                  { value: "original", label: "Original quality (default)" },
+                  { value: "mp3", label: "MP3" },
+                  { value: "m4a", label: "M4A" },
+                  { value: "opus", label: "Opus" },
+                  { value: "flac", label: "FLAC" },
+                  { value: "wav", label: "WAV" },
+                ]}
+              />
+            )}
+            <AdvancedInput
+              label="Collection start (optional)"
+              value={playlistStart}
+              onChange={setPlaylistStart}
+              type="number"
+              min="1"
+              placeholder="First item"
+            />
+            <AdvancedInput
+              label="Collection end (optional)"
+              value={playlistEnd}
+              onChange={setPlaylistEnd}
+              type="number"
+              min="1"
+              placeholder="Last item"
+            />
+          </div>
+        </details>
       </form>
 
       <div className="relative z-10 flex items-center border-b border-white/5 pb-2 mb-6">
@@ -272,20 +444,80 @@ function DownloaderView() {
         )}
       </div>
 
-      <PlaylistDownloadModal
+      <CollectionDownloadModal
         isOpen={pendingDownload !== null}
+        inspection={pendingDownload?.inspection ?? null}
         onClose={() => setPendingDownload(null)}
-        onSelect={(downloadPlaylist) => {
-          if (!pendingDownload) return;
-          void triggerDownload(
-            pendingDownload.url,
-            pendingDownload.format,
-            !downloadPlaylist,
-          );
-          setPendingDownload(null);
-        }}
+        onSelect={(downloadCollection) =>
+          void handleCollectionSelection(downloadCollection)
+        }
       />
     </div>
+  );
+}
+
+/** Converts an optional positive item field into the nullable backend shape. */
+function parseOptionalItemNumber(value: string): number | null {
+  if (!value.trim()) return null;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/** Preserves useful Tauri string failures instead of replacing them with generic copy. */
+function getDownloadErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error;
+  return fallback;
+}
+
+/** Labels Navio's shared Select for the compact advanced-options grid. */
+function AdvancedSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: SelectOption[];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="space-y-2 text-sm text-zinc-450">
+      <span>{label}</span>
+      <Select value={value} options={options} onChange={onChange} />
+    </label>
+  );
+}
+
+/** Renders one validated text or numeric advanced option. */
+function AdvancedInput({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  min,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  type?: "text" | "number";
+  min?: string;
+}) {
+  return (
+    <label className="space-y-2 text-sm text-zinc-450">
+      <span>{label}</span>
+      <input
+        type={type}
+        min={min}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className="w-full rounded-lg border border-white/5 bg-black/40 px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:border-brand/40 focus:outline-none"
+      />
+    </label>
   );
 }
 
@@ -309,15 +541,17 @@ function TabButton({
   );
 }
 
-/** Prompts for a playlist choice only when a URL identifies both a video and playlist. */
-function PlaylistDownloadModal({
+/** Prompts for full-collection or first-item behavior after metadata inspection. */
+function CollectionDownloadModal({
   isOpen,
+  inspection,
   onClose,
   onSelect,
 }: {
   isOpen: boolean;
+  inspection: DownloadInspection | null;
   onClose: () => void;
-  onSelect: (downloadPlaylist: boolean) => void;
+  onSelect: (downloadCollection: boolean) => void;
 }) {
   return (
     <div
@@ -328,23 +562,26 @@ function PlaylistDownloadModal({
         onClick={(event) => event.stopPropagation()}
         className="w-full max-w-md bg-zinc-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl space-y-5"
       >
-        <h3 className="text-xl font-medium text-zinc-200">Playlist Detected</h3>
+        <h3 className="text-xl font-medium text-zinc-200">
+          Collection detected
+        </h3>
         <p className="text-sm text-zinc-400 leading-relaxed font-normal">
-          This link contains both a single video and a playlist. What would you
-          like to download?
+          {inspection?.title ?? "This link"}
+          {inspection?.item_count ? ` contains ${inspection.item_count} items.` : " contains multiple items."}{" "}
+          What would you like to download?
         </p>
         <div className="flex flex-col gap-3">
           <button
             onClick={() => onSelect(true)}
             className="w-full text-left px-4 py-3 bg-brand/10 hover:bg-brand/20 border border-brand/35 text-brand-light rounded-xl transition-all font-medium cursor-pointer"
           >
-            Download entire playlist
+            Download entire collection
           </button>
           <button
             onClick={() => onSelect(false)}
             className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-200 rounded-xl transition-all font-medium cursor-pointer"
           >
-            Download single video
+            Download first item only
           </button>
         </div>
         <div className="flex justify-end pt-2 border-t border-white/5">
