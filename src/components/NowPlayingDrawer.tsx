@@ -16,7 +16,7 @@ import {
   Rewind,
   Volume2,
 } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   useCallback,
   useEffect,
@@ -52,6 +52,9 @@ import { getTrackDisplayName } from "../lib/mediaLabels";
 
 export function NowPlayingDrawer() {
   const navigate = useNavigate();
+  const pathname = useRouterState({
+    select: (state) => state.location.pathname,
+  });
   const {
     currentTrack,
     playlist,
@@ -96,6 +99,7 @@ export function NowPlayingDrawer() {
   const lastPlayerUpdate = useRef(0);
   const persistTimer = useRef<number | null>(null);
 
+  const hasCurrentTrack = currentTrack !== null;
   const isVideo = currentTrack?.media_type === "video";
   const audioOnlySidebarVideo =
     isVideo && settings.playback.playVideoInSidebar && !isTheaterOpen;
@@ -119,6 +123,11 @@ export function NowPlayingDrawer() {
     subtitleCursor.current,
   );
   subtitleCursor.current = activeSubtitle.index;
+
+  useEffect(() => {
+    // Keep Now Playing contextual to the Library without interrupting playback.
+    setDrawerOpen(pathname === "/library" && hasCurrentTrack);
+  }, [hasCurrentTrack, pathname, setDrawerOpen]);
 
   useEffect(() => {
     const media = videoRef.current;
