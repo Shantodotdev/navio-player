@@ -15,12 +15,27 @@ const SHORTCUTS = [
   { keys: "Ctrl + N", action: "Create a playlist" },
 ] as const;
 
+/** Releases pointer-created button focus without affecting keyboard navigation. */
+function blurPointerActivatedButton(event: PointerEvent) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const button = target.closest("button");
+  if (button instanceof HTMLButtonElement) button.blur();
+}
+
 /** Provides Navio's fixed app-wide shortcuts and their reference overlay. */
 export function KeyboardShortcuts() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    // Pointerup occurs before click, so actions still fire without retaining focus.
+    window.addEventListener("pointerup", blurPointerActivatedButton, true);
+    return () =>
+      window.removeEventListener("pointerup", blurPointerActivatedButton, true);
+  }, []);
 
   useEffect(() => {
     /** Routes one key press while preserving native behavior for focused controls. */
@@ -33,9 +48,16 @@ export function KeyboardShortcuts() {
           event.stopImmediatePropagation();
           setIsOpen(false);
         } else if (
-          [" ", "k", "q", "f", "arrowleft", "arrowright", "arrowup", "arrowdown"].includes(
-            event.key.toLowerCase(),
-          )
+          [
+            " ",
+            "k",
+            "q",
+            "f",
+            "arrowleft",
+            "arrowright",
+            "arrowup",
+            "arrowdown",
+          ].includes(event.key.toLowerCase())
         ) {
           // Keep media controls behind the modal inert while it has focus.
           event.preventDefault();
@@ -87,10 +109,7 @@ export function KeyboardShortcuts() {
       if (event.ctrlKey) {
         if (event.repeat) return;
 
-        if (
-          pathname === "/playlists" &&
-          event.key.toLowerCase() === "n"
-        ) {
+        if (pathname === "/playlists" && event.key.toLowerCase() === "n") {
           event.preventDefault();
           event.stopImmediatePropagation();
           document.getElementById("create-playlist")?.click();
@@ -100,8 +119,7 @@ export function KeyboardShortcuts() {
 
       const player = usePlayerStore.getState();
       const key = event.key.toLowerCase();
-      const theaterHandlesKey =
-        pathname === "/watch" || player.isTheaterOpen;
+      const theaterHandlesKey = pathname === "/watch" || player.isTheaterOpen;
 
       if ((event.key === " " || key === "k") && player.currentTrack) {
         if (theaterHandlesKey || event.repeat) return;
@@ -145,7 +163,7 @@ export function KeyboardShortcuts() {
   return (
     <div
       aria-hidden={!isOpen}
-      className={`fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-4 select-none transition-opacity duration-200 ${
+      className={`fixed inset-0 z-120 flex items-center justify-center bg-black/50 p-4 select-none transition-opacity duration-200 ${
         isOpen
           ? "pointer-events-auto opacity-100"
           : "pointer-events-none opacity-0"
@@ -193,7 +211,7 @@ export function KeyboardShortcuts() {
               className="flex items-center justify-between gap-6 rounded-lg px-3 py-2.5 hover:bg-white/3"
             >
               <span className="text-sm text-zinc-400">{shortcut.action}</span>
-              <kbd className="shrink-0 rounded-md border border-white/10 bg-black/40 px-2.5 py-1 text-sm font-medium [font-family:inherit] text-zinc-200 shadow-sm">
+              <kbd className="shrink-0 rounded-md border border-white/10 bg-black/40 px-2.5 py-1 text-sm font-medium font-[inherit] text-zinc-200 shadow-sm">
                 {shortcut.keys}
               </kbd>
             </div>
