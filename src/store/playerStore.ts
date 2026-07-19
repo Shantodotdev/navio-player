@@ -43,6 +43,21 @@ interface PlayerState {
   playTrack: (track: Track, fromPlaylist?: Track[]) => void;
   /// Pause or play.
   setIsPlaying: (playing: boolean) => void;
+  /**
+   * Pause playback and reset both the active media element and stored position.
+   * This provides true stop semantics shared by the UI and MCP transport.
+   */
+  stopPlayback: () => void;
+  /**
+   * Seek to a clamped absolute playback position.
+   * Returns false without mutation when the supplied value is not finite.
+   */
+  seekTo: (seconds: number) => boolean;
+  /**
+   * Seek relative to the live media-element position, falling back to stored time.
+   * Returns false without mutation when the offset is not finite.
+   */
+  seekBy: (seconds: number) => boolean;
   /// Seek to a specific progress timestamp.
   setCurrentTime: (time: number) => void;
   /// Set audio volume.
@@ -57,6 +72,20 @@ interface PlayerState {
   setStreamConfig: (config: { port: number; token: string }) => void;
   /// Override the queue list.
   setPlaylist: (tracks: Track[]) => void;
+  /**
+   * Append one unique local track to the active queue.
+   * When no explicit queue exists, the current track becomes its first entry.
+   */
+  addToQueue: (track: Track) => void;
+  /**
+   * Remove one queue item while preserving the current media and a valid index.
+   * Removing the active item selects a neighboring replacement or stops playback.
+   */
+  removeQueueIndex: (index: number) => boolean;
+  /** Remove every queued item except the current track, when one is active. */
+  clearQueue: () => void;
+  /** Start one valid queue index using the shared `playTrack` implementation. */
+  playQueueIndex: (index: number) => boolean;
   /// Open/Close the Now Playing right drawer.
   setDrawerOpen: (open: boolean) => void;
   /// Toggle the Now Playing right drawer.
@@ -118,6 +147,39 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         mediaElement.pause();
       }
     }
+  },
+
+  stopPlayback: () => {
+    const { mediaElement } = get();
+    if (mediaElement) {
+      mediaElement.pause();
+      mediaElement.currentTime = 0;
+    }
+    set({ isPlaying: false, currentTime: 0 });
+  },
+
+  seekTo: (seconds) => {
+    if (!Number.isFinite(seconds)) return false;
+    const { mediaElement } = get();
+    const duration = mediaElement?.duration;
+    const maximum =
+      duration !== undefined && Number.isFinite(duration) && duration > 0
+        ? duration
+        : Number.POSITIVE_INFINITY;
+    const target = Math.min(maximum, Math.max(0, seconds));
+    if (mediaElement) mediaElement.currentTime = target;
+    set({ currentTime: target });
+    return true;
+  },
+
+  seekBy: (seconds) => {
+    if (!Number.isFinite(seconds)) return false;
+    const { currentTime, mediaElement } = get();
+    const liveTime =
+      mediaElement && Number.isFinite(mediaElement.currentTime)
+        ? mediaElement.currentTime
+        : currentTime;
+    return get().seekTo(liveTime + seconds);
   },
 
   setCurrentTime: (time) => {
@@ -185,6 +247,81 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setStreamConfig: ({ port, token }) =>
     set({ streamPort: port, streamToken: token }),
   setPlaylist: (tracks) => set({ playlist: tracks }),
+  addToQueue: (track) => {
+    const { currentTrack, playlist } = get();
+    const base =
+      playlist.length > 0 ? playlist : currentTrack ? [currentTrack] : [];
+    if (base.some((item) => item.id === track.id)) return;
+    set({ playlist: [...base, track] });
+  },
+  removeQueueIndex: (index) => {
+    const { isPlaying, mediaElement, playIndex, playlist } = get();
+    if (!Number.isInteger(index) || index < 0 || index >= playlist.length) {
+      return false;
+    }
+    const updated = playlist.filter((_, itemIndex) => itemIndex !== index);
+    if (index < playIndex) {
+      set({ playlist: updated, playIndex: playIndex - 1 });
+      return true;
+    }
+    if (index !== playIndex) {
+      set({ playlist: updated });
+      return true;
+    }
+
+    const replacement = updated[Math.min(index, updated.length - 1)];
+    if (!replacement) {
+      mediaElement?.pause();
+      set({
+        playlist: [],
+        playIndex: -1,
+        currentTrack: null,
+        currentTime: 0,
+        isPlaying: false,
+        isTheaterOpen: false,
+      });
+      return true;
+    }
+    set({
+      playlist: updated,
+      playIndex: Math.min(index, updated.length - 1),
+      currentTrack: replacement,
+      currentTime: 0,
+      isPlaying,
+      isTheaterOpen:
+        replacement.media_type === "video" ? get().isTheaterOpen : false,
+    });
+    if (mediaElement) {
+      mediaElement.src = buildStreamUrl(
+        get().streamPort,
+        get().streamToken,
+        replacement.path,
+      );
+      if (isPlaying) {
+        mediaElement
+          .play()
+          .catch((error) => console.warn("Queue replacement failed:", error));
+      }
+    }
+    return true;
+  },
+  clearQueue: () => {
+    const { currentTrack } = get();
+    set({
+      playlist: currentTrack ? [currentTrack] : [],
+      playIndex: currentTrack ? 0 : -1,
+    });
+  },
+  playQueueIndex: (index) => {
+    const { playlist } = get();
+    if (!Number.isInteger(index) || index < 0 || index >= playlist.length) {
+      return false;
+    }
+    const track = playlist[index];
+    if (!track) return false;
+    get().playTrack(track, playlist);
+    return true;
+  },
   setDrawerOpen: (open) => set({ isDrawerOpen: open }),
   toggleDrawer: () => set((state) => ({ isDrawerOpen: !state.isDrawerOpen })),
   setTheaterOpen: (open) => {
