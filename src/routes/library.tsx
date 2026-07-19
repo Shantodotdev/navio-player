@@ -150,7 +150,7 @@ function LibraryView() {
                 onClick={() => setSelectedDirectory(null)}
                 className="flex items-center gap-1.5 shrink-0 rounded-lg border border-brand/30 bg-brand/10 px-2.5 py-1.5 text-xs text-brand-light hover:bg-brand/20 transition-colors cursor-pointer self-start md:self-auto"
               >
-                <span className="max-w-[14rem] sm:max-w-[18rem] truncate">
+                <span className="max-w-56 sm:max-w-[18rem] truncate">
                   {selectedDirectory}
                 </span>
                 <X size={13} />
@@ -272,7 +272,7 @@ function LibraryView() {
                             />
                           </button>
                         </td>
-                        <td className="p-2 sm:p-3 text-zinc-300 font-medium text-xs sm:text-sm truncate max-w-[200px] md:max-w-none">
+                        <td className="p-2 sm:p-3 text-zinc-300 font-medium text-xs sm:text-sm truncate max-w-50 md:max-w-none">
                           {getTrackDisplayName(
                             track,
                             settings.library.showFileExtensions,

@@ -115,7 +115,9 @@ function DownloaderView() {
       });
       return true;
     } catch (error) {
-      setFormError(getDownloadErrorMessage(error, "Could not start the download."));
+      setFormError(
+        getDownloadErrorMessage(error, "Could not start the download."),
+      );
       return false;
     }
   }
@@ -309,7 +311,9 @@ function DownloaderView() {
               <span>Download</span>
             </button>
           </div>
-          {formError && <p className="text-xs sm:text-sm text-red-400">{formError}</p>}
+          {formError && (
+            <p className="text-xs sm:text-sm text-red-400">{formError}</p>
+          )}
         </div>
         <details className="group border-t border-white/5 pt-4">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-xs sm:text-sm text-zinc-400 hover:text-zinc-200">
@@ -567,7 +571,9 @@ function CollectionDownloadModal({
         </h3>
         <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed font-normal">
           {inspection?.title ?? "This link"}
-          {inspection?.item_count ? ` contains ${inspection.item_count} items.` : " contains multiple items."}{" "}
+          {inspection?.item_count
+            ? ` contains ${inspection.item_count} items.`
+            : " contains multiple items."}{" "}
           What would you like to download?
         </p>
         <div className="flex flex-col gap-2.5 sm:gap-3">
@@ -651,18 +657,23 @@ function DownloadCard({
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.status === "paused" ? "bg-blue-400" : "bg-yellow-500 animate-ping"}`}
             />
           )}
-          <span className={`text-[10px] sm:text-xs uppercase font-medium shrink-0 ${statusColor}`}>
+          <span
+            className={`text-[10px] sm:text-xs uppercase font-medium shrink-0 ${statusColor}`}
+          >
             {item.status}
           </span>
           <span className="text-zinc-700 shrink-0">•</span>
           <span
-            className="text-[10px] sm:text-xs text-zinc-550 truncate max-w-[12rem] sm:max-w-[18rem]"
+            className="text-[10px] sm:text-xs text-zinc-550 truncate max-w-48 sm:max-w-[18rem]"
             title={item.url}
           >
             {item.url}
           </span>
         </div>
-        <h3 className="text-xs sm:text-sm md:text-base font-medium text-zinc-200 tracking-wide truncate mt-0.5" title={displayTitle}>
+        <h3
+          className="text-xs sm:text-sm md:text-base font-medium text-zinc-200 tracking-wide truncate mt-0.5"
+          title={displayTitle}
+        >
           {displayTitle}
         </h3>
         {showProgress && (
@@ -688,7 +699,9 @@ function DownloadCard({
         <div className="flex gap-3 sm:gap-4 text-[10px] text-zinc-550 font-medium">
           <div className="flex flex-col">
             <span className="text-[10px]">Speed</span>
-            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">{item.speed}</span>
+            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">
+              {item.speed}
+            </span>
           </div>
           <div className="flex flex-col">
             <span className="text-[10px]">Format</span>
@@ -698,7 +711,9 @@ function DownloadCard({
           </div>
           <div className="flex flex-col">
             <span className="text-[10px]">Size</span>
-            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">{item.size}</span>
+            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">
+              {item.size}
+            </span>
           </div>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">

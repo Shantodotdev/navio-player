@@ -33,25 +33,25 @@ function DashboardView() {
       <div className="grid grid-cols-1 min-[480px]:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           to="/library"
-          icon={<Music className="w-4 h-4 md:w-[18px] md:h-[18px] shrink-0" />}
+          icon={<Music className="w-4 h-4 md:w-4.5 md:h-4.5 shrink-0" />}
           count={stats.audioCount}
           label="Audio tracks"
         />
         <StatCard
           to="/library"
-          icon={<Film className="w-4 h-4 md:w-[18px] md:h-[18px] shrink-0" />}
+          icon={<Film className="w-4 h-4 md:w-4.5 md:h-4.5 shrink-0" />}
           count={stats.videoCount}
           label="Video files"
         />
         <StatCard
           to="/playlists"
-          icon={<ListMusic className="w-4 h-4 md:w-[18px] md:h-[18px] shrink-0" />}
+          icon={<ListMusic className="w-4 h-4 md:w-4.5 md:h-4.5 shrink-0" />}
           count={stats.playlistCount}
           label="Playlists"
         />
         <StatCard
           to="/library"
-          icon={<FolderPlus className="w-4 h-4 md:w-[18px] md:h-[18px] shrink-0" />}
+          icon={<FolderPlus className="w-4 h-4 md:w-4.5 md:h-4.5 shrink-0" />}
           count={stats.scannedFolders}
           label="Folders indexed"
         />
@@ -162,7 +162,10 @@ function StatCard({
         <div className="text-xs sm:text-sm md:text-base lg:text-lg font-medium text-zinc-200 leading-none truncate">
           {count}
         </div>
-        <div className="text-[10px] sm:text-xs md:text-sm text-zinc-400 mt-1 lg:mt-1.5 font-medium truncate" title={label}>
+        <div
+          className="text-[10px] sm:text-xs md:text-sm text-zinc-400 mt-1 lg:mt-1.5 font-medium truncate"
+          title={label}
+        >
           {label}
         </div>
       </div>
@@ -189,7 +192,10 @@ function ToolbarCard({
       <div className="p-2 sm:p-2.5 md:p-3 bg-brand/10 border border-brand/20 rounded-xl shrink-0">
         {icon}
       </div>
-      <h3 className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-medium text-zinc-200 truncate" title={title}>
+      <h3
+        className="text-xs sm:text-sm md:text-base lg:text-lg xl:text-xl font-medium text-zinc-200 truncate"
+        title={title}
+      >
         {title}
       </h3>
     </Link>
