@@ -50,6 +50,7 @@ import {
 import { useSettingsStore } from "../store/settingsStore";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 
+/** Renders the shared media element, queue drawer, and theater presentation. */
 export function NowPlayingDrawer() {
   const navigate = useNavigate();
   const pathname = useRouterState({
@@ -68,6 +69,7 @@ export function NowPlayingDrawer() {
     clearMediaElement,
     setCurrentTime,
     setIsPlaying,
+    handleTrackEnded,
     nextTrack,
     prevTrack,
     currentTime,
@@ -594,7 +596,7 @@ export function NowPlayingDrawer() {
             savePreferences: false,
           });
         }
-        nextTrack();
+        handleTrackEnded();
       }}
       onError={handleMediaError}
     />

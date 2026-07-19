@@ -13,6 +13,9 @@ export type Track = {
   cover_cache_path?: string;
 };
 
+/** Session-only repeat behavior for natural media completion. */
+export type RepeatMode = "off" | "all" | "one";
+
 /// The player state slice representing media queues and current progress.
 interface PlayerState {
   /// The active track loaded in the player.
@@ -31,6 +34,14 @@ interface PlayerState {
   currentTime: number;
   /// App-wide volume percentage (0 - 100).
   volume: number;
+  /// Whether playback traverses the canonical queue in shuffled order.
+  shuffleEnabled: boolean;
+  /// Repeat behavior applied when the current media ends naturally.
+  repeatMode: RepeatMode;
+  /// Unplayed track IDs remaining in the active shuffled cycle.
+  shufflePendingIds: string[];
+  /// Actual shuffled playback path, including the current track as the final ID.
+  shuffleHistoryIds: string[];
   /// Now Playing sidebar drawer toggle state.
   isDrawerOpen: boolean;
   /// Full-app theater mode for the active video.
@@ -62,6 +73,12 @@ interface PlayerState {
   setCurrentTime: (time: number) => void;
   /// Set audio volume.
   setVolume: (volume: number) => void;
+  /// Enable or disable shuffled traversal without reordering the visible queue.
+  toggleShuffle: () => void;
+  /// Cycle repeat behavior through off, all, one, and back to off.
+  cycleRepeatMode: () => void;
+  /// Resolve a natural media completion according to repeat and shuffle state.
+  handleTrackEnded: () => void;
   /// Skip to next queue item.
   nextTrack: () => void;
   /// Backtrack to previous queue item.
@@ -107,6 +124,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   streamToken: "",
   currentTime: 0,
   volume: 80,
+  shuffleEnabled: false,
+  repeatMode: "off",
+  shufflePendingIds: [],
+  shuffleHistoryIds: [],
   isDrawerOpen: false,
   isTheaterOpen: false,
   mediaElement: null,
@@ -116,6 +137,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     const list = fromPlaylist.length > 0 ? fromPlaylist : [track];
     const idx = list.findIndex((t) => t.id === track.id);
 
+    const shufflePendingIds = get().shuffleEnabled
+      ? shuffleTrackIds(list.filter((item) => item.id !== track.id))
+      : [];
+
     set({
       playlist: list,
       currentTrack: track,
@@ -124,6 +149,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       currentTime: 0,
       isDrawerOpen: true,
       isTheaterOpen: false,
+      shufflePendingIds,
+      shuffleHistoryIds: get().shuffleEnabled ? [track.id] : [],
     });
 
     if (mediaElement) {
@@ -195,12 +222,118 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     }
   },
 
+  toggleShuffle: () => {
+    const { currentTrack, playlist, shuffleEnabled } = get();
+    if (shuffleEnabled) {
+      set({
+        shuffleEnabled: false,
+        shufflePendingIds: [],
+        shuffleHistoryIds: [],
+        playIndex: currentTrack
+          ? playlist.findIndex((track) => track.id === currentTrack.id)
+          : -1,
+      });
+      return;
+    }
+
+    set({
+      shuffleEnabled: true,
+      shufflePendingIds: currentTrack
+        ? shuffleTrackIds(
+            playlist.filter((track) => track.id !== currentTrack.id),
+          )
+        : [],
+      shuffleHistoryIds: currentTrack ? [currentTrack.id] : [],
+    });
+  },
+
+  cycleRepeatMode: () => {
+    const nextMode: Record<RepeatMode, RepeatMode> = {
+      off: "all",
+      all: "one",
+      one: "off",
+    };
+    set({ repeatMode: nextMode[get().repeatMode] });
+  },
+
+  handleTrackEnded: () => {
+    const {
+      currentTrack,
+      mediaElement,
+      playlist,
+      playIndex,
+      repeatMode,
+      shuffleEnabled,
+      shufflePendingIds,
+    } = get();
+    if (!currentTrack) return;
+
+    if (repeatMode === "one") {
+      if (mediaElement) {
+        mediaElement.currentTime = 0;
+        mediaElement
+          .play()
+          .catch((error) => console.warn("Repeat track failed:", error));
+      }
+      set({ currentTime: 0, isPlaying: true });
+      return;
+    }
+
+    const hasShuffledTrack = shufflePendingIds.some((id) =>
+      playlist.some((track) => track.id === id),
+    );
+    const isAtEnd = shuffleEnabled
+      ? !hasShuffledTrack
+      : playIndex >= playlist.length - 1;
+    if (repeatMode === "off" && isAtEnd) {
+      set({ isPlaying: false });
+      return;
+    }
+
+    get().nextTrack();
+  },
+
   nextTrack: () => {
-    const { playlist, playIndex, streamPort, streamToken, mediaElement } =
-      get();
+    const {
+      currentTrack,
+      playlist,
+      playIndex,
+      shuffleEnabled,
+      shuffleHistoryIds,
+      shufflePendingIds,
+      streamPort,
+      streamToken,
+      mediaElement,
+    } = get();
     if (playlist.length === 0 || playIndex === -1) return;
-    const nextIdx = (playIndex + 1) % playlist.length;
+
+    let nextIdx = (playIndex + 1) % playlist.length;
+    let pendingIds = shufflePendingIds.filter((id) =>
+      playlist.some((track) => track.id === id),
+    );
+    let historyIds = shuffleHistoryIds;
+
+    if (shuffleEnabled && currentTrack) {
+      if (pendingIds.length === 0) {
+        pendingIds = shuffleTrackIds(
+          playlist.filter((track) => track.id !== currentTrack.id),
+        );
+      }
+
+      const nextId = pendingIds[0] ?? currentTrack.id;
+      const shuffledIndex = playlist.findIndex((track) => track.id === nextId);
+      if (shuffledIndex === -1) return;
+      nextIdx = shuffledIndex;
+      pendingIds = pendingIds.slice(1);
+      const historyBase =
+        historyIds.at(-1) === currentTrack.id
+          ? historyIds
+          : [...historyIds, currentTrack.id];
+      historyIds = [...historyBase, nextId];
+    }
+
     const track = playlist[nextIdx];
+    if (!track) return;
 
     set({
       playIndex: nextIdx,
@@ -208,6 +341,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: true,
       currentTime: 0,
       isTheaterOpen: track.media_type === "video" ? get().isTheaterOpen : false,
+      shufflePendingIds: shuffleEnabled ? pendingIds : [],
+      shuffleHistoryIds: shuffleEnabled ? historyIds : [],
     });
 
     if (mediaElement && track) {
@@ -220,11 +355,45 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   },
 
   prevTrack: () => {
-    const { playlist, playIndex, streamPort, streamToken, mediaElement } =
-      get();
+    const {
+      currentTrack,
+      playlist,
+      playIndex,
+      shuffleEnabled,
+      shuffleHistoryIds,
+      shufflePendingIds,
+      streamPort,
+      streamToken,
+      mediaElement,
+    } = get();
     if (playlist.length === 0 || playIndex === -1) return;
-    const prevIdx = (playIndex - 1 + playlist.length) % playlist.length;
+
+    let prevIdx = (playIndex - 1 + playlist.length) % playlist.length;
+    let pendingIds = shufflePendingIds;
+    let historyIds = shuffleHistoryIds;
+    if (shuffleEnabled && currentTrack && historyIds.length > 1) {
+      const previousId = historyIds.at(-2);
+      const shuffledIndex = playlist.findIndex(
+        (track) => track.id === previousId,
+      );
+      if (shuffledIndex === -1) return;
+      prevIdx = shuffledIndex;
+      historyIds = historyIds.slice(0, -1);
+      pendingIds = [
+        currentTrack.id,
+        ...pendingIds.filter((id) => id !== currentTrack.id),
+      ];
+    } else if (shuffleEnabled && currentTrack) {
+      if (mediaElement) mediaElement.currentTime = 0;
+      set({ currentTime: 0, isPlaying: true });
+      void mediaElement
+        ?.play()
+        .catch((error) => console.warn("Restart track failed:", error));
+      return;
+    }
+
     const track = playlist[prevIdx];
+    if (!track) return;
 
     set({
       playIndex: prevIdx,
@@ -232,6 +401,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying: true,
       currentTime: 0,
       isTheaterOpen: track.media_type === "video" ? get().isTheaterOpen : false,
+      shufflePendingIds: shuffleEnabled ? pendingIds : [],
+      shuffleHistoryIds: shuffleEnabled ? historyIds : [],
     });
 
     if (mediaElement && track) {
@@ -246,26 +417,72 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setStreamPort: (port) => set({ streamPort: port }),
   setStreamConfig: ({ port, token }) =>
     set({ streamPort: port, streamToken: token }),
-  setPlaylist: (tracks) => set({ playlist: tracks }),
+  setPlaylist: (tracks) => {
+    const { currentTrack, shuffleEnabled } = get();
+    const currentIndex = currentTrack
+      ? tracks.findIndex((track) => track.id === currentTrack.id)
+      : -1;
+    set({
+      playlist: tracks,
+      playIndex: currentIndex,
+      shufflePendingIds:
+        shuffleEnabled && currentTrack
+          ? shuffleTrackIds(
+              tracks.filter((track) => track.id !== currentTrack.id),
+            )
+          : [],
+      shuffleHistoryIds:
+        shuffleEnabled && currentTrack ? [currentTrack.id] : [],
+    });
+  },
   addToQueue: (track) => {
-    const { currentTrack, playlist } = get();
+    const { currentTrack, playlist, shuffleEnabled, shufflePendingIds } =
+      get();
     const base =
       playlist.length > 0 ? playlist : currentTrack ? [currentTrack] : [];
     if (base.some((item) => item.id === track.id)) return;
-    set({ playlist: [...base, track] });
+    set({
+      playlist: [...base, track],
+      shufflePendingIds: shuffleEnabled
+        ? shuffleTrackIds([
+            ...base.filter((item) =>
+              shufflePendingIds.includes(item.id),
+            ),
+            track,
+          ])
+        : [],
+    });
   },
   removeQueueIndex: (index) => {
-    const { isPlaying, mediaElement, playIndex, playlist } = get();
+    const {
+      isPlaying,
+      mediaElement,
+      playIndex,
+      playlist,
+      shuffleEnabled,
+      shuffleHistoryIds,
+      shufflePendingIds,
+    } = get();
     if (!Number.isInteger(index) || index < 0 || index >= playlist.length) {
       return false;
     }
+    const removed = playlist[index];
+    if (!removed) return false;
     const updated = playlist.filter((_, itemIndex) => itemIndex !== index);
+    const traversalPatch = {
+      shufflePendingIds: shufflePendingIds.filter(
+        (id) => id !== removed.id,
+      ),
+      shuffleHistoryIds: shuffleHistoryIds.filter(
+        (id) => id !== removed.id,
+      ),
+    };
     if (index < playIndex) {
-      set({ playlist: updated, playIndex: playIndex - 1 });
+      set({ playlist: updated, playIndex: playIndex - 1, ...traversalPatch });
       return true;
     }
     if (index !== playIndex) {
-      set({ playlist: updated });
+      set({ playlist: updated, ...traversalPatch });
       return true;
     }
 
@@ -279,6 +496,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         currentTime: 0,
         isPlaying: false,
         isTheaterOpen: false,
+        shufflePendingIds: [],
+        shuffleHistoryIds: [],
       });
       return true;
     }
@@ -290,6 +509,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       isPlaying,
       isTheaterOpen:
         replacement.media_type === "video" ? get().isTheaterOpen : false,
+      shufflePendingIds: shuffleEnabled
+        ? shuffleTrackIds(
+            updated.filter((track) => track.id !== replacement.id),
+          )
+        : [],
+      shuffleHistoryIds: shuffleEnabled ? [replacement.id] : [],
     });
     if (mediaElement) {
       mediaElement.src = buildStreamUrl(
@@ -306,10 +531,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     return true;
   },
   clearQueue: () => {
-    const { currentTrack } = get();
+    const { currentTrack, shuffleEnabled } = get();
     set({
       playlist: currentTrack ? [currentTrack] : [],
       playIndex: currentTrack ? 0 : -1,
+      shufflePendingIds: [],
+      shuffleHistoryIds:
+        shuffleEnabled && currentTrack ? [currentTrack.id] : [],
     });
   },
   playQueueIndex: (index) => {
@@ -371,4 +599,18 @@ function buildStreamUrl(port: number, token: string, path: string): string {
   const encodedPath = encodeURIComponent(path);
   const encodedToken = encodeURIComponent(token);
   return `http://127.0.0.1:${port}/stream/${encodedPath}?token=${encodedToken}`;
+}
+
+/** Returns a Fisher-Yates shuffled copy without mutating the canonical queue. */
+function shuffleTrackIds(tracks: Track[]): string[] {
+  const ids = tracks.map((track) => track.id);
+  for (let index = ids.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    const current = ids[index];
+    const replacement = ids[swapIndex];
+    if (current === undefined || replacement === undefined) continue;
+    ids[index] = replacement;
+    ids[swapIndex] = current;
+  }
+  return ids;
 }

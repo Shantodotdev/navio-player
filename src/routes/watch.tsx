@@ -112,6 +112,7 @@ export const Route = createFileRoute("/watch")({
   component: WatchView,
 });
 
+/** Renders the dedicated video watch surface backed by shared player state. */
 function WatchView() {
   const navigate = useNavigate();
   const { settings } = useSettingsStore();
@@ -152,6 +153,7 @@ function WatchView() {
     currentTrack,
     currentTime,
     isPlaying,
+    handleTrackEnded,
     nextTrack,
     prevTrack,
     setCurrentTime,
@@ -831,7 +833,7 @@ function WatchView() {
               savePreferences: false,
             });
           }
-          nextTrack();
+          handleTrackEnded();
         }}
       />
       <audio ref={alternateAudioRef} className="hidden" />

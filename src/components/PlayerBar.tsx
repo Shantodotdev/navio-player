@@ -5,6 +5,7 @@ import {
   Play,
   Pause,
   Repeat,
+  Repeat1,
   Shuffle,
   Music,
   Film,
@@ -32,6 +33,10 @@ export function PlayerBar() {
     volume,
     setVolume,
     mediaElement,
+    shuffleEnabled,
+    repeatMode,
+    toggleShuffle,
+    cycleRepeatMode,
   } = usePlayerStore();
 
   const [coverUrl, setCoverUrl] = useState("");
@@ -113,6 +118,13 @@ export function PlayerBar() {
     currentTrack && currentTrack.duration_secs > 0
       ? (currentTime / currentTrack.duration_secs) * 100
       : 0;
+  const shuffleLabel = shuffleEnabled ? "Disable shuffle" : "Enable shuffle";
+  const repeatLabel =
+    repeatMode === "off"
+      ? "Enable repeat all"
+      : repeatMode === "all"
+        ? "Enable repeat one"
+        : "Disable repeat";
 
   return (
     <div className="w-full h-24 bg-[#050507]/98 backdrop-blur-2xl border-t border-white/5 px-4 md:px-8 flex items-center justify-between shadow-[0_-15px_30px_-15px_rgba(0,0,0,0.8)] z-50 shrink-0 select-none">
@@ -167,7 +179,19 @@ export function PlayerBar() {
       {/* Center: Controls & Timeline */}
       <div className="flex-1 max-w-xs md:max-w-md w-full flex flex-col items-center gap-2 px-2 shrink-0">
         <div className="flex items-center gap-4 md:gap-5">
-          <button className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">
+          <button
+            type="button"
+            onClick={toggleShuffle}
+            disabled={!currentTrack}
+            aria-label={shuffleLabel}
+            aria-pressed={shuffleEnabled}
+            title={shuffleLabel}
+            className={`transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+              shuffleEnabled
+                ? "text-brand-light hover:text-brand-light"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
             <Shuffle size={15} />
           </button>
           <button
@@ -195,8 +219,23 @@ export function PlayerBar() {
           >
             <SkipForward size={17} />
           </button>
-          <button className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">
-            <Repeat size={15} />
+          <button
+            type="button"
+            onClick={cycleRepeatMode}
+            disabled={!currentTrack}
+            aria-label={repeatLabel}
+            title={repeatLabel}
+            className={`transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+              repeatMode !== "off"
+                ? "text-brand-light hover:text-brand-light"
+                : "text-zinc-400 hover:text-zinc-200"
+            }`}
+          >
+            {repeatMode === "one" ? (
+              <Repeat1 size={15} />
+            ) : (
+              <Repeat size={15} />
+            )}
           </button>
         </div>
 
