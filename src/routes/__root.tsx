@@ -13,6 +13,7 @@ import { NowPlayingDrawer } from "../components/NowPlayingDrawer";
 import { usePlayerStore } from "../store/playerStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
+import { useMcpControl } from "../hooks/useMcpControl";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -23,6 +24,7 @@ export default function Root() {
   const { setStreamConfig, setVolume } = usePlayerStore();
   const { loadSettings } = useSettingsStore();
   useLibrarySync();
+  useMcpControl();
   const isWatchRoute = useRouterState({
     select: (state) => state.location.pathname === "/watch",
   });
