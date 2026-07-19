@@ -236,6 +236,95 @@ pub async fn get_library(app_handle: tauri::AppHandle) -> Result<library::Librar
   Ok(view)
 }
 
+/// Waits for the next authenticated MCP request assigned to the renderer.
+///
+/// This long-poll command is called by the root React control hook. The bounded
+/// broker, rather than the WebView, owns ordering and correlation state.
+#[tauri::command]
+pub async fn wait_for_mcp_command(
+  state: tauri::State<'_, AppState>,
+) -> Result<control::PendingControlRequest, String> {
+  state
+    .control_broker
+    .next()
+    .await
+    .ok_or_else(|| "Navio's agent control channel is closed.".to_string())
+}
+
+/// Completes one pending MCP request with the renderer-produced response envelope.
+///
+/// The textual request ID is parsed as a UUID before broker access. Unknown,
+/// expired, and already-completed IDs fail instead of being silently discarded.
+#[tauri::command]
+pub async fn complete_mcp_command(
+  id: String,
+  success: bool,
+  message: Option<String>,
+  data: Option<serde_json::Value>,
+  state: tauri::State<'_, AppState>,
+) -> Result<(), String> {
+  let id =
+    uuid::Uuid::parse_str(&id).map_err(|_| "Agent control request ID is invalid.".to_string())?;
+  let reply = control::ControlReply {
+    success,
+    message,
+    data,
+  };
+  state.control_broker.complete(id, reply).await
+}
+
+/// Converts one completed download into media metadata after path authorization.
+///
+/// The renderer supplies a downloader-produced path, but Rust still canonicalizes
+/// and checks it against Navio's streaming allowlist before reading metadata.
+#[tauri::command]
+pub fn inspect_authorized_media_file(
+  path: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<library::MediaItem, String> {
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|error| error.to_string())?;
+  inspect_authorized_media_file_impl(&path, &cache_dir, &state.allowed_directories)
+}
+
+/// Canonicalizes and inspects one file without widening the streaming boundary.
+///
+/// Directory membership is checked using resolved paths, preventing `..`, links,
+/// or sibling-prefix tricks from turning MCP autoplay into arbitrary file access.
+/// Only extensions already supported by Navio's media scanner can be returned.
+fn inspect_authorized_media_file_impl(
+  path: &str,
+  app_cache_dir: &std::path::Path,
+  allowed_directories: &Arc<Mutex<HashSet<PathBuf>>>,
+) -> Result<library::MediaItem, String> {
+  let requested = PathBuf::from(path);
+  if !requested.is_file() {
+    return Err("Media file does not exist.".to_string());
+  }
+  let canonical = requested
+    .canonicalize()
+    .map_err(|_| "Media file could not be resolved.".to_string())?;
+  let allowed = allowed_directories
+    .lock()
+    .map_err(|_| "Navio's media authorization state is unavailable.".to_string())?;
+  let is_allowed = allowed.iter().any(|directory| {
+    directory
+      .canonicalize()
+      .map(|resolved| canonical.starts_with(resolved))
+      .unwrap_or(false)
+  });
+  drop(allowed);
+  if !is_allowed {
+    return Err("Media file is outside Navio's authorized directories.".to_string());
+  }
+
+  library::process_media_file(&canonical, app_cache_dir)
+    .ok_or_else(|| "File is not a supported Navio media type.".to_string())
+}
+
 /// Retrieves the independent playlist catalog from AppData.
 ///
 /// This command is separate from `get_library` so a library refresh cannot
@@ -467,3 +556,88 @@ pub async fn scan_folder(
 }
 
 use super::*;
+
+#[cfg(test)]
+mod mcp_control_tests {
+  use super::*;
+  use std::{
+    collections::HashSet,
+    fs,
+    sync::{Arc, Mutex},
+  };
+
+  /// Creates an isolated temporary root for authorized-media boundary tests.
+  fn test_directory(name: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("navio-control-{name}-{}", uuid::Uuid::new_v4()))
+  }
+
+  #[test]
+  /// Verifies authorized media is inspectable while a sibling file is rejected.
+  fn authorized_media_inspection_stays_inside_the_allowlist() {
+    let root = test_directory("allowed");
+    let allowed_dir = root.join("media");
+    let cache_dir = root.join("cache");
+    fs::create_dir_all(&allowed_dir).expect("create media directory");
+    fs::create_dir_all(&cache_dir).expect("create cache directory");
+    let allowed_file = allowed_dir.join("track.mp3");
+    let sibling_file = root.join("outside.mp3");
+    fs::write(&allowed_file, b"not-real-audio").expect("write allowed fixture");
+    fs::write(&sibling_file, b"not-real-audio").expect("write sibling fixture");
+    let allowed = Arc::new(Mutex::new(HashSet::from([allowed_dir
+      .canonicalize()
+      .expect("canonical allowed directory")])));
+
+    let media = inspect_authorized_media_file_impl(
+      allowed_file.to_string_lossy().as_ref(),
+      &cache_dir,
+      &allowed,
+    )
+    .expect("inspect allowed media");
+    assert_eq!(media.media_type, "audio");
+    assert_eq!(media.name, "track.mp3");
+
+    assert_eq!(
+      inspect_authorized_media_file_impl(
+        sibling_file.to_string_lossy().as_ref(),
+        &cache_dir,
+        &allowed,
+      )
+      .expect_err("sibling path must be rejected"),
+      "Media file is outside Navio's authorized directories."
+    );
+    fs::remove_dir_all(root).expect("cleanup fixture");
+  }
+
+  #[test]
+  /// Verifies missing paths and unsupported extensions fail with stable messages.
+  fn authorized_media_inspection_rejects_missing_and_unsupported_files() {
+    let root = test_directory("invalid");
+    let cache_dir = root.join("cache");
+    fs::create_dir_all(&cache_dir).expect("create cache directory");
+    let unsupported = root.join("notes.txt");
+    fs::write(&unsupported, b"not media").expect("write unsupported fixture");
+    let allowed = Arc::new(Mutex::new(HashSet::from([root
+      .canonicalize()
+      .expect("canonical root")])));
+
+    assert_eq!(
+      inspect_authorized_media_file_impl(
+        root.join("missing.mp3").to_string_lossy().as_ref(),
+        &cache_dir,
+        &allowed,
+      )
+      .expect_err("missing path must fail"),
+      "Media file does not exist."
+    );
+    assert_eq!(
+      inspect_authorized_media_file_impl(
+        unsupported.to_string_lossy().as_ref(),
+        &cache_dir,
+        &allowed,
+      )
+      .expect_err("unsupported path must fail"),
+      "File is not a supported Navio media type."
+    );
+    fs::remove_dir_all(root).expect("cleanup fixture");
+  }
+}

@@ -15,7 +15,8 @@ pub async fn start_server(
   // We use percent-decoded path parameters to avoid URL segment clashes with file path separators.
   let app = Router::new()
     .route("/stream/:file_path", get(stream_file))
-    .with_state(state);
+    .with_state(state.clone())
+    .merge(crate::control::http::control_router(state));
 
   // Bind to 127.0.0.1 on a random available port (port 0 requests dynamic allocation)
   let listener = tokio::net::TcpListener::bind("127.0.0.1:0")

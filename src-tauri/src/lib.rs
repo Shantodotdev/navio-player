@@ -9,8 +9,10 @@
 
 mod application;
 mod commands;
+mod control;
 mod downloader;
 mod library;
+mod mcp;
 mod media_tools;
 mod playlists;
 mod server;
@@ -18,6 +20,19 @@ mod settings;
 mod watcher;
 
 pub use application::run;
+
+/// Runs Navio as a standalone STDIO MCP server for local AI coding clients.
+///
+/// MCP mode does not initialize Tauri or create a WebView. It owns a dedicated
+/// Tokio runtime, serves protocol frames on the inherited standard streams, and
+/// reaches the separately running desktop through the authenticated control bridge.
+pub fn run_mcp() -> Result<(), String> {
+  let runtime = tokio::runtime::Builder::new_multi_thread()
+    .enable_all()
+    .build()
+    .map_err(|error| format!("Could not initialize the Navio MCP runtime: {error}"))?;
+  runtime.block_on(mcp::serve_stdio())
+}
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -48,6 +63,9 @@ pub struct AppState {
 
   /// Persistent theater metadata/cache and active media preparation jobs.
   pub media_cache: media_tools::MediaCache,
+
+  /// Bounded request bridge used by authenticated local MCP control calls.
+  pub control_broker: control::ControlBroker,
 }
 
 #[derive(serde::Serialize)]

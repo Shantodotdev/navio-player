@@ -21,6 +21,8 @@ pub fn run() {
   // Create shared directories registry
   let allowed_directories = Arc::new(Mutex::new(HashSet::new()));
   let stream_token = uuid::Uuid::new_v4().to_string();
+  let control_token = uuid::Uuid::new_v4().to_string();
+  let control_broker = control::ControlBroker::new(32);
   println!("[Navio Server] Generated per-run stream token");
 
   // Setup oneshot channel for server graceful shutdown
@@ -29,6 +31,8 @@ pub fn run() {
   let server_state = server::ServerState {
     allowed_directories: allowed_directories.clone(),
     stream_token: stream_token.clone(),
+    control_token: control_token.clone(),
+    control_broker: control_broker.clone(),
   };
 
   // Start the server and block until it binds to a dynamic port.
@@ -58,6 +62,7 @@ pub fn run() {
         shutdown_tx: Mutex::new(Some(shutdown_tx)),
         watcher: Arc::new(Mutex::new(None)),
         media_cache: media_tools::MediaCache::default(),
+        control_broker: control_broker.clone(),
       };
       if !app.manage(app_state) {
         return Err("Failed to register application state.".into());
@@ -122,6 +127,9 @@ pub fn run() {
       commands::set_theater_fullscreen,
       commands::toggle_theater_fullscreen,
       commands::get_library,
+      commands::wait_for_mcp_command,
+      commands::complete_mcp_command,
+      commands::inspect_authorized_media_file,
       commands::save_library,
       commands::get_playlists,
       commands::save_playlists,
@@ -137,6 +145,11 @@ pub fn run() {
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application");
+
+  let descriptor = control::RuntimeDescriptor::new(port, control_token);
+  if let Err(error) = control::write_runtime_descriptor(&descriptor) {
+    eprintln!("[Navio Control] failed to publish runtime descriptor: {error}");
+  }
 
   // Run the event loop and monitor application lifecycle events
   app.run(|app_handle, event| {
@@ -155,6 +168,7 @@ pub fn run() {
         // Send empty tuple to oneshot trigger
         let _ = tx.send(());
       }
+      control::remove_runtime_descriptor(std::process::id());
     }
   });
 }

@@ -10,6 +10,12 @@ pub struct ServerState {
   /// Per-process bearer token required by stream requests.
   /// This prevents arbitrary browser origins from reading localhost media URLs.
   pub stream_token: String,
+
+  /// Per-process bearer token required by private MCP control routes.
+  pub control_token: String,
+
+  /// Bounded handoff from authenticated HTTP calls to the renderer.
+  pub control_broker: crate::control::ControlBroker,
 }
 
 #[derive(serde::Deserialize)]
