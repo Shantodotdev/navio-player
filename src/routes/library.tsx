@@ -336,11 +336,16 @@ function FilterButton({ active, children, onClick }: FilterButtonProps) {
   );
 }
 
+/** Formats media duration with an hour segment for long videos. */
 function formatDuration(secs: number): string {
-  if (!secs || isNaN(secs)) return "0:00";
-  const m = Math.floor(secs / 60);
-  const s = Math.floor(secs % 60);
-  return `${m}:${s < 10 ? "0" : ""}${s}`;
+  if (!secs || Number.isNaN(secs)) return "0:00";
+  const hours = Math.floor(secs / 3600);
+  const minutes = Math.floor((secs % 3600) / 60);
+  const seconds = Math.floor(secs % 60);
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
 }
 
 interface ViewButtonProps {
