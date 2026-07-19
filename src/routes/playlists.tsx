@@ -88,9 +88,14 @@ function PlaylistsView() {
                 <div className="absolute -right-12 -top-12 h-24 w-24 rounded-full bg-brand/5 blur-xl transition-all group-hover:bg-brand/10" />
                 <div>
                   <div className="flex items-start justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand-light">
+                    <button
+                      type="button"
+                      onClick={() => setDrawerOpen(true)}
+                      title="Open Now Playing sidebar"
+                      className="flex h-12 w-12 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand-light hover:bg-brand/25 transition-all duration-200 cursor-pointer"
+                    >
                       <ListMusic size={22} />
-                    </div>
+                    </button>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -110,7 +115,10 @@ function PlaylistsView() {
                       </button>
                     </div>
                   </div>
-                  <h3 className="mt-4 truncate text-lg font-medium text-zinc-200">
+                  <h3
+                    onClick={() => setDrawerOpen(true)}
+                    className="mt-4 truncate text-lg font-medium text-zinc-200 hover:text-brand-light cursor-pointer transition-colors"
+                  >
                     {playlist.name}
                   </h3>
                 </div>
