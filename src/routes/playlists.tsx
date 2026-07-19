@@ -12,7 +12,7 @@ export const Route = createFileRoute("/playlists")({
 });
 
 function PlaylistsView() {
-  const { playTrack } = usePlayerStore();
+  const { playTrack, setDrawerOpen } = usePlayerStore();
   const {
     tracks,
     playlists,
@@ -38,8 +38,10 @@ function PlaylistsView() {
     const availableTracks = playlist.tracks.filter(
       (track) => track.path.trim().length > 0,
     );
-    if (availableTracks.length > 0)
+    if (availableTracks.length > 0) {
       playTrack(availableTracks[0], availableTracks);
+      setDrawerOpen(true);
+    }
   };
 
   return (
