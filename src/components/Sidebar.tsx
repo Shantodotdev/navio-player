@@ -11,15 +11,15 @@ import {
 /// Sidebar wrapper component displaying navigation links.
 export function Sidebar() {
   return (
-    <aside className="w-64 bg-panel-bg/95 backdrop-blur-2xl border-r border-white/5 flex flex-col p-6 shrink-0">
+    <aside className="w-44 md:w-64 bg-panel-bg/95 backdrop-blur-2xl border-r border-white/5 flex flex-col p-3 md:p-6 shrink-0 transition-all duration-200">
       {/* Brand Logo */}
-      <div className="flex items-center gap-4 mb-10">
+      <div className="flex items-center gap-2 md:gap-4 mb-8 md:mb-10">
         <img
           src="/logo.png"
           alt="Navio Player Logo"
-          className="w-15 h-15 object-contain"
+          className="w-8 h-8 md:w-12 md:h-12 object-contain shrink-0"
         />
-        <span className="text-2xl font-medium tracking-wide bg-linear-to-r from-zinc-200 to-zinc-400 bg-clip-text text-transparent">
+        <span className="text-lg md:text-2xl font-medium tracking-wide bg-linear-to-r from-zinc-200 to-zinc-400 bg-clip-text text-transparent truncate">
           Navio
         </span>
       </div>
@@ -28,27 +28,27 @@ export function Sidebar() {
       <nav className="space-y-1">
         <SidebarLink
           to="/"
-          icon={<LayoutDashboard size={18} />}
+          icon={<LayoutDashboard className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
           label="Dashboard"
         />
         <SidebarLink
           to="/library"
-          icon={<Database size={18} />}
+          icon={<Database className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
           label="My Library"
         />
         <SidebarLink
           to="/downloader"
-          icon={<Download size={18} />}
+          icon={<Download className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
           label="Downloader"
         />
         <SidebarLink
           to="/playlists"
-          icon={<ListMusic size={18} />}
+          icon={<ListMusic className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
           label="Playlists"
         />
         <SidebarLink
           to="/settings"
-          icon={<SettingsIcon size={18} />}
+          icon={<SettingsIcon className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
           label="Settings"
         />
       </nav>
@@ -74,10 +74,11 @@ function SidebarLink({ to, icon, label }: SidebarLinkProps) {
       inactiveProps={{
         className: "text-zinc-400 hover:text-zinc-200 hover:bg-white/5",
       }}
-      className="flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-200 text-sm border-l-2 border-transparent font-medium"
+      className="flex items-center gap-2 md:gap-3 px-2 py-2 md:px-4 md:py-3 rounded-lg transition-all duration-200 text-xs md:text-sm border-l-2 border-transparent font-medium min-w-0"
+      title={label}
     >
-      {icon}
-      <span>{label}</span>
+      <span className="shrink-0 flex items-center justify-center">{icon}</span>
+      <span className="truncate">{label}</span>
     </Link>
   );
 }

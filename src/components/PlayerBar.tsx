@@ -115,16 +115,16 @@ export function PlayerBar() {
       : 0;
 
   return (
-    <div className="w-full h-24 bg-[#050507]/98 backdrop-blur-2xl border-t border-white/5 px-8 flex items-center justify-between shadow-[0_-15px_30px_-15px_rgba(0,0,0,0.8)] z-50 shrink-0 select-none">
+    <div className="w-full h-24 bg-[#050507]/98 backdrop-blur-2xl border-t border-white/5 px-4 md:px-8 flex items-center justify-between shadow-[0_-15px_30px_-15px_rgba(0,0,0,0.8)] z-50 shrink-0 select-none">
       {/* Left: Active Track Details */}
-      <div className="flex items-center gap-4 w-1/3">
-        <div className="w-14 h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden group relative shrink-0">
+      <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
+        <div className="w-11 h-11 md:w-14 md:h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden group relative shrink-0">
           {currentTrack?.media_type === "video" ? (
             <div
               aria-label="Video now playing"
               className="w-full h-full grid place-items-center bg-brand/10 text-purple-400"
             >
-              <Film size={22} />
+              <Film size={20} />
             </div>
           ) : coverUrl ? (
             <img
@@ -134,19 +134,19 @@ export function PlayerBar() {
               className="w-full h-full object-cover"
             />
           ) : (
-            <Music size={22} className="text-emerald-400" />
+            <Music size={20} className="text-emerald-400" />
           )}
           {currentTrack && (
             <button
               onClick={toggleDrawer}
               className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
             >
-              <Maximize2 size={14} className="text-zinc-200" />
+              <Maximize2 size={12} className="text-zinc-200" />
             </button>
           )}
         </div>
         <div
-          className="flex flex-col truncate max-w-50 cursor-pointer"
+          className="flex flex-col truncate max-w-40 md:max-w-50 cursor-pointer"
           onClick={toggleDrawer}
           title="Click to toggle Now Playing"
         >
@@ -165,27 +165,27 @@ export function PlayerBar() {
       </div>
 
       {/* Center: Controls & Timeline */}
-      <div className="flex flex-col items-center gap-2 w-1/3">
-        <div className="flex items-center gap-5">
+      <div className="flex-1 max-w-xs md:max-w-md w-full flex flex-col items-center gap-2 px-2 shrink-0">
+        <div className="flex items-center gap-4 md:gap-5">
           <button className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">
-            <Shuffle size={16} />
+            <Shuffle size={15} />
           </button>
           <button
             onClick={prevTrack}
             disabled={!currentTrack}
             className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <SkipBack size={18} />
+            <SkipBack size={17} />
           </button>
           <button
             onClick={() => setIsPlaying(!isPlaying)}
             disabled={!currentTrack}
-            className="w-10 h-10 rounded-full bg-brand hover:bg-brand-light flex items-center justify-center text-zinc-200 transition-all shadow-md shadow-brand-glow transform active:scale-95 animate-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-brand hover:bg-brand-light flex items-center justify-center text-zinc-200 transition-all shadow-md shadow-brand-glow transform active:scale-95 animate-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
             {isPlaying ? (
-              <Pause size={18} fill="currentColor" />
+              <Pause size={17} fill="currentColor" />
             ) : (
-              <Play size={18} className="translate-x-px" fill="currentColor" />
+              <Play size={17} className="translate-x-px" fill="currentColor" />
             )}
           </button>
           <button
@@ -193,10 +193,10 @@ export function PlayerBar() {
             disabled={!currentTrack}
             className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           >
-            <SkipForward size={18} />
+            <SkipForward size={17} />
           </button>
           <button className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer">
-            <Repeat size={16} />
+            <Repeat size={15} />
           </button>
         </div>
 
@@ -223,17 +223,17 @@ export function PlayerBar() {
       </div>
 
       {/* Right: Audio Volume Controller & Now Playing Sidebar Toggle */}
-      <div className="flex items-center justify-end gap-5 w-1/3">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-end gap-3 md:gap-5 flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 md:gap-3">
           <button
             onClick={() => setVolume(volume === 0 ? 80 : 0)}
-            className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+            className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer shrink-0"
           >
             <Volume2 size={18} />
           </button>
           <div
             onMouseDown={handleVolumeMouseDown}
-            className="w-24 h-4 flex items-center cursor-pointer relative group"
+            className="hidden sm:flex w-16 md:w-24 h-4 items-center cursor-pointer relative group shrink-0"
           >
             <div className="w-full h-1 bg-white/10 rounded-full relative">
               <div

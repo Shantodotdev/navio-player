@@ -82,6 +82,9 @@ export function NowPlayingDrawer() {
   } = useSettingsStore();
 
   const [drawerWidth, setDrawerWidth] = useState(DEFAULT_DRAWER_WIDTH);
+  const [windowWidth, setWindowWidth] = useState(
+    typeof window !== "undefined" ? window.innerWidth : 1024,
+  );
   const [isResizing, setIsResizing] = useState(false);
   const [playbackError, setPlaybackError] = useState("");
   const [alternateAudioUrl, setAlternateAudioUrl] = useState<string | null>(
@@ -139,14 +142,17 @@ export function NowPlayingDrawer() {
     if (typeof window === "undefined") return;
 
     const syncDrawerWidth = () => {
-      setDrawerWidth((width) =>
+      const width = window.innerWidth;
+      setWindowWidth(width);
+      setDrawerWidth((current) =>
         clampDrawerWidth(
-          width || settings.interface.nowPlayingDrawerWidth,
-          window.innerWidth,
+          current || settings.interface.nowPlayingDrawerWidth,
+          width,
         ),
       );
     };
 
+    setWindowWidth(window.innerWidth);
     setDrawerWidth(
       clampDrawerWidth(
         settings.interface.nowPlayingDrawerWidth,
@@ -158,13 +164,15 @@ export function NowPlayingDrawer() {
   }, [settings.interface.nowPlayingDrawerWidth]);
 
   useEffect(() => {
-    if (settingsLoaded)
+    if (settingsLoaded) {
+      setWindowWidth(window.innerWidth);
       setDrawerWidth(
         clampDrawerWidth(
           settings.interface.nowPlayingDrawerWidth,
           window.innerWidth,
         ),
       );
+    }
   }, [settings.interface.nowPlayingDrawerWidth, settingsLoaded]);
 
   useEffect(() => {
@@ -397,6 +405,17 @@ export function NowPlayingDrawer() {
     };
   }, [currentTrackPath, duration]);
 
+  // Calculate dynamic width based on viewport size.
+  // Below 640px: take up the full screen width.
+  // Below 1024px: take up 380px.
+  // 1024px and above: use the user's custom dragged width.
+  const getDynamicWidth = () => {
+    if (isTheaterOpen) return undefined;
+    if (windowWidth < 640) return "100%";
+    if (windowWidth < 1024) return "380px";
+    return drawerWidth;
+  };
+
   const updateDrawerWidth = (nextWidth: number) => {
     const clampedWidth = clampDrawerWidth(nextWidth, window.innerWidth);
     setDrawerWidth(clampedWidth);
@@ -591,10 +610,10 @@ export function NowPlayingDrawer() {
               isDrawerOpen ? "translate-x-0" : "translate-x-full"
             } ${isResizing ? "select-none" : ""}`
       }
-      style={isTheaterOpen ? undefined : { width: drawerWidth }}
+      style={isTheaterOpen ? undefined : { width: getDynamicWidth() }}
       aria-label="Now playing"
     >
-      {!isTheaterOpen && (
+      {!isTheaterOpen && windowWidth >= 1024 && (
         <div
           role="separator"
           aria-label="Resize now playing"
@@ -620,7 +639,7 @@ export function NowPlayingDrawer() {
         className={
           isTheaterOpen
             ? "hidden"
-            : "flex items-center justify-between p-5 border-b border-white/5 shrink-0"
+            : "flex items-center justify-between p-4 sm:p-5 border-b border-white/5 shrink-0"
         }
       >
         <div>
@@ -647,7 +666,7 @@ export function NowPlayingDrawer() {
         className={`${
           isTheaterOpen
             ? "absolute inset-0 min-h-0"
-            : "flex-1 min-h-0 flex flex-col gap-6 p-5"
+            : "flex-1 min-h-0 flex flex-col gap-4 sm:gap-6 p-4 sm:p-5"
         } ${currentTrack ? "" : "hidden"}`}
       >
         <div
@@ -746,7 +765,7 @@ export function NowPlayingDrawer() {
           </div>
 
           <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
-            <h2 className="text-xl font-medium text-zinc-100 truncate">
+            <h2 className="text-lg sm:text-xl font-medium text-zinc-100 truncate">
               {getTrackDisplayName(
                 activeTrack,
                 settings.library.showFileExtensions,
@@ -808,8 +827,8 @@ function Queue({
   if (tracks.length === 0) return null;
 
   return (
-    <section className="flex-1 min-h-0 flex flex-col gap-3 pt-5 border-t border-white/5">
-      <div className="flex items-center gap-2 text-sm font-medium text-zinc-400">
+    <section className="flex-1 min-h-0 flex flex-col gap-2 sm:gap-3 pt-4 sm:pt-5 border-t border-white/5">
+      <div className="flex items-center gap-2 text-xs sm:text-sm font-medium text-zinc-400">
         <ListMusic size={16} className="text-brand-light" />
         <span>Up next</span>
       </div>
@@ -822,13 +841,13 @@ function Queue({
               key={track.id}
               type="button"
               onClick={() => onSelect(track, tracks)}
-              className={`w-full flex items-center gap-3 p-2.5 rounded-lg text-left border transition-all duration-150 group cursor-pointer ${
+              className={`w-full flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg text-left border transition-all duration-150 group cursor-pointer ${
                 isCurrent
                   ? "bg-brand/10 border-brand/20 text-brand-light font-medium"
                   : "bg-transparent border-transparent hover:bg-white/5 text-zinc-400 hover:text-zinc-200"
               }`}
             >
-              <div className="w-9 h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
                 {track.media_type === "video" ? (
                   <Film size={13} className="text-purple-400" />
                 ) : (
@@ -836,14 +855,14 @@ function Queue({
                 )}
               </div>
               <div className="flex-1 min-w-0">
-                <span className="block text-sm truncate">
+                <span className="block text-xs sm:text-sm truncate">
                   {getTrackDisplayName(track, showFileExtensions)}
                 </span>
-                <span className="block text-xs text-zinc-500 truncate mt-0.5 capitalize">
+                <span className="block text-[10px] sm:text-xs text-zinc-500 truncate mt-0.5 capitalize">
                   {track.media_type}
                 </span>
               </div>
-              <span className="text-xs text-zinc-500 font-medium">
+              <span className="text-xs text-zinc-500 font-medium shrink-0">
                 {formatTime(track.duration_secs)}
               </span>
             </button>

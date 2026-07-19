@@ -62,21 +62,21 @@ function LibraryView() {
   });
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400">
+    <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400 min-w-0">
       {/* Top Header Section */}
-      <div className="flex justify-between items-center mb-20">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 sm:mb-12 md:mb-16">
         <div>
-          <h1 className="text-4xl font-medium text-zinc-200 tracking-tight">
+          <h1 className="text-2xl sm:text-3xl md:text-4xl font-medium text-zinc-200 tracking-tight">
             Media library
           </h1>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 shrink-0">
           <button
             onClick={addFolder}
-            className="flex items-center gap-2 px-4.5 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
+            className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
           >
-            <FolderPlus size={16} />
+            <FolderPlus size={15} />
             <span>Add folder</span>
           </button>
         </div>
@@ -84,15 +84,15 @@ function LibraryView() {
 
       {scannedDirs.length === 0 ? (
         // Large Elegant Empty State Panel
-        <div className="flex flex-col items-center justify-center py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-8">
-          <div className="p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
-            <FolderPlus size={32} />
+        <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-6 sm:p-8">
+          <div className="p-4 sm:p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
+            <FolderPlus size={28} />
           </div>
           <div className="space-y-2">
-            <h2 className="text-lg font-medium text-zinc-200">
+            <h2 className="text-base sm:text-lg font-medium text-zinc-200">
               Your media library is empty
             </h2>
-            <p className="text-sm text-zinc-400 max-w-md leading-relaxed font-medium">
+            <p className="text-xs sm:text-sm text-zinc-400 max-w-md leading-relaxed font-medium">
               Select "Add folder" above to index your local directory folders
               and start cataloging your music and videos.
             </p>
@@ -102,11 +102,11 @@ function LibraryView() {
         // Normal Scanned folders list + Search & Filters + Tracks Table
         <>
           {/* Scanned Folder List card */}
-          <div className="bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 mb-10">
-            <h2 className="text-base font-medium text-zinc-400 mb-3.5">
+          <div className="bg-panel-bg/30 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/5 p-4 sm:p-5 md:p-6 mb-6 sm:mb-8 md:mb-10">
+            <h2 className="text-xs sm:text-base font-medium text-zinc-400 mb-3 sm:mb-3.5">
               Scanned directories
             </h2>
-            <div className="flex flex-wrap gap-2.5">
+            <div className="flex flex-wrap gap-2">
               {scannedDirs.map((dir) => (
                 <div
                   key={dir}
@@ -119,23 +119,23 @@ function LibraryView() {
                       setSelectedDirectory(dir);
                     }
                   }}
-                  className={`flex items-center gap-2.5 border px-3.5 py-2.5 rounded-xl text-sm font-medium group cursor-pointer transition-colors ${
+                  className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group cursor-pointer transition-colors max-w-full min-w-0 ${
                     selectedDirectory === dir
                       ? "bg-brand/20 border-brand/50 text-zinc-200"
                       : "bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200"
                   }`}
                 >
-                  <span>{dir}</span>
+                  <span className="truncate flex-1 min-w-0">{dir}</span>
                   <button
                     onClick={(event) => {
                       event.stopPropagation();
                       if (selectedDirectory === dir) setSelectedDirectory(null);
                       deleteFolder(dir);
                     }}
-                    className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer"
+                    className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0"
                     aria-label={`Remove ${dir} from library`}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 </div>
               ))}
@@ -143,37 +143,37 @@ function LibraryView() {
           </div>
 
           {/* Filters & Search */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center mb-3">
+          <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center mb-4 min-w-0">
             {selectedDirectory && (
               <button
                 type="button"
                 onClick={() => setSelectedDirectory(null)}
-                className="flex items-center gap-2 shrink-0 rounded-lg border border-brand/30 bg-brand/10 px-3 py-2 text-sm text-brand-light hover:bg-brand/20 transition-colors cursor-pointer"
+                className="flex items-center gap-1.5 shrink-0 rounded-lg border border-brand/30 bg-brand/10 px-2.5 py-1.5 text-xs text-brand-light hover:bg-brand/20 transition-colors cursor-pointer self-start md:self-auto"
               >
-                <span className="max-w-[18rem] truncate">
+                <span className="max-w-[14rem] sm:max-w-[18rem] truncate">
                   {selectedDirectory}
                 </span>
-                <X size={15} />
+                <X size={13} />
               </button>
             )}
 
             {/* Search */}
-            <div className="w-full sm:flex-1 relative">
+            <div className="flex-1 relative min-w-0">
               <Search
-                size={18}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-zinc-500"
+                size={16}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-550"
               />
               <input
                 type="text"
                 placeholder="Search titles, filenames, or file paths..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-black/40 border border-white/5 rounded-lg py-2.5 pl-11 pr-4 text-base focus:outline-none focus:border-brand/40 text-zinc-200 placeholder-zinc-550 font-light"
+                className="w-full bg-black/40 border border-white/5 rounded-lg py-2 pl-9 pr-4 text-xs sm:text-sm focus:outline-none focus:border-brand/40 text-zinc-200 placeholder-zinc-600 font-light"
               />
             </div>
 
             {/* Filter Categories */}
-            <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 shrink-0 self-stretch sm:self-auto font-medium">
+            <div className="flex bg-black/40 p-0.5 rounded-lg border border-white/5 shrink-0 font-medium self-stretch sm:self-auto justify-between sm:justify-start">
               <FilterButton
                 active={filterType === "all"}
                 onClick={() => setFilterType("all")}
@@ -194,7 +194,8 @@ function LibraryView() {
               </FilterButton>
             </div>
 
-            <div className="flex bg-black/40 p-1 rounded-lg border border-white/5 shrink-0 self-stretch sm:self-auto font-medium">
+            {/* View Switcher */}
+            <div className="flex bg-black/40 p-0.5 rounded-lg border border-white/5 shrink-0 font-medium self-end md:self-auto">
               <ViewButton
                 active={viewMode === "list"}
                 label="List view"
@@ -203,7 +204,7 @@ function LibraryView() {
                   void updateSettings({ library: { viewMode: "list" } });
                 }}
               >
-                <List size={16} />
+                <List size={14} />
               </ViewButton>
               <ViewButton
                 active={viewMode === "grid"}
@@ -213,13 +214,13 @@ function LibraryView() {
                   void updateSettings({ library: { viewMode: "grid" } });
                 }}
               >
-                <Grid2X2 size={16} />
+                <Grid2X2 size={14} />
               </ViewButton>
             </div>
           </div>
 
           {viewMode === "grid" ? (
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {filteredTracks.map((track) => (
                 <MediaCard
                   key={track.id}
@@ -232,23 +233,23 @@ function LibraryView() {
                 />
               ))}
               {filteredTracks.length === 0 && (
-                <div className="col-span-full rounded-2xl border border-white/5 bg-panel-bg/20 p-12 text-center text-zinc-500 italic">
+                <div className="col-span-full rounded-2xl border border-white/5 bg-panel-bg/20 p-12 text-center text-zinc-500 italic text-sm">
                   No files found matching search criteria.
                 </div>
               )}
             </div>
           ) : (
             /* Tracks Table list */
-            <div className="bg-panel-bg/20 backdrop-blur-md rounded-2xl border border-white/5 overflow-hidden">
+            <div className="bg-panel-bg/20 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/5 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="w-full border-collapse text-left text-base font-medium">
+                <table className="w-full border-collapse text-left text-xs sm:text-sm font-medium">
                   <thead>
-                    <tr className="border-b border-white/5 text-zinc-450 text-sm bg-white/1">
-                      <th className="p-4 w-12 text-center">Play</th>
-                      <th className="p-4">Title</th>
-                      <th className="p-4 w-24">Type</th>
-                      <th className="p-4 w-24">Size</th>
-                      <th className="p-4 w-24">Length</th>
+                    <tr className="border-b border-white/5 text-zinc-450 text-[11px] sm:text-xs bg-white/1">
+                      <th className="p-2 sm:p-3 w-10 text-center">Play</th>
+                      <th className="p-2 sm:p-3">Title</th>
+                      <th className="p-2 sm:p-3 w-20 sm:w-24">Type</th>
+                      <th className="p-2 sm:p-3 w-20 sm:w-24">Size</th>
+                      <th className="p-2 sm:p-3 w-20 sm:w-24">Length</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-zinc-400">
@@ -258,38 +259,38 @@ function LibraryView() {
                         className="hover:bg-white/1 group transition-all duration-150 cursor-pointer"
                         onDoubleClick={() => playTrack(track, filteredTracks)}
                       >
-                        <td className="p-4 text-center">
+                        <td className="p-2 sm:p-3 text-center">
                           <button
                             onClick={() => playTrack(track, filteredTracks)}
-                            className="w-8 h-8 bg-brand/20 text-brand-light group-hover:bg-brand group-hover:text-zinc-200 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer"
+                            className="w-6 h-6 sm:w-7.5 sm:h-7.5 bg-brand/20 text-brand-light group-hover:bg-brand group-hover:text-zinc-200 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer"
                           >
                             <Play
-                              size={12}
+                              size={10}
                               fill="currentColor"
                               className="translate-x-[0.5px]"
                             />
                           </button>
                         </td>
-                        <td className="p-4 text-zinc-300 font-medium text-base">
+                        <td className="p-2 sm:p-3 text-zinc-300 font-medium text-xs sm:text-sm truncate max-w-[200px] md:max-w-none">
                           {getTrackDisplayName(
                             track,
                             settings.library.showFileExtensions,
                           )}
                         </td>
-                        <td className="p-4">
-                          <span className="flex items-center gap-1.5 text-sm text-zinc-400 font-medium lowercase">
+                        <td className="p-2 sm:p-3">
+                          <span className="flex items-center gap-1 text-[10px] sm:text-xs text-zinc-400 font-medium lowercase">
                             {track.media_type === "video" ? (
-                              <Film size={15} className="text-purple-400" />
+                              <Film size={13} className="text-purple-400" />
                             ) : (
-                              <Music size={15} className="text-emerald-400" />
+                              <Music size={13} className="text-emerald-400" />
                             )}
                             <span>{track.media_type}</span>
                           </span>
                         </td>
-                        <td className="p-4 text-zinc-400 text-sm">
+                        <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
                           {formatFileSize(track.file_size_bytes)}
                         </td>
-                        <td className="p-4 text-zinc-400 text-sm">
+                        <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
                           {formatDuration(track.duration_secs)}
                         </td>
                       </tr>
@@ -298,7 +299,7 @@ function LibraryView() {
                       <tr>
                         <td
                           colSpan={5}
-                          className="p-12 text-center text-zinc-500 italic"
+                          className="p-12 text-center text-zinc-500 italic text-sm"
                         >
                           No files found matching search criteria.
                         </td>
@@ -325,7 +326,7 @@ function FilterButton({ active, children, onClick }: FilterButtonProps) {
   return (
     <button
       onClick={onClick}
-      className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all cursor-pointer ${
+      className={`px-3 py-1 text-xs sm:text-sm font-medium rounded-md transition-all cursor-pointer ${
         active
           ? "bg-brand text-zinc-200 shadow shadow-brand-glow"
           : "text-zinc-400 hover:text-zinc-200"
@@ -363,7 +364,7 @@ function ViewButton({ active, children, label, onClick }: ViewButtonProps) {
       aria-label={label}
       aria-pressed={active}
       onClick={onClick}
-      className={`p-2 rounded-md transition-all cursor-pointer ${
+      className={`p-1.5 rounded-md transition-all cursor-pointer ${
         active
           ? "bg-brand text-zinc-200 shadow shadow-brand-glow"
           : "text-zinc-400 hover:text-zinc-200"
@@ -425,7 +426,7 @@ function MediaCard({
   return (
     <article
       onDoubleClick={onPlay}
-      className="group overflow-hidden rounded-2xl border border-white/5 bg-panel-bg/30 transition-all hover:border-brand/30 hover:bg-panel-bg/50 cursor-pointer"
+      className="group overflow-hidden rounded-xl sm:rounded-2xl border border-white/5 bg-panel-bg/30 transition-all hover:border-brand/30 hover:bg-panel-bg/50 cursor-pointer"
     >
       <div className="relative aspect-video overflow-hidden bg-black/40">
         {showThumbnails && thumbnailUrl ? (
@@ -438,9 +439,9 @@ function MediaCard({
         ) : (
           <div className="flex h-full w-full items-center justify-center bg-white/3">
             {isVideo ? (
-              <Film size={32} className="text-purple-400/80" />
+              <Film size={26} className="text-purple-400/80" />
             ) : (
-              <Music size={32} className="text-emerald-400/80" />
+              <Music size={26} className="text-emerald-400/80" />
             )}
           </div>
         )}
@@ -448,26 +449,26 @@ function MediaCard({
           type="button"
           onClick={onPlay}
           aria-label={`Play ${track.title || track.name}`}
-          className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-brand text-zinc-200 opacity-0 shadow-lg shadow-brand-glow transition-all group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-brand-light active:scale-90 cursor-pointer"
+          className="absolute bottom-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-brand text-zinc-200 opacity-0 shadow-lg shadow-brand-glow transition-all group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-brand-light active:scale-90 cursor-pointer"
         >
-          <Play size={14} fill="currentColor" className="translate-x-[0.5px]" />
+          <Play size={12} fill="currentColor" className="translate-x-[0.5px]" />
         </button>
-        <span className="absolute bottom-3 left-3 rounded-md bg-black/70 px-2 py-1 text-xs text-zinc-300">
+        <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-300">
           {formatDuration(track.duration_secs)}
         </span>
       </div>
-      <div className="p-4">
-        <h3 className="truncate text-base font-medium text-zinc-200">
+      <div className="p-3 sm:p-4">
+        <h3 className="truncate text-xs sm:text-sm font-medium text-zinc-200">
           {getTrackDisplayName(track, showFileExtensions)}
         </h3>
-        <div className="mt-2 flex items-center justify-between gap-3 text-xs text-zinc-500">
-          <span className="flex min-w-0 items-center gap-1.5 lowercase">
+        <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] sm:text-xs text-zinc-500">
+          <span className="flex min-w-0 items-center gap-1 lowercase">
             {isVideo ? (
-              <Film size={14} className="shrink-0 text-purple-400" />
+              <Film size={12} className="shrink-0 text-purple-400" />
             ) : (
-              <Music size={14} className="shrink-0 text-emerald-400" />
+              <Music size={12} className="shrink-0 text-emerald-400" />
             )}
-            <span>{track.media_type}</span>
+            <span className="truncate">{track.media_type}</span>
           </span>
           <span className="shrink-0">
             {formatFileSize(track.file_size_bytes)}

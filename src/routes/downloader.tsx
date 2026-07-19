@@ -260,22 +260,22 @@ function DownloaderView() {
   });
 
   return (
-    <div className="max-w-5xl mx-auto font-medium select-none text-zinc-450">
+    <div className="max-w-5xl mx-auto font-medium select-none text-zinc-450 min-w-0">
       <div>
-        <h1 className="text-4xl font-medium text-zinc-200 tracking-tight mb-20">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-medium text-zinc-200 tracking-tight mb-8 sm:mb-12 md:mb-16">
           Download <span className="text-brand-light">media</span>
         </h1>
       </div>
 
       <form
         onSubmit={handleStartDownload}
-        className="relative z-20 bg-panel-bg/30 backdrop-blur-md border border-white/5 p-6 rounded-2xl space-y-4 mb-8"
+        className="relative z-20 bg-panel-bg/30 backdrop-blur-md border border-white/5 p-4 sm:p-5 md:p-6 rounded-2xl space-y-4 mb-8"
       >
         <div className="flex flex-col gap-2">
-          <label className="text-sm font-medium text-zinc-450">
+          <label className="text-xs sm:text-sm font-medium text-zinc-450">
             Media stream URL
           </label>
-          <div className="flex flex-col md:flex-row gap-3">
+          <div className="flex flex-col md:flex-row gap-2.5 md:gap-3">
             <input
               type="url"
               required
@@ -283,7 +283,7 @@ function DownloaderView() {
               value={url}
               onChange={(event) => setUrl(event.target.value)}
               placeholder="Paste a public media or collection URL..."
-              className="flex-1 bg-black/40 border border-white/5 rounded-lg px-4 py-2.5 text-base text-zinc-200 focus:outline-none focus:border-brand/40 placeholder-zinc-550 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3 py-2 md:px-4 md:py-2.5 text-xs sm:text-sm text-zinc-200 focus:outline-none focus:border-brand/40 placeholder-zinc-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <div className="w-full md:w-64 shrink-0">
               <Select
@@ -299,27 +299,27 @@ function DownloaderView() {
             <button
               type="submit"
               disabled={isChecking}
-              className="flex items-center justify-center gap-2 px-6 py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex items-center justify-center gap-2 px-4 py-2 md:px-6 md:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             >
               {isChecking ? (
-                <LoaderCircle size={16} className="animate-spin" />
+                <LoaderCircle size={15} className="animate-spin" />
               ) : (
-                <Download size={16} />
+                <Download size={15} />
               )}
               <span>Download</span>
             </button>
           </div>
-          {formError && <p className="text-sm text-red-400">{formError}</p>}
+          {formError && <p className="text-xs sm:text-sm text-red-400">{formError}</p>}
         </div>
         <details className="group border-t border-white/5 pt-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-zinc-400 hover:text-zinc-200">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs sm:text-sm text-zinc-400 hover:text-zinc-200">
             <ChevronDown
-              size={16}
+              size={15}
               className="transition-transform group-open:rotate-180"
             />
             Advanced options
           </summary>
-          <div className="grid grid-cols-1 gap-4 pt-4 md:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:gap-4 pt-3 sm:pt-4 sm:grid-cols-2">
             {format === "best" ? (
               <>
                 <AdvancedSelect
@@ -438,7 +438,7 @@ function DownloaderView() {
           />
         ))}
         {filteredDownloads.length === 0 && (
-          <div className="p-12 text-center text-zinc-500 italic bg-panel-bg/10 border border-white/5 rounded-xl font-medium">
+          <div className="p-12 text-center text-zinc-500 italic bg-panel-bg/10 border border-white/5 rounded-xl font-medium text-sm">
             No downloads in this category.
           </div>
         )}
@@ -483,7 +483,7 @@ function AdvancedSelect({
   onChange: (value: string) => void;
 }) {
   return (
-    <label className="space-y-2 text-sm text-zinc-450">
+    <label className="space-y-1.5 text-xs sm:text-sm text-zinc-450 block">
       <span>{label}</span>
       <Select value={value} options={options} onChange={onChange} />
     </label>
@@ -507,7 +507,7 @@ function AdvancedInput({
   min?: string;
 }) {
   return (
-    <label className="space-y-2 text-sm text-zinc-450">
+    <label className="space-y-1.5 text-xs sm:text-sm text-zinc-450 block">
       <span>{label}</span>
       <input
         type={type}
@@ -515,7 +515,7 @@ function AdvancedInput({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className="w-full rounded-lg border border-white/5 bg-black/40 px-4 py-2.5 text-sm text-zinc-200 placeholder-zinc-600 focus:border-brand/40 focus:outline-none"
+        className="w-full rounded-lg border border-white/5 bg-black/40 px-3 py-2 text-xs sm:text-sm text-zinc-200 placeholder-zinc-600 focus:border-brand/40 focus:outline-none font-medium"
       />
     </label>
   );
@@ -534,7 +534,7 @@ function TabButton({
   return (
     <button
       onClick={onClick}
-      className={`pb-2 text-sm font-medium transition-all border-b-2 cursor-pointer ${active ? "border-brand text-brand-light" : "border-transparent text-zinc-450 hover:text-zinc-200"}`}
+      className={`pb-2 text-xs sm:text-sm font-medium transition-all border-b-2 cursor-pointer ${active ? "border-brand text-brand-light" : "border-transparent text-zinc-450 hover:text-zinc-200"}`}
     >
       {children}
     </button>
@@ -560,26 +560,26 @@ function CollectionDownloadModal({
     >
       <div
         onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-md bg-zinc-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-2xl space-y-5"
+        className="w-full max-w-md bg-zinc-950/30 backdrop-blur-xl border border-white/10 rounded-2xl p-5 sm:p-6 shadow-2xl space-y-4 sm:space-y-5"
       >
-        <h3 className="text-xl font-medium text-zinc-200">
+        <h3 className="text-lg sm:text-xl font-medium text-zinc-200">
           Collection detected
         </h3>
-        <p className="text-sm text-zinc-400 leading-relaxed font-normal">
+        <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed font-normal">
           {inspection?.title ?? "This link"}
           {inspection?.item_count ? ` contains ${inspection.item_count} items.` : " contains multiple items."}{" "}
           What would you like to download?
         </p>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2.5 sm:gap-3">
           <button
             onClick={() => onSelect(true)}
-            className="w-full text-left px-4 py-3 bg-brand/10 hover:bg-brand/20 border border-brand/35 text-brand-light rounded-xl transition-all font-medium cursor-pointer"
+            className="w-full text-left px-3.5 py-2.5 sm:px-4 sm:py-3 bg-brand/10 hover:bg-brand/20 border border-brand/35 text-brand-light rounded-xl transition-all font-medium text-xs sm:text-sm cursor-pointer"
           >
             Download entire collection
           </button>
           <button
             onClick={() => onSelect(false)}
-            className="w-full text-left px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-200 rounded-xl transition-all font-medium cursor-pointer"
+            className="w-full text-left px-3.5 py-2.5 sm:px-4 sm:py-3 bg-white/5 hover:bg-white/10 border border-white/5 text-zinc-200 rounded-xl transition-all font-medium text-xs sm:text-sm cursor-pointer"
           >
             Download first item only
           </button>
@@ -588,7 +588,7 @@ function CollectionDownloadModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer"
+            className="px-3.5 py-1.5 text-xs sm:text-sm text-zinc-450 hover:text-zinc-200 transition-colors cursor-pointer"
           >
             Cancel
           </button>
@@ -639,77 +639,77 @@ function DownloadCard({
       ? `[${item.current_item}/${item.total_items}] ${getMediaDisplayName(item.title, showFileExtensions)}`
       : getMediaDisplayName(item.title, showFileExtensions);
   return (
-    <div className="bg-panel-bg/20 backdrop-blur-md border border-white/5 rounded-xl p-5 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+    <div className="bg-panel-bg/20 backdrop-blur-md border border-white/5 rounded-xl p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 md:gap-4 min-w-0">
       <div className="flex-1 min-w-0 space-y-1">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
           {item.status === "completed" ? (
-            <CheckCircle2 size={15} className="text-green-500" />
+            <CheckCircle2 size={13} className="text-green-500 shrink-0" />
           ) : ["failed", "interrupted", "cancelled"].includes(item.status) ? (
-            <AlertTriangle size={15} className="text-red-400" />
+            <AlertTriangle size={13} className="text-red-400 shrink-0" />
           ) : (
             <span
-              className={`w-2 h-2 rounded-full ${item.status === "paused" ? "bg-blue-400" : "bg-yellow-500 animate-ping"}`}
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${item.status === "paused" ? "bg-blue-400" : "bg-yellow-500 animate-ping"}`}
             />
           )}
-          <span className={`text-sm uppercase font-medium ${statusColor}`}>
+          <span className={`text-[10px] sm:text-xs uppercase font-medium shrink-0 ${statusColor}`}>
             {item.status}
           </span>
-          <span className="text-zinc-700">•</span>
+          <span className="text-zinc-700 shrink-0">•</span>
           <span
-            className="text-xs text-zinc-450 truncate max-w-50"
+            className="text-[10px] sm:text-xs text-zinc-550 truncate max-w-[12rem] sm:max-w-[18rem]"
             title={item.url}
           >
             {item.url}
           </span>
         </div>
-        <h3 className="text-base font-medium text-zinc-200 tracking-wide truncate mt-1">
+        <h3 className="text-xs sm:text-sm md:text-base font-medium text-zinc-200 tracking-wide truncate mt-0.5" title={displayTitle}>
           {displayTitle}
         </h3>
         {showProgress && (
-          <div className="w-full flex items-center gap-3 pt-2">
+          <div className="w-full flex items-center gap-3 pt-1">
             <div className="flex-1 h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div
                 className="h-full bg-brand rounded-full transition-all duration-300"
                 style={{ width: `${item.progress}%` }}
               />
             </div>
-            <span className="text-xs text-zinc-400 shrink-0 w-10 text-right font-medium">
+            <span className="text-[10px] sm:text-xs text-zinc-400 shrink-0 w-8 text-right font-medium">
               {item.progress}%
             </span>
           </div>
         )}
         {item.error && (
-          <p className="text-xs text-red-400 pt-1 wrap-break-word">
+          <p className="text-[10px] sm:text-xs text-red-400 pt-0.5 wrap-break-word">
             {item.error}
           </p>
         )}
       </div>
-      <div className="flex items-center gap-4 shrink-0 self-stretch md:self-auto justify-between md:justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
-        <div className="flex gap-4 text-2xs text-zinc-500 font-medium">
+      <div className="flex items-center gap-3 sm:gap-4 shrink-0 justify-between md:justify-end border-t md:border-t-0 border-white/5 pt-2 md:pt-0">
+        <div className="flex gap-3 sm:gap-4 text-[10px] text-zinc-550 font-medium">
           <div className="flex flex-col">
-            <span className="text-xs">Speed</span>
-            <span className="text-sm text-zinc-300 mt-0.5">{item.speed}</span>
+            <span className="text-[10px]">Speed</span>
+            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">{item.speed}</span>
           </div>
           <div className="flex flex-col">
-            <span className="text-xs">Format</span>
-            <span className="text-sm text-zinc-300 mt-0.5">
+            <span className="text-[10px]">Format</span>
+            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">
               {item.format === "bestaudio" ? "Audio" : "Video"}
             </span>
           </div>
           <div className="flex flex-col">
-            <span className="text-xs">Size</span>
-            <span className="text-sm text-zinc-300 mt-0.5">{item.size}</span>
+            <span className="text-[10px]">Size</span>
+            <span className="text-xs sm:text-sm text-zinc-300 mt-0.5">{item.size}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {actions.pause && (
             <button
               disabled={pending}
               onClick={() => void onAction("pause_download", item.id)}
               title="Pause download"
-              className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 disabled:opacity-50 cursor-pointer"
+              className="p-1.5 sm:p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 disabled:opacity-50 cursor-pointer"
             >
-              <Pause size={14} />
+              <Pause size={13} />
             </button>
           )}
           {actions.resume && (
@@ -719,12 +719,12 @@ function DownloadCard({
               title={
                 item.status === "paused" ? "Resume download" : "Retry download"
               }
-              className="p-2 bg-brand/15 hover:bg-brand/25 rounded-lg text-brand-light disabled:opacity-50 cursor-pointer"
+              className="p-1.5 sm:p-2 bg-brand/15 hover:bg-brand/25 rounded-lg text-brand-light disabled:opacity-50 cursor-pointer"
             >
               {item.status === "paused" ? (
-                <Play size={14} />
+                <Play size={13} />
               ) : (
-                <RotateCcw size={14} />
+                <RotateCcw size={13} />
               )}
             </button>
           )}
@@ -733,18 +733,18 @@ function DownloadCard({
               disabled={pending}
               onClick={() => void onAction("cancel_download", item.id)}
               title="Cancel and delete partial files"
-              className="p-2 bg-white/5 hover:bg-red-950/20 rounded-lg text-zinc-500 hover:text-red-400 disabled:opacity-50 cursor-pointer"
+              className="p-1.5 sm:p-2 bg-white/5 hover:bg-red-950/20 rounded-lg text-zinc-500 hover:text-red-400 disabled:opacity-50 cursor-pointer"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           )}
           {item.status === "completed" && (
             <button
               onClick={() => void onOpenFolder()}
               title="Open Downloads folder"
-              className="p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 cursor-pointer"
+              className="p-1.5 sm:p-2 bg-white/5 hover:bg-white/10 rounded-lg text-zinc-450 hover:text-zinc-200 cursor-pointer"
             >
-              <Folder size={14} />
+              <Folder size={13} />
             </button>
           )}
           {actions.remove && (
@@ -752,9 +752,9 @@ function DownloadCard({
               disabled={pending}
               onClick={() => void onAction("remove_download", item.id)}
               title="Remove from history"
-              className="p-2 bg-white/5 hover:bg-red-950/20 rounded-lg text-zinc-500 hover:text-red-400 disabled:opacity-50 cursor-pointer"
+              className="p-1.5 sm:p-2 bg-white/5 hover:bg-red-950/20 rounded-lg text-zinc-500 hover:text-red-400 disabled:opacity-50 cursor-pointer"
             >
-              <X size={14} />
+              <X size={13} />
             </button>
           )}
         </div>
