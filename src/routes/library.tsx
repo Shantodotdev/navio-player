@@ -164,6 +164,7 @@ function LibraryView() {
                 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-550"
               />
               <input
+                id="library-search"
                 type="text"
                 placeholder="Search titles, filenames, or file paths..."
                 value={searchQuery}

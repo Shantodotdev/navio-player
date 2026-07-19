@@ -43,6 +43,7 @@ export function CreatePlaylistModal({
   return (
     <>
       <button
+        id="create-playlist"
         onClick={() => setIsCreating(true)}
         className="flex items-center gap-2 px-5 py-3 bg-brand hover:bg-brand-light text-zinc-200 rounded-xl text-base transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer select-none"
       >

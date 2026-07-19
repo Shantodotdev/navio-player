@@ -10,6 +10,7 @@ import { Titlebar } from "../components/Titlebar";
 import { Sidebar } from "../components/Sidebar";
 import { PlayerBar } from "../components/PlayerBar";
 import { NowPlayingDrawer } from "../components/NowPlayingDrawer";
+import { KeyboardShortcuts } from "../components/KeyboardShortcuts";
 import { usePlayerStore } from "../store/playerStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
@@ -82,6 +83,7 @@ export default function Root() {
             </div>
           )}
         </div>
+        <KeyboardShortcuts />
         <Scripts />
       </body>
     </html>

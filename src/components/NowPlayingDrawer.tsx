@@ -813,6 +813,7 @@ export function NowPlayingDrawer() {
   );
 }
 
+/** Renders the active queue without retaining focus after pointer selection. */
 function Queue({
   tracks,
   currentTrackId,
@@ -840,7 +841,11 @@ function Queue({
             <button
               key={track.id}
               type="button"
-              onClick={() => onSelect(track, tracks)}
+              onClick={(event) => {
+                onSelect(track, tracks);
+                // Pointer focus would make the next Space press replay this item.
+                if (event.detail > 0) event.currentTarget.blur();
+              }}
               className={`w-full flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg text-left border transition-all duration-150 group cursor-pointer ${
                 isCurrent
                   ? "bg-brand/10 border-brand/20 text-brand-light font-medium"

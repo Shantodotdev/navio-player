@@ -28,27 +28,27 @@ export function Sidebar() {
       <nav className="space-y-1">
         <SidebarLink
           to="/"
-          icon={<LayoutDashboard className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
+          icon={<LayoutDashboard className="w-4 h-4 md:w-4.5 md:h-4.5" />}
           label="Dashboard"
         />
         <SidebarLink
           to="/library"
-          icon={<Database className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
+          icon={<Database className="w-4 h-4 md:w-4.5 md:h-4.5" />}
           label="My Library"
         />
         <SidebarLink
           to="/downloader"
-          icon={<Download className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
+          icon={<Download className="w-4 h-4 md:w-4.5 md:h-4.5" />}
           label="Downloader"
         />
         <SidebarLink
           to="/playlists"
-          icon={<ListMusic className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
+          icon={<ListMusic className="w-4 h-4 md:w-4.5 md:h-4.5" />}
           label="Playlists"
         />
         <SidebarLink
           to="/settings"
-          icon={<SettingsIcon className="w-4 h-4 md:w-[18px] md:h-[18px]" />}
+          icon={<SettingsIcon className="w-4 h-4 md:w-4.5 md:h-4.5" />}
           label="Settings"
         />
       </nav>
@@ -62,11 +62,15 @@ interface SidebarLinkProps {
   label: string;
 }
 
-/// Helper link component that applies active border and color highlights.
+/// Applies active navigation styling and releases focus after pointer navigation.
 function SidebarLink({ to, icon, label }: SidebarLinkProps) {
   return (
     <Link
       to={to}
+      onClick={(event) => {
+        // Pointer focus would suppress app shortcuts until another area is focused.
+        if (event.detail > 0) event.currentTarget.blur();
+      }}
       activeProps={{
         className:
           "bg-brand/10 text-brand-light border-l-2 border-brand font-medium",
