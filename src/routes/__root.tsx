@@ -15,6 +15,7 @@ import { usePlayerStore } from "../store/playerStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
 import { useMcpControl } from "../hooks/useMcpControl";
+import { WatchView } from "./watch";
 import "../styles.css";
 
 export const Route = createRootRoute({
@@ -63,10 +64,9 @@ export default function Root() {
       </head>
       <body>
         <div className="h-screen w-screen overflow-hidden bg-dark-bg text-gray-200">
-          {isWatchRoute ? (
-            <Outlet />
-          ) : (
-            <div className="flex h-full w-full flex-col overflow-hidden">
+          <div
+            className={`flex h-full w-full flex-col overflow-hidden ${isWatchRoute ? "invisible pointer-events-none" : ""}`}
+          >
               <Titlebar />
 
               <div className="flex flex-1 overflow-hidden relative">
@@ -80,8 +80,8 @@ export default function Root() {
               </div>
 
               <PlayerBar />
-            </div>
-          )}
+          </div>
+          <WatchView isActive={isWatchRoute} />
         </div>
         <KeyboardShortcuts />
         <Scripts />

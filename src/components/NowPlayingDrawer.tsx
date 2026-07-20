@@ -49,6 +49,7 @@ import {
 } from "../lib/nowPlayingDrawerSizing";
 import { useSettingsStore } from "../store/settingsStore";
 import { getTrackDisplayName } from "../lib/mediaLabels";
+import { setDrawerVideoSurfaceHost } from "../lib/persistentVideoSurface";
 
 /** Renders the shared media element, queue drawer, and theater presentation. */
 export function NowPlayingDrawer() {
@@ -71,7 +72,6 @@ export function NowPlayingDrawer() {
     setIsPlaying,
     handleTrackEnded,
     nextTrack,
-    prevTrack,
     currentTime,
     streamPort,
     streamToken,
@@ -136,9 +136,9 @@ export function NowPlayingDrawer() {
 
   useEffect(() => {
     const media = videoRef.current;
-    if (media) setMediaElement(media);
+    if (media && !isVideo) setMediaElement(media);
     return () => clearMediaElement(media);
-  }, [clearMediaElement, setMediaElement]);
+  }, [clearMediaElement, isVideo, setMediaElement]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -464,19 +464,20 @@ export function NowPlayingDrawer() {
     nextTrack();
   };
 
-  const enterFullscreen = useCallback(() => {
-    const target = isTheaterOpen ? theaterRef.current : videoRef.current;
-    void target?.requestFullscreen().catch(() => undefined);
-  }, [isTheaterOpen]);
-
-  const openWatch = () => {
+  /** Opens the original watch route while its persistent media surface stays mounted. */
+  const openWatch = useCallback(() => {
     if (!isVideo) return;
-    setTheaterOpen(true);
     void navigate({ to: "/watch" });
-  };
+  }, [isVideo, navigate]);
+
+  /** Registers the drawer destination for the video portal without remounting it. */
+  const registerVideoSurfaceHost = useCallback(
+    (host: HTMLDivElement | null) => setDrawerVideoSurfaceHost(host),
+    [],
+  );
 
   useEffect(() => {
-    if (!isTheaterOpen) return;
+    if (!isTheaterOpen || pathname === "/watch") return;
 
     const handleKeyboard = (event: globalThis.KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement) return;
@@ -506,7 +507,7 @@ export function NowPlayingDrawer() {
         seek(10);
       } else if (event.key.toLowerCase() === "f") {
         event.preventDefault();
-        enterFullscreen();
+        void theaterRef.current?.requestFullscreen().catch(() => undefined);
       } else if (event.key === "Escape") {
         if (document.fullscreenElement) {
           void document.exitFullscreen();
@@ -519,9 +520,9 @@ export function NowPlayingDrawer() {
     window.addEventListener("keydown", handleKeyboard);
     return () => window.removeEventListener("keydown", handleKeyboard);
   }, [
-    enterFullscreen,
     isPlaying,
     isTheaterOpen,
+    pathname,
     setCurrentTime,
     setIsPlaying,
     setTheaterOpen,
@@ -679,18 +680,22 @@ export function NowPlayingDrawer() {
           <div
             onDoubleClick={openWatch}
             className={`relative overflow-hidden group ${
-              isTheaterOpen
-                ? "absolute inset-0 z-10 bg-black"
-                : isVideo
-                  ? "aspect-video rounded-xl border border-white/5 shadow-lg bg-black"
-                  : "aspect-video rounded-xl border border-white/5 shadow-lg bg-card-bg"
+              isVideo
+                ? "aspect-video rounded-xl border border-white/5 shadow-lg bg-black"
+                : "aspect-video rounded-xl border border-white/5 shadow-lg bg-card-bg"
             }`}
           >
             {!isTheaterOpen && (
               <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
             )}
-            {mediaPlayer}
-            <audio ref={alternateAudioRef} className="hidden" />
+            {isVideo ? (
+              <div
+                ref={registerVideoSurfaceHost}
+                className="absolute inset-0"
+              />
+            ) : (
+              mediaPlayer
+            )}
 
             {isVideo && activeSubtitle.text && (
               <div
@@ -741,29 +746,6 @@ export function NowPlayingDrawer() {
               </div>
             )}
 
-            {isTheaterOpen && (
-              <TheaterControls
-                videoRef={videoRef}
-                currentTime={currentTime}
-                duration={currentTrack?.duration_secs ?? 0}
-                isPlaying={isPlaying}
-                onExit={() => setTheaterOpen(false)}
-                onFullscreen={enterFullscreen}
-                onPlayPause={() => setIsPlaying(!isPlaying)}
-                onNext={nextTrack}
-                onPrevious={prevTrack}
-                onSeek={(seconds) => {
-                  const media = videoRef.current;
-                  if (!media) return;
-                  const nextTime = Math.max(
-                    0,
-                    Math.min(media.duration || 0, media.currentTime + seconds),
-                  );
-                  media.currentTime = nextTime;
-                  setCurrentTime(nextTime);
-                }}
-              />
-            )}
           </div>
 
           <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
@@ -896,7 +878,8 @@ function AudioOrbit() {
   );
 }
 
-function TheaterControls({
+/** Legacy drawer theater controls retained for isolated component compatibility. */
+export function TheaterControls({
   videoRef,
   currentTime,
   duration,

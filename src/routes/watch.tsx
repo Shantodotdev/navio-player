@@ -15,7 +15,14 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   buildStreamUrl,
   cancelMediaPreparation,
@@ -33,6 +40,11 @@ import {
 } from "../lib/theaterMedia";
 import { formatLanguage } from "../lib/mediaLanguages";
 import { getTrackDisplayName } from "../lib/mediaLabels";
+import {
+  getDrawerVideoSurfaceHost,
+  getPersistentVideoSurface,
+  movePersistentVideoSurface,
+} from "../lib/persistentVideoSurface";
 import { usePlayerStore } from "../store/playerStore";
 import { useSettingsStore } from "../store/settingsStore";
 
@@ -42,9 +54,6 @@ const emptyTrackInfo: VideoTrackInfo = {
 };
 
 const playbackRates = [0.5, 1, 1.5, 2] as const;
-
-// Distinguishes a real watch-route exit from React's immediate development remount.
-let theaterMountGeneration = 0;
 
 type PlaybackFeedbackKind = "play" | "pause" | "rewind" | "forward";
 
@@ -109,11 +118,16 @@ function PlaybackFeedbackOverlay({
 }
 
 export const Route = createFileRoute("/watch")({
-  component: WatchView,
+  component: WatchRoute,
 });
 
-/** Renders the dedicated video watch surface backed by shared player state. */
-function WatchView() {
+/** The root layout owns the persistent watch surface across route changes. */
+function WatchRoute() {
+  return null;
+}
+
+/** Renders the original watch UI around one persistent video/audio element pair. */
+export function WatchView({ isActive }: { isActive: boolean }) {
   const navigate = useNavigate();
   const { settings } = useSettingsStore();
   const stageRef = useRef<HTMLDivElement>(null);
@@ -178,12 +192,29 @@ function WatchView() {
   subtitleCursor.current = activeSubtitle.index;
   const activeSubtitleText = activeSubtitle.text;
 
+  const persistentVideoSurface = getPersistentVideoSurface();
+
+  useLayoutEffect(() => {
+    if (!persistentVideoSurface || !isVideo) return;
+
+    const destination = isActive
+      ? stageRef.current
+      : getDrawerVideoSurfaceHost();
+    movePersistentVideoSurface(persistentVideoSurface, destination);
+  }, [isActive, isVideo, persistentVideoSurface]);
+
   useEffect(() => {
-    const mountGeneration = ++theaterMountGeneration;
-    setTheaterOpen(isVideo);
-    stageRef.current?.focus();
     const media = videoRef.current;
     if (media) setMediaElement(media);
+
+    return () => clearMediaElement(media);
+  }, [clearMediaElement, isVideo, setMediaElement]);
+
+  useEffect(() => {
+    if (!isActive) return;
+
+    setTheaterOpen(isVideo);
+    stageRef.current?.focus();
 
     if (isVideo && isTauri) {
       const enterNativeFullscreen = async () => {
@@ -201,28 +232,20 @@ function WatchView() {
 
     return () => {
       setTheaterOpen(false);
-      clearMediaElement(media);
       if (isTauri) {
-        window.setTimeout(() => {
-          // React replays effects in development. A synchronous remount advances
-          // the generation and must not briefly pull the native window out of
-          // fullscreen between two otherwise identical watch mounts.
-          if (mountGeneration !== theaterMountGeneration) return;
-
-          void import("@tauri-apps/api/core")
-            .then(({ invoke }) =>
-              invoke("set_theater_fullscreen", { fullscreen: false }),
-            )
-            .catch(() => undefined);
-        }, 0);
+        void import("@tauri-apps/api/core")
+          .then(({ invoke }) =>
+            invoke("set_theater_fullscreen", { fullscreen: false }),
+          )
+          .catch(() => undefined);
       }
     };
-  }, [clearMediaElement, isVideo, setMediaElement, setTheaterOpen]);
+  }, [isActive, isVideo, setTheaterOpen]);
 
   useEffect(() => {
-    if (isVideo) return;
+    if (!isActive || isVideo) return;
     void navigate({ to: "/library", replace: true });
-  }, [isVideo, navigate]);
+  }, [isActive, isVideo, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -749,8 +772,10 @@ function WatchView() {
   };
 
   if (!isVideo || !currentTrack) {
+    if (!isActive) return null;
+
     return (
-      <main className="grid h-screen w-screen place-items-center bg-black text-white">
+      <main className="fixed inset-0 z-[100] grid h-screen w-screen place-items-center bg-black text-white">
         <button
           type="button"
           onClick={() => void navigate({ to: "/library" })}
@@ -771,11 +796,14 @@ function WatchView() {
       onMouseLeave={hideControlsOnFullscreenLeave}
       onPointerLeave={hideControlsOnFullscreenLeave}
       onKeyDown={handleKeyDown}
-      className="watch-stage fixed inset-0 overflow-hidden bg-black text-white outline-none"
+      className={`watch-stage fixed inset-0 z-[100] overflow-hidden bg-black text-white outline-none ${isActive ? "" : "invisible pointer-events-none"}`}
     >
-      <video
+      {persistentVideoSurface &&
+        createPortal(
+          <>
+            <video
         ref={videoRef}
-        className="absolute inset-0 h-full w-full object-cover"
+        className={`absolute inset-0 h-full w-full ${isActive ? "object-cover" : "object-contain"}`}
         onClick={togglePlayback}
         onDoubleClick={() => void toggleFullscreen()}
         onTimeUpdate={(event) => {
@@ -835,8 +863,11 @@ function WatchView() {
           }
           handleTrackEnded();
         }}
-      />
-      <audio ref={alternateAudioRef} className="hidden" />
+            />
+            <audio ref={alternateAudioRef} className="hidden" />
+          </>,
+          persistentVideoSurface,
+        )}
 
       <div
         className="absolute inset-0 z-10"
