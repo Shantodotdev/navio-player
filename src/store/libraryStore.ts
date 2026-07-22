@@ -52,7 +52,7 @@ interface LibraryState {
    * Opens the native OS directory picker. If a directory is selected, this triggers
    * the backend scanner, saves only the folder configuration, and updates the live view.
    */
-  addFolder: () => Promise<void>;
+  addFolder: () => Promise<string | null>;
 
   /**
    * Removes a directory from the configured folder list, writes the change to disk,
@@ -142,36 +142,34 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
             activity: db.activity || {},
             isInitialized: true,
           });
+          return folderPath;
         }
       }
-    } catch (err) {
-      console.error("Error adding folder to library catalog:", err);
+      return null;
     } finally {
       set({ isLoading: false });
     }
   },
 
   deleteFolder: async (folder) => {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
+    const { invoke } = await import("@tauri-apps/api/core");
 
-      const { scannedDirs } = get();
+    const { scannedDirs } = get();
 
-      // Filter out the selected folder and all tracks residing within its path
-      const updatedDirs = scannedDirs.filter((d) => d !== folder);
-      const db: LibraryDatabase = { scanned_directories: updatedDirs };
+    // Filter out the selected folder and all tracks residing within its path
+    const updatedDirs = scannedDirs.filter((d) => d !== folder);
+    const db: LibraryDatabase = { scanned_directories: updatedDirs };
 
-      // Persist the changes to disk
-      await invoke("save_library", { db });
+    // Persist the changes to disk
+    await invoke("save_library", { db });
 
-      // Update memory store state
-      set({
-        scannedDirs: updatedDirs,
-        tracks: get().tracks.filter((track) => !isPathWithinDirectory(track.path, folder)),
-      });
-    } catch (err) {
-      console.error("Error deleting folder from library catalog:", err);
-    }
+    // Update memory store state
+    set({
+      scannedDirs: updatedDirs,
+      tracks: get().tracks.filter(
+        (track) => !isPathWithinDirectory(track.path, folder),
+      ),
+    });
   },
 
   createPlaylist: async (name) => {
@@ -285,20 +283,24 @@ function mergeActivityEntry(
   return {
     ...incoming,
     added_at_ms: addedAt,
-    last_played_at_ms: Math.max(
-      existing.last_played_at_ms ?? -1,
-      incoming.last_played_at_ms ?? -1,
-    ) >= 0
-      ? Math.max(
-          existing.last_played_at_ms ?? -1,
-          incoming.last_played_at_ms ?? -1,
-        )
-      : null,
+    last_played_at_ms:
+      Math.max(
+        existing.last_played_at_ms ?? -1,
+        incoming.last_played_at_ms ?? -1,
+      ) >= 0
+        ? Math.max(
+            existing.last_played_at_ms ?? -1,
+            incoming.last_played_at_ms ?? -1,
+          )
+        : null,
     play_count: Math.max(existing.play_count, incoming.play_count),
     resume_position_secs: latestProgress.resume_position_secs,
     duration_secs: latestProgress.duration_secs,
     progress_updated_at_ms: latestProgress.progress_updated_at_ms,
-    last_seen_at_ms: Math.max(existing.last_seen_at_ms, incoming.last_seen_at_ms),
+    last_seen_at_ms: Math.max(
+      existing.last_seen_at_ms,
+      incoming.last_seen_at_ms,
+    ),
   };
 }
 
@@ -314,9 +316,14 @@ function createPlaylistId(): string {
 }
 
 /** Checks folder membership without treating similarly named sibling folders as children. */
-function isPathWithinDirectory(filePath: string, directoryPath: string): boolean {
+function isPathWithinDirectory(
+  filePath: string,
+  directoryPath: string,
+): boolean {
   const normalizedFile = filePath.replace(/[\\/]+$/, "").toLowerCase();
-  const normalizedDirectory = directoryPath.replace(/[\\/]+$/, "").toLowerCase();
+  const normalizedDirectory = directoryPath
+    .replace(/[\\/]+$/, "")
+    .toLowerCase();
 
   return (
     normalizedFile === normalizedDirectory ||

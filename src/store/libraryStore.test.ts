@@ -1,6 +1,14 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLibraryStore } from "./libraryStore";
 import type { MediaActivity } from "../lib/smartPlaylists";
+
+const { invokeMock, openMock } = vi.hoisted(() => ({
+  invokeMock: vi.fn(),
+  openMock: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+vi.mock("@tauri-apps/plugin-dialog", () => ({ open: openMock }));
 
 const updated: MediaActivity = {
   media_id: "media-1",
@@ -16,7 +24,43 @@ const updated: MediaActivity = {
 
 describe("library activity state", () => {
   beforeEach(() => {
-    useLibraryStore.setState({ activity: {} });
+    invokeMock.mockReset();
+    openMock.mockReset();
+    useLibraryStore.setState({
+      activity: {},
+      tracks: [],
+      scannedDirs: [],
+      playlists: [],
+      isInitialized: false,
+      isLoading: false,
+    });
+  });
+
+  it("rejects a failed user-triggered folder scan and restores loading state", async () => {
+    openMock.mockResolvedValue("C:\\Media");
+    invokeMock.mockRejectedValue(new Error("Folder cannot be read."));
+
+    await expect(useLibraryStore.getState().addFolder()).rejects.toThrow(
+      "Folder cannot be read.",
+    );
+    expect(useLibraryStore.getState().isLoading).toBe(false);
+  });
+
+  it("returns null when folder selection is cancelled", async () => {
+    openMock.mockResolvedValue(null);
+
+    await expect(useLibraryStore.getState().addFolder()).resolves.toBeNull();
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a failed folder removal without changing the catalog", async () => {
+    useLibraryStore.setState({ scannedDirs: ["C:\\Media"] });
+    invokeMock.mockRejectedValue(new Error("Could not save library."));
+
+    await expect(
+      useLibraryStore.getState().deleteFolder("C:\\Media"),
+    ).rejects.toThrow("Could not save library.");
+    expect(useLibraryStore.getState().scannedDirs).toEqual(["C:\\Media"]);
   });
 
   it("merges a returned activity entry without replacing other records", () => {
