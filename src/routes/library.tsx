@@ -17,6 +17,8 @@ import {
 import { buildStreamUrl } from "../lib/theaterMedia";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
+import { toast } from "../store/toastStore";
+import { getErrorMessage } from "../lib/errorMessage";
 
 export const Route = createFileRoute("/library")({
   component: LibraryView,
@@ -42,6 +44,38 @@ function LibraryView() {
   const [viewMode, setViewMode] = useState<"list" | "grid">(
     settings.library.viewMode,
   );
+
+  /** Scans a selected folder and exposes a retry only when the operation fails. */
+  async function handleAddFolder() {
+    try {
+      await addFolder();
+    } catch (error) {
+      toast.error("Could not add folder", {
+        description: getErrorMessage(
+          error,
+          "Navio could not scan that folder.",
+        ),
+        dedupeKey: "library-add-folder",
+        action: { label: "Retry", run: handleAddFolder },
+      });
+    }
+  }
+
+  /** Removes one watched folder while keeping failures recoverable. */
+  async function handleDeleteFolder(folder: string) {
+    try {
+      await deleteFolder(folder);
+    } catch (error) {
+      toast.error("Could not remove folder", {
+        description: getErrorMessage(
+          error,
+          "Navio could not update your library.",
+        ),
+        dedupeKey: `library-delete-folder:${folder}`,
+        action: { label: "Retry", run: () => handleDeleteFolder(folder) },
+      });
+    }
+  }
 
   useEffect(() => {
     if (settingsLoaded) setViewMode(settings.library.viewMode);
@@ -73,7 +107,7 @@ function LibraryView() {
 
         <div className="flex gap-3 shrink-0">
           <button
-            onClick={addFolder}
+            onClick={() => void handleAddFolder()}
             className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
           >
             <FolderPlus size={15} />
@@ -130,7 +164,7 @@ function LibraryView() {
                     onClick={(event) => {
                       event.stopPropagation();
                       if (selectedDirectory === dir) setSelectedDirectory(null);
-                      deleteFolder(dir);
+                      void handleDeleteFolder(dir);
                     }}
                     className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0"
                     aria-label={`Remove ${dir} from library`}
@@ -202,7 +236,9 @@ function LibraryView() {
                 label="List view"
                 onClick={() => {
                   setViewMode("list");
-                  void updateSettings({ library: { viewMode: "list" } });
+                  void updateSettings({ library: { viewMode: "list" } }).catch(
+                    () => undefined,
+                  );
                 }}
               >
                 <List size={14} />
@@ -212,7 +248,9 @@ function LibraryView() {
                 label="Grid view"
                 onClick={() => {
                   setViewMode("grid");
-                  void updateSettings({ library: { viewMode: "grid" } });
+                  void updateSettings({ library: { viewMode: "grid" } }).catch(
+                    () => undefined,
+                  );
                 }}
               >
                 <Grid2X2 size={14} />
