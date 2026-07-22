@@ -23,6 +23,7 @@ function PlaylistsView() {
     deletePlaylist,
     addTrackToPlaylist,
     removeTrackFromPlaylist,
+    reorderPlaylistTracks,
   } = useLibrary();
   const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -192,6 +193,9 @@ function PlaylistsView() {
           onAddTrack={(track) => addTrackToPlaylist(activePlaylist.id, track)}
           onRemoveTrack={(trackId) =>
             removeTrackFromPlaylist(activePlaylist.id, trackId)
+          }
+          onReorderTrack={(fromIndex, toIndex) =>
+            reorderPlaylistTracks(activePlaylist.id, fromIndex, toIndex)
           }
         />
       )}

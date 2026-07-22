@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Check, Film, Minus, Music, Search, Trash2, X } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Film,
+  GripVertical,
+  Minus,
+  Music,
+  Search,
+  Trash2,
+  X,
+} from "lucide-react";
+import { DragDropProvider } from "@dnd-kit/react";
+import { isSortable, useSortable } from "@dnd-kit/react/sortable";
 import type { Playlist } from "../store/libraryStore";
 import type { Track } from "../store/playerStore";
 import { toast } from "../store/toastStore";
@@ -17,6 +30,7 @@ interface PlaylistEditorModalProps {
   onDelete: () => Promise<void>;
   onAddTrack: (track: Track) => Promise<void>;
   onRemoveTrack: (trackId: string) => Promise<void>;
+  onReorderTrack: (fromIndex: number, toIndex: number) => Promise<void>;
 }
 
 export function PlaylistEditorModal({
@@ -29,11 +43,13 @@ export function PlaylistEditorModal({
   onDelete,
   onAddTrack,
   onRemoveTrack,
+  onReorderTrack,
 }: PlaylistEditorModalProps) {
   const [name, setName] = useState(playlist.name);
   const [search, setSearch] = useState("");
   const [error, setError] = useState("");
   const [hasEntered, setHasEntered] = useState(false);
+  const [moveAnnouncement, setMoveAnnouncement] = useState("");
 
   useEffect(() => {
     if (isOpen) {
@@ -121,6 +137,28 @@ export function PlaylistEditorModal({
     }
   };
 
+  /** Persists one reordered track and announces its resulting position. */
+  const handleReorder = async (fromIndex: number, toIndex: number) => {
+    const track = playlist.tracks[fromIndex];
+    if (!track || fromIndex === toIndex) return;
+
+    try {
+      await onReorderTrack(fromIndex, toIndex);
+      setMoveAnnouncement(
+        `${track.title || track.name} moved to position ${toIndex + 1}.`,
+      );
+    } catch (reorderError) {
+      setError("");
+      toast.error("Could not reorder playlist", {
+        description: getErrorMessage(
+          reorderError,
+          "Unable to save the new track order.",
+        ),
+        dedupeKey: `playlist-reorder-error:${playlist.id}`,
+      });
+    }
+  };
+
   return (
     <div
       className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all duration-200 ${
@@ -180,43 +218,35 @@ export function PlaylistEditorModal({
                 {playlist.tracks.length} tracks
               </span>
             </div>
-            <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-2">
-              {playlist.tracks.map((track) => (
-                <div
-                  key={track.id}
-                  className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/2 p-3"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="flex items-center gap-2 truncate text-sm text-zinc-200">
-                      {track.media_type === "video" ? (
-                        <Film size={14} className="shrink-0 text-purple-400" />
-                      ) : (
-                        <Music
-                          size={14}
-                          className="shrink-0 text-emerald-400"
-                        />
-                      )}
-                      <span className="truncate">
-                        {track.title || track.name}
-                      </span>
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => void handleRemove(track.id)}
-                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full p-0 text-zinc-500 hover:bg-red-400/10 hover:text-red-300"
-                    aria-label={`Remove ${track.title || track.name}`}
-                  >
-                    <Minus size={15} />
-                  </button>
-                </div>
-              ))}
-              {playlist.tracks.length === 0 && (
-                <p className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm text-zinc-500">
-                  No tracks yet.
-                </p>
-              )}
-            </div>
+            <DragDropProvider
+              onDragEnd={(event) => {
+                if (event.canceled) return;
+                const { source } = event.operation;
+                if (!isSortable(source)) return;
+                void handleReorder(source.initialIndex, source.index);
+              }}
+            >
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-2">
+                {playlist.tracks.map((track, index) => (
+                  <SortablePlaylistTrack
+                    key={track.id}
+                    track={track}
+                    index={index}
+                    trackCount={playlist.tracks.length}
+                    onMove={(toIndex) => void handleReorder(index, toIndex)}
+                    onRemove={() => void handleRemove(track.id)}
+                  />
+                ))}
+                {playlist.tracks.length === 0 && (
+                  <p className="rounded-lg border border-dashed border-white/10 p-6 text-center text-sm text-zinc-500">
+                    No tracks yet.
+                  </p>
+                )}
+              </div>
+            </DragDropProvider>
+            <p className="sr-only" aria-live="polite">
+              {moveAnnouncement}
+            </p>
           </section>
 
           <section className="flex min-h-0 flex-col gap-4">
@@ -313,6 +343,95 @@ export function PlaylistEditorModal({
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Renders one smoothly sortable playlist track with keyboard controls. */
+function SortablePlaylistTrack({
+  track,
+  index,
+  trackCount,
+  onMove,
+  onRemove,
+}: {
+  track: Track;
+  index: number;
+  trackCount: number;
+  onMove: (toIndex: number) => void;
+  onRemove: () => void;
+}) {
+  const { ref, handleRef, isDragSource, isDropTarget } = useSortable({
+    id: track.id,
+    index,
+    disabled: trackCount < 2,
+    transition: {
+      duration: 280,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      idle: true,
+    },
+  });
+  const displayName = track.title || track.name;
+
+  return (
+    <div
+      ref={ref}
+      className={`group flex items-center gap-2 rounded-lg border p-2 transition-[opacity,background-color,border-color,box-shadow] duration-200 ${
+        isDropTarget
+          ? "border-white/15 bg-white/7"
+          : "border-white/5 bg-white/2"
+      } ${isDragSource ? "z-10 opacity-85 shadow-xl shadow-black/35" : "opacity-100"}`}
+    >
+      {trackCount > 1 && (
+        <button
+          ref={handleRef}
+          type="button"
+          aria-label={`Drag ${displayName} to reorder`}
+          className="flex h-8 w-6 touch-none shrink-0 cursor-grab items-center justify-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 active:cursor-grabbing focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/50"
+        >
+          <GripVertical size={15} />
+        </button>
+      )}
+      <div className="min-w-0 flex-1 px-1">
+        <p className="flex items-center gap-2 truncate text-sm text-zinc-200">
+          {track.media_type === "video" ? (
+            <Film size={14} className="shrink-0 text-purple-400" />
+          ) : (
+            <Music size={14} className="shrink-0 text-emerald-400" />
+          )}
+          <span className="truncate">{displayName}</span>
+        </p>
+      </div>
+      {trackCount > 1 && (
+        <div className="flex shrink-0 flex-col">
+          <button
+            type="button"
+            disabled={index === 0}
+            onClick={() => onMove(index - 1)}
+            aria-label={`Move ${displayName} up`}
+            className="grid h-5 w-6 place-items-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 disabled:pointer-events-none disabled:opacity-20"
+          >
+            <ChevronUp size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={index === trackCount - 1}
+            onClick={() => onMove(index + 1)}
+            aria-label={`Move ${displayName} down`}
+            className="grid h-5 w-6 place-items-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 disabled:pointer-events-none disabled:opacity-20"
+          >
+            <ChevronDown size={13} />
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full p-0 text-zinc-500 hover:bg-red-400/10 hover:text-red-300"
+        aria-label={`Remove ${displayName}`}
+      >
+        <Minus size={15} />
+      </button>
     </div>
   );
 }

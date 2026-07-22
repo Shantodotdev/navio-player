@@ -22,6 +22,7 @@ export function useLibrary() {
     deletePlaylist,
     addTrackToPlaylist,
     removeTrackFromPlaylist,
+    reorderPlaylistTracks,
   } = useLibraryStore();
 
   // Filter tracks by media type for stats computations
@@ -54,6 +55,7 @@ export function useLibrary() {
     deletePlaylist,
     addTrackToPlaylist,
     removeTrackFromPlaylist,
+    reorderPlaylistTracks,
     stats,
     recentTracks,
   };
