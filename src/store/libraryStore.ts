@@ -71,6 +71,12 @@ interface LibraryState {
     playlistId: string,
     trackId: string,
   ) => Promise<void>;
+  /** Persists a track's new position within one user-created playlist. */
+  reorderPlaylistTracks: (
+    playlistId: string,
+    fromIndex: number,
+    toIndex: number,
+  ) => Promise<void>;
   /** Merges one backend activity update without forcing a filesystem scan. */
   updateActivity: (entry: MediaActivity) => void;
 }
@@ -245,6 +251,35 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           }
         : playlist,
     );
+    await savePlaylists(updated);
+    set({ playlists: updated });
+  },
+
+  reorderPlaylistTracks: async (playlistId, fromIndex, toIndex) => {
+    const playlists = get().playlists;
+    const playlist = playlists.find((item) => item.id === playlistId);
+    if (
+      !playlist ||
+      !Number.isInteger(fromIndex) ||
+      !Number.isInteger(toIndex) ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= playlist.tracks.length ||
+      toIndex >= playlist.tracks.length ||
+      fromIndex === toIndex
+    ) {
+      return;
+    }
+
+    const tracks = [...playlist.tracks];
+    const [movedTrack] = tracks.splice(fromIndex, 1);
+    if (!movedTrack) return;
+    tracks.splice(toIndex, 0, movedTrack);
+
+    const updated = playlists.map((item) =>
+      item.id === playlistId ? { ...item, tracks } : item,
+    );
+    // Keep the visible order unchanged if durable persistence fails.
     await savePlaylists(updated);
     set({ playlists: updated });
   },

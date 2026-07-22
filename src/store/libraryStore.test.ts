@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLibraryStore } from "./libraryStore";
 import type { MediaActivity } from "../lib/smartPlaylists";
+import type { Track } from "./playerStore";
 
 const { invokeMock, openMock } = vi.hoisted(() => ({
   invokeMock: vi.fn(),
@@ -21,6 +22,12 @@ const updated: MediaActivity = {
   progress_updated_at_ms: 100,
   last_seen_at_ms: 100,
 };
+
+const playlistTracks: Track[] = [
+  createTrack("one"),
+  createTrack("two"),
+  createTrack("three"),
+];
 
 describe("library activity state", () => {
   beforeEach(() => {
@@ -105,4 +112,55 @@ describe("library activity state", () => {
     expect(activity?.play_count).toBe(3);
     expect(activity?.resume_position_secs).toBe(120);
   });
+
+  it("persists reordered tracks before updating a playlist", async () => {
+    invokeMock.mockResolvedValue(undefined);
+    useLibraryStore.setState({
+      playlists: [{ id: "favorites", name: "Favorites", tracks: playlistTracks }],
+    });
+
+    await useLibraryStore
+      .getState()
+      .reorderPlaylistTracks("favorites", 2, 0);
+
+    expect(
+      useLibraryStore.getState().playlists[0]?.tracks.map((track) => track.id),
+    ).toEqual(["three", "one", "two"]);
+    expect(invokeMock).toHaveBeenCalledWith("save_playlists", {
+      db: {
+        playlists: [
+          {
+            id: "favorites",
+            name: "Favorites",
+            tracks: [playlistTracks[2], playlistTracks[0], playlistTracks[1]],
+          },
+        ],
+      },
+    });
+  });
+
+  it("keeps the prior playlist order when reordering cannot be saved", async () => {
+    invokeMock.mockRejectedValue(new Error("Could not save playlists."));
+    useLibraryStore.setState({
+      playlists: [{ id: "favorites", name: "Favorites", tracks: playlistTracks }],
+    });
+
+    await expect(
+      useLibraryStore.getState().reorderPlaylistTracks("favorites", 0, 2),
+    ).rejects.toThrow("Could not save playlists.");
+    expect(
+      useLibraryStore.getState().playlists[0]?.tracks.map((track) => track.id),
+    ).toEqual(["one", "two", "three"]);
+  });
 });
+
+/** Creates a compact audio fixture for playlist ordering tests. */
+function createTrack(id: string): Track {
+  return {
+    id,
+    path: `C:\\Media\\${id}.mp3`,
+    name: `${id}.mp3`,
+    duration_secs: 120,
+    media_type: "audio",
+  };
+}
