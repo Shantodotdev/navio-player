@@ -94,6 +94,8 @@ interface PlayerState {
    * When no explicit queue exists, the current track becomes its first entry.
    */
   addToQueue: (track: Track) => void;
+  /** Reorder one queue item while preserving the active media by identity. */
+  moveQueueItem: (fromIndex: number, toIndex: number) => boolean;
   /**
    * Remove one queue item while preserving the current media and a valid index.
    * Removing the active item selects a neighboring replacement or stops playback.
@@ -452,6 +454,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
           ])
         : [],
     });
+  },
+  moveQueueItem: (fromIndex, toIndex) => {
+    const { currentTrack, playlist } = get();
+    if (
+      !Number.isInteger(fromIndex) ||
+      !Number.isInteger(toIndex) ||
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= playlist.length ||
+      toIndex >= playlist.length ||
+      fromIndex === toIndex
+    ) {
+      return false;
+    }
+
+    const reordered = [...playlist];
+    const [movedTrack] = reordered.splice(fromIndex, 1);
+    if (!movedTrack) return false;
+    reordered.splice(toIndex, 0, movedTrack);
+    set({
+      playlist: reordered,
+      playIndex: currentTrack
+        ? reordered.findIndex((track) => track.id === currentTrack.id)
+        : -1,
+    });
+    return true;
   },
   removeQueueIndex: (index) => {
     const {

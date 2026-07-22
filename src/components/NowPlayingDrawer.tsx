@@ -1,11 +1,14 @@
 import {
   Film,
+  ChevronDown,
   Captions,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   FastForward,
   Languages,
   ListMusic,
+  GripVertical,
   Maximize2,
   Music,
   MonitorPlay,
@@ -17,6 +20,8 @@ import {
   Volume2,
 } from "lucide-react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { DragDropProvider } from "@dnd-kit/react";
+import { isSortable, useSortable } from "@dnd-kit/react/sortable";
 import {
   useCallback,
   useEffect,
@@ -71,6 +76,7 @@ export function NowPlayingDrawer() {
     setCurrentTime,
     setIsPlaying,
     handleTrackEnded,
+    moveQueueItem,
     nextTrack,
     currentTime,
     streamPort,
@@ -771,6 +777,7 @@ export function NowPlayingDrawer() {
             currentTrackId={activeTrack.id}
             showFileExtensions={settings.library.showFileExtensions}
             onSelect={playTrack}
+            onMove={moveQueueItem}
           />
         )}
       </div>
@@ -796,19 +803,32 @@ export function NowPlayingDrawer() {
   );
 }
 
-/** Renders the active queue without retaining focus after pointer selection. */
+/** Renders a pointer- and keyboard-reorderable active playback queue. */
 function Queue({
   tracks,
   currentTrackId,
   showFileExtensions,
   onSelect,
+  onMove,
 }: {
   tracks: Track[];
   currentTrackId: string;
   showFileExtensions: boolean;
   onSelect: (track: Track, queue: Track[]) => void;
+  onMove: (fromIndex: number, toIndex: number) => boolean;
 }) {
+  const [moveAnnouncement, setMoveAnnouncement] = useState("");
+
   if (tracks.length === 0) return null;
+
+  /** Moves one item and announces its resulting queue position. */
+  function moveItem(fromIndex: number, toIndex: number) {
+    const track = tracks[fromIndex];
+    if (!track || !onMove(fromIndex, toIndex)) return;
+    setMoveAnnouncement(
+      `${getTrackDisplayName(track, showFileExtensions)} moved to position ${toIndex + 1}.`,
+    );
+  }
 
   return (
     <section className="flex-1 min-h-0 flex flex-col gap-2 sm:gap-3 pt-4 sm:pt-5 border-t border-white/5">
@@ -816,48 +836,141 @@ function Queue({
         <ListMusic size={16} className="text-brand-light" />
         <span>Up next</span>
       </div>
-      <div className="flex-1 min-h-0 space-y-1.5 overflow-y-auto pr-1">
-        {tracks.map((track) => {
-          const isCurrent = currentTrackId === track.id;
-
-          return (
-            <button
+      <DragDropProvider
+        onDragEnd={(event) => {
+          if (event.canceled) return;
+          const { source } = event.operation;
+          if (!isSortable(source)) return;
+          moveItem(source.initialIndex, source.index);
+        }}
+      >
+        <div className="flex-1 min-h-0 space-y-1.5 overflow-y-auto pr-1">
+          {tracks.map((track, index) => (
+            <SortableQueueItem
               key={track.id}
-              type="button"
-              onClick={(event) => {
-                onSelect(track, tracks);
-                // Pointer focus would make the next Space press replay this item.
-                if (event.detail > 0) event.currentTarget.blur();
-              }}
-              className={`w-full flex items-center gap-2 sm:gap-3 p-2 sm:p-2.5 rounded-lg text-left border transition-all duration-150 group cursor-pointer ${
-                isCurrent
-                  ? "bg-brand/10 border-brand/20 text-brand-light font-medium"
-                  : "bg-transparent border-transparent hover:bg-white/5 text-zinc-400 hover:text-zinc-200"
-              }`}
-            >
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
-                {track.media_type === "video" ? (
-                  <Film size={13} className="text-purple-400" />
-                ) : (
-                  <Music size={13} className="text-emerald-400" />
-                )}
-              </div>
-              <div className="flex-1 min-w-0">
-                <span className="block text-xs sm:text-sm truncate">
-                  {getTrackDisplayName(track, showFileExtensions)}
-                </span>
-                <span className="block text-[10px] sm:text-xs text-zinc-500 truncate mt-0.5 capitalize">
-                  {track.media_type}
-                </span>
-              </div>
-              <span className="text-xs text-zinc-500 font-medium shrink-0">
-                {formatTime(track.duration_secs)}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+              track={track}
+              index={index}
+              queueLength={tracks.length}
+              tracks={tracks}
+              isCurrent={currentTrackId === track.id}
+              showFileExtensions={showFileExtensions}
+              onSelect={onSelect}
+              onMove={moveItem}
+            />
+          ))}
+        </div>
+      </DragDropProvider>
+      <p className="sr-only" aria-live="polite">
+        {moveAnnouncement}
+      </p>
     </section>
+  );
+}
+
+/** Renders one dnd-kit sortable queue card with a dedicated drag handle. */
+function SortableQueueItem({
+  track,
+  index,
+  queueLength,
+  tracks,
+  isCurrent,
+  showFileExtensions,
+  onSelect,
+  onMove,
+}: {
+  track: Track;
+  index: number;
+  queueLength: number;
+  tracks: Track[];
+  isCurrent: boolean;
+  showFileExtensions: boolean;
+  onSelect: (track: Track, queue: Track[]) => void;
+  onMove: (fromIndex: number, toIndex: number) => void;
+}) {
+  const { ref, handleRef, isDragSource, isDropTarget } = useSortable({
+    id: track.id,
+    index,
+    disabled: queueLength < 2,
+    transition: {
+      duration: 280,
+      easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+      idle: true,
+    },
+  });
+  const displayName = getTrackDisplayName(track, showFileExtensions);
+
+  return (
+    <div
+      ref={ref}
+      className={`group flex w-full items-center rounded-lg border transition-[opacity,background-color,border-color,box-shadow] duration-200 ${
+        isDropTarget
+          ? "border-white/15 bg-white/7"
+          : isCurrent
+            ? "border-brand/20 bg-brand/10 text-brand-light font-medium"
+            : "border-transparent bg-transparent text-zinc-400 hover:bg-white/5 hover:text-zinc-200"
+      } ${isDragSource ? "z-10 opacity-85 shadow-xl shadow-black/35" : "opacity-100"}`}
+    >
+      {queueLength > 1 && (
+        <button
+          ref={handleRef}
+          type="button"
+          aria-label={`Drag ${displayName} to reorder`}
+          className="ml-1 flex h-8 w-6 touch-none shrink-0 cursor-grab items-center justify-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 active:cursor-grabbing focus:outline-none focus-visible:ring-1 focus-visible:ring-brand/50"
+        >
+          <GripVertical size={15} />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={(event) => {
+          onSelect(track, tracks);
+          // Pointer focus would make the next Space press replay this item.
+          if (event.detail > 0) event.currentTarget.blur();
+        }}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 p-2 text-left sm:gap-3 sm:p-2.5"
+      >
+        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
+          {track.media_type === "video" ? (
+            <Film size={13} className="text-purple-400" />
+          ) : (
+            <Music size={13} className="text-emerald-400" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <span className="block text-xs sm:text-sm truncate">
+            {displayName}
+          </span>
+          <span className="block text-[10px] sm:text-xs text-zinc-500 truncate mt-0.5 capitalize">
+            {track.media_type}
+          </span>
+        </div>
+        <span className="text-xs text-zinc-500 font-medium shrink-0">
+          {formatTime(track.duration_secs)}
+        </span>
+      </button>
+      {queueLength > 1 && (
+        <div className="mr-1 flex shrink-0 flex-col">
+          <button
+            type="button"
+            disabled={index === 0}
+            onClick={() => onMove(index, index - 1)}
+            aria-label={`Move ${displayName} up`}
+            className="grid h-5 w-6 place-items-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 disabled:pointer-events-none disabled:opacity-20"
+          >
+            <ChevronUp size={13} />
+          </button>
+          <button
+            type="button"
+            disabled={index === queueLength - 1}
+            onClick={() => onMove(index, index + 1)}
+            aria-label={`Move ${displayName} down`}
+            className="grid h-5 w-6 place-items-center rounded text-zinc-600 hover:bg-white/5 hover:text-zinc-300 disabled:pointer-events-none disabled:opacity-20"
+          >
+            <ChevronDown size={13} />
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -185,4 +185,31 @@ describe("player shuffle and repeat modes", () => {
       shuffleHistoryIds: ["one"],
     });
   });
+
+  it("reorders the queue while preserving the active track position", () => {
+    seedPlayer(trackTwo, 1);
+
+    expect(usePlayerStore.getState().moveQueueItem(2, 0)).toBe(true);
+    expect(usePlayerStore.getState()).toMatchObject({
+      playlist: [trackThree, trackOne, trackTwo],
+      currentTrack: trackTwo,
+      playIndex: 2,
+    });
+
+    expect(usePlayerStore.getState().moveQueueItem(2, 0)).toBe(true);
+    expect(usePlayerStore.getState()).toMatchObject({
+      playlist: [trackTwo, trackThree, trackOne],
+      currentTrack: trackTwo,
+      playIndex: 0,
+    });
+  });
+
+  it("rejects invalid or unchanged queue moves", () => {
+    seedPlayer(trackOne, 0);
+
+    expect(usePlayerStore.getState().moveQueueItem(-1, 1)).toBe(false);
+    expect(usePlayerStore.getState().moveQueueItem(0, 3)).toBe(false);
+    expect(usePlayerStore.getState().moveQueueItem(1, 1)).toBe(false);
+    expect(usePlayerStore.getState().playlist).toEqual(playlist);
+  });
 });
