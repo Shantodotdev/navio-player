@@ -3,6 +3,9 @@ import type { FormEvent } from "react";
 import { Check, Film, Minus, Music, Search, Trash2, X } from "lucide-react";
 import type { Playlist } from "../store/libraryStore";
 import type { Track } from "../store/playerStore";
+import { toast } from "../store/toastStore";
+import { getErrorMessage } from "../lib/errorMessage";
+import { isPlaylistValidationMessage } from "../lib/playlistErrors";
 
 interface PlaylistEditorModalProps {
   playlist: Playlist;
@@ -54,53 +57,67 @@ export function PlaylistEditorModal({
     );
   });
 
+  /** Persists a playlist name while retaining validation beside the editor. */
   const handleRename = async (event: FormEvent) => {
     event.preventDefault();
     try {
       await onRename(name);
       setError("");
     } catch (renameError) {
-      setError(
-        renameError instanceof Error
-          ? renameError.message
-          : "Unable to rename playlist.",
+      const message = getErrorMessage(
+        renameError,
+        "Unable to rename playlist.",
       );
+      if (isPlaylistValidationMessage(message)) {
+        setError(message);
+      } else {
+        setError("");
+        toast.error("Could not rename playlist", {
+          description: message,
+          dedupeKey: `playlist-rename-error:${playlist.id}`,
+        });
+      }
     }
   };
 
+  /** Deletes the active playlist after the existing destructive confirmation. */
   const handleDelete = async () => {
     if (!window.confirm(`Delete playlist “${playlist.name}”?`)) return;
     try {
       await onDelete();
       onClose();
     } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Unable to delete playlist.",
-      );
+      setError("");
+      toast.error("Could not delete playlist", {
+        description: getErrorMessage(deleteError, "Unable to delete playlist."),
+        dedupeKey: `playlist-delete:${playlist.id}`,
+      });
     }
   };
 
+  /** Adds one available library track and reports persistence failures. */
   const handleAdd = async (track: Track) => {
     try {
       await onAddTrack(track);
     } catch (addError) {
-      setError(
-        addError instanceof Error ? addError.message : "Unable to add track.",
-      );
+      setError("");
+      toast.error("Could not add track", {
+        description: getErrorMessage(addError, "Unable to add track."),
+        dedupeKey: `playlist-add-error:${playlist.id}:${track.id}`,
+      });
     }
   };
 
+  /** Removes one playlist track and reports persistence failures. */
   const handleRemove = async (trackId: string) => {
     try {
       await onRemoveTrack(trackId);
     } catch (removeError) {
-      setError(
-        removeError instanceof Error
-          ? removeError.message
-          : "Unable to remove track.",
-      );
+      setError("");
+      toast.error("Could not remove track", {
+        description: getErrorMessage(removeError, "Unable to remove track."),
+        dedupeKey: `playlist-remove-error:${playlist.id}:${trackId}`,
+      });
     }
   };
 
