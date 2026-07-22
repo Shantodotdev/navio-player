@@ -19,6 +19,12 @@ import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
 import { toast } from "../store/toastStore";
 import { getErrorMessage } from "../lib/errorMessage";
+import { Select } from "../components/Select";
+import {
+  LIBRARY_SORT_OPTIONS,
+  sortLibraryTracks,
+  type LibrarySortMode,
+} from "../lib/librarySorting";
 
 export const Route = createFileRoute("/library")({
   component: LibraryView,
@@ -27,7 +33,8 @@ export const Route = createFileRoute("/library")({
 /** Renders the searchable local media catalog and its list/grid presentations. */
 function LibraryView() {
   const { playTrack, streamPort, streamToken } = usePlayerStore();
-  const { tracks, scannedDirs, addFolder, deleteFolder } = useLibrary();
+  const { tracks, scannedDirs, activity, addFolder, deleteFolder } =
+    useLibrary();
   const {
     settings,
     isLoaded: settingsLoaded,
@@ -44,6 +51,7 @@ function LibraryView() {
   const [viewMode, setViewMode] = useState<"list" | "grid">(
     settings.library.viewMode,
   );
+  const [sortMode, setSortMode] = useState<LibrarySortMode>("name-asc");
 
   /** Scans a selected folder and exposes a retry only when the operation fails. */
   async function handleAddFolder() {
@@ -94,6 +102,7 @@ function LibraryView() {
 
     return matchesSearch && matchesFilter && matchesDirectory;
   });
+  const visibleTracks = sortLibraryTracks(filteredTracks, activity, sortMode);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400 min-w-0">
@@ -229,6 +238,14 @@ function LibraryView() {
               </FilterButton>
             </div>
 
+            <div className="w-full shrink-0 md:w-48">
+              <Select
+                options={LIBRARY_SORT_OPTIONS}
+                value={sortMode}
+                onChange={(value) => setSortMode(value as LibrarySortMode)}
+              />
+            </div>
+
             {/* View Switcher */}
             <div className="flex bg-black/40 p-0.5 rounded-lg border border-white/5 shrink-0 font-medium self-end md:self-auto">
               <ViewButton
@@ -260,7 +277,7 @@ function LibraryView() {
 
           {viewMode === "grid" ? (
             <div className="grid grid-cols-1 min-[480px]:grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-              {filteredTracks.map((track) => (
+              {visibleTracks.map((track) => (
                 <MediaCard
                   key={track.id}
                   track={track}
@@ -268,10 +285,10 @@ function LibraryView() {
                   streamToken={streamToken}
                   showThumbnails={settings.library.showThumbnails}
                   showFileExtensions={settings.library.showFileExtensions}
-                  onPlay={() => playTrack(track, filteredTracks)}
+                  onPlay={() => playTrack(track, visibleTracks)}
                 />
               ))}
-              {filteredTracks.length === 0 && (
+              {visibleTracks.length === 0 && (
                 <div className="col-span-full rounded-2xl border border-white/5 bg-panel-bg/20 p-12 text-center text-zinc-500 italic text-sm">
                   No files found matching search criteria.
                 </div>
@@ -292,15 +309,15 @@ function LibraryView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-zinc-400">
-                    {filteredTracks.map((track) => (
+                    {visibleTracks.map((track) => (
                       <tr
                         key={track.id}
                         className="hover:bg-white/1 group transition-all duration-150 cursor-pointer"
-                        onDoubleClick={() => playTrack(track, filteredTracks)}
+                        onDoubleClick={() => playTrack(track, visibleTracks)}
                       >
                         <td className="p-2 sm:p-3 text-center">
                           <button
-                            onClick={() => playTrack(track, filteredTracks)}
+                            onClick={() => playTrack(track, visibleTracks)}
                             className="w-6 h-6 sm:w-7.5 sm:h-7.5 bg-brand/20 text-brand-light group-hover:bg-brand group-hover:text-zinc-200 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer"
                           >
                             <Play
@@ -334,7 +351,7 @@ function LibraryView() {
                         </td>
                       </tr>
                     ))}
-                    {filteredTracks.length === 0 && (
+                    {visibleTracks.length === 0 && (
                       <tr>
                         <td
                           colSpan={5}
