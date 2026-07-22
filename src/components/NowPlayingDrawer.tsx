@@ -116,11 +116,8 @@ export function NowPlayingDrawer() {
     duration_secs: 0,
     media_type: "audio",
   };
-  const activeQueue = currentTrack
-    ? playlist.length > 0
-      ? playlist
-      : [currentTrack]
-    : [];
+  const activeQueue =
+    playlist.length > 0 ? playlist : currentTrack ? [currentTrack] : [];
   const duration = currentTrack?.duration_secs ?? 0;
   const activeSubtitle = findActiveSubtitle(
     subtitleCues,

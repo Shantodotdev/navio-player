@@ -8,20 +8,41 @@ import {
   Clock,
   Film,
   ListMusic,
+  History,
+  TrendingUp,
+  ChevronRight,
 } from "lucide-react";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibrary } from "../hooks/useLibrary";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
+import {
+  getWatchProgress,
+  type MediaActivity,
+  type SmartPlaylist,
+} from "../lib/smartPlaylists";
+import type { Track } from "../store/playerStore";
 
 export const Route = createFileRoute("/")({
   component: DashboardView,
 });
 
 function DashboardView() {
-  const { playTrack } = usePlayerStore();
+  const { playTrack, setDrawerOpen, setPlaylist } = usePlayerStore();
   const { settings } = useSettingsStore();
-  const { stats, recentTracks } = useLibrary();
+  const { stats, smartPlaylists, activity } = useLibrary();
+
+  /** Starts one smart collection using its derived ordering as the queue. */
+  function playSmartTrack(track: Track, queue: Track[]) {
+    playTrack(track, queue);
+    setDrawerOpen(true);
+  }
+
+  /** Loads a generated collection into the standard Now Playing sidebar. */
+  function openSmartPlaylist(playlist: SmartPlaylist) {
+    setPlaylist(playlist.tracks);
+    setDrawerOpen(true);
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto font-medium select-none">
@@ -77,65 +98,109 @@ function DashboardView() {
         />
       </div>
 
-      {/* Recently Added List (Full Width) */}
-      <div className="space-y-4 pt-4">
-        <h2 className="text-lg font-medium text-zinc-300 flex items-center gap-2 px-1">
-          <Play size={16} className="text-brand-light" />
-          <span>Recently added media</span>
-        </h2>
-
-        <div className="space-y-2">
-          {recentTracks.map((track) => (
-            <div
-              key={track.id}
-              onClick={() => playTrack(track, recentTracks)}
-              className="flex items-center justify-between p-3 sm:p-4 rounded-lg hover:bg-white/5 cursor-pointer group transition-colors border border-transparent hover:border-white/5 font-medium"
-            >
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div className="w-9 h-9 sm:w-11 sm:h-11 rounded bg-white/5 flex items-center justify-center shrink-0 relative overflow-hidden">
-                  {track.media_type === "video" ? (
-                    <Film
-                      size={16}
-                      className="text-purple-400 group-hover:opacity-0"
-                    />
-                  ) : (
-                    <Music
-                      size={16}
-                      className="text-emerald-400 group-hover:opacity-0"
-                    />
-                  )}
-                  <div className="absolute inset-0 bg-brand opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                    <Play
-                      size={14}
-                      fill="currentColor"
-                      className="text-zinc-200"
-                    />
-                  </div>
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-sm sm:text-base font-medium text-zinc-200 truncate">
-                    {getTrackDisplayName(
-                      track,
-                      settings.library.showFileExtensions,
-                    )}
-                  </h4>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3 sm:gap-5 shrink-0 text-xs sm:text-sm text-zinc-450">
-                <span className="px-2 py-0.5 text-2xs sm:text-xs rounded bg-white/5 border border-white/5 text-zinc-400 font-medium lowercase">
-                  {track.media_type}
-                </span>
-                <div className="flex items-center gap-1 font-medium">
-                  <Clock size={14} />
-                  <span>{formatTime(track.duration_secs)}</span>
-                </div>
-              </div>
-            </div>
+      <div className="space-y-8 pt-4">
+        {smartPlaylists
+          .filter((playlist) => playlist.tracks.length > 0)
+          .map((playlist) => (
+            <SmartCollectionSection
+              key={playlist.id}
+              playlist={playlist}
+              activity={activity}
+              showFileExtensions={settings.library.showFileExtensions}
+              onOpen={() => openSmartPlaylist(playlist)}
+              onPlay={(track) => playSmartTrack(track, playlist.tracks)}
+            />
           ))}
-        </div>
       </div>
     </div>
+  );
+}
+
+/** Renders one non-empty Home collection with a compact five-item preview. */
+function SmartCollectionSection({
+  playlist,
+  activity,
+  showFileExtensions,
+  onOpen,
+  onPlay,
+}: {
+  playlist: SmartPlaylist;
+  activity: Record<string, MediaActivity>;
+  showFileExtensions: boolean;
+  onOpen: () => void;
+  onPlay: (track: Track) => void;
+}) {
+  const Icon =
+    playlist.id === "continue-watching"
+      ? Film
+      : playlist.id === "recently-played"
+        ? History
+        : playlist.id === "most-played"
+          ? TrendingUp
+          : Clock;
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center justify-between gap-4 px-1">
+        <h2 className="flex items-center gap-2 text-lg font-medium text-zinc-300">
+          <Icon size={16} className="text-brand-light" />
+          {playlist.name}
+        </h2>
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex items-center gap-1 text-xs font-medium text-zinc-500 transition-colors hover:text-brand-light cursor-pointer"
+        >
+          See all <ChevronRight size={14} />
+        </button>
+      </div>
+
+      <div className="space-y-1">
+        {playlist.tracks.slice(0, 5).map((track) => {
+          const progress = getWatchProgress(track, activity);
+          return (
+            <button
+              key={track.id}
+              type="button"
+              onClick={() => onPlay(track)}
+              className="group flex w-full items-center justify-between gap-4 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-white/5 hover:bg-white/5 cursor-pointer sm:p-4"
+            >
+              <span className="flex min-w-0 items-center gap-3 sm:gap-4">
+                <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded bg-white/5 sm:h-11 sm:w-11">
+                  {track.media_type === "video" ? (
+                    <Film size={16} className="text-purple-400 group-hover:opacity-0" />
+                  ) : (
+                    <Music size={16} className="text-emerald-400 group-hover:opacity-0" />
+                  )}
+                  <span className="absolute inset-0 grid place-items-center bg-brand opacity-0 transition-opacity group-hover:opacity-100">
+                    <Play size={14} fill="currentColor" className="text-white" />
+                  </span>
+                  {playlist.id === "continue-watching" && (
+                    <span className="absolute inset-x-0 bottom-0 h-0.5 bg-white/15">
+                      <span
+                        className="block h-full bg-brand-light"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </span>
+                  )}
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-zinc-200 sm:text-base">
+                    {getTrackDisplayName(track, showFileExtensions)}
+                  </span>
+                  {playlist.id === "continue-watching" && (
+                    <span className="text-xs text-zinc-600">{Math.round(progress)}% watched</span>
+                  )}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 sm:text-sm">
+                <Clock size={14} /> {formatTime(track.duration_secs)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
