@@ -7,6 +7,7 @@
 //! are long-lived services or guarded resources, never unvalidated renderer
 //! inputs; commands validate and narrow their own parameters before using them.
 
+mod activity;
 mod application;
 mod commands;
 mod control;
@@ -45,6 +46,8 @@ use tokio::sync::oneshot;
 pub struct AppState {
   /// Durable queue and live process controls for downloader jobs.
   pub download_manager: downloader::DownloadManager,
+  /// Versioned local playback activity and smart-playlist source data.
+  pub activity_store: activity::ActivityStore,
   /// Set of directories allowed for file streaming.
   /// Scanned folders are added here to authorize file accesses.
   pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,

@@ -140,14 +140,43 @@ pub fn process_media_file(path: &Path, app_cache_dir: &Path) -> Option<MediaItem
   })
 }
 
-/// Produces a stable client identity for a file path without persisting the path in the library DB.
-fn stable_media_id(path: &Path) -> String {
+/// Produces one stable identity for ordinary and canonical forms of a media path.
+pub fn stable_media_id(path: &Path) -> String {
   use std::collections::hash_map::DefaultHasher;
   use std::hash::{Hash, Hasher};
 
   let mut hasher = DefaultHasher::new();
-  path.to_string_lossy().hash(&mut hasher);
+  let path = path.to_string_lossy();
+  #[cfg(windows)]
+  let path = path
+    .strip_prefix(r"\\?\UNC\")
+    .map(|network_path| format!(r"\\{network_path}"))
+    .unwrap_or_else(|| path.strip_prefix(r"\\?\").unwrap_or(&path).to_string());
+  path.hash(&mut hasher);
   format!("media-{:016x}", hasher.finish())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::stable_media_id;
+
+  #[cfg(windows)]
+  #[test]
+  /// Keeps a scanned Windows path and its canonical extended-length form on one identity.
+  fn stable_media_id_matches_canonical_windows_path() {
+    let root = std::env::temp_dir().join(format!("navio-media-id-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("create media identity fixture");
+    let media_path = root.join("track.mp3");
+    std::fs::write(&media_path, b"fixture").expect("write media identity fixture");
+    let canonical_path = media_path.canonicalize().expect("canonicalize media path");
+
+    assert_eq!(
+      stable_media_id(&media_path),
+      stable_media_id(&canonical_path)
+    );
+
+    std::fs::remove_dir_all(root).expect("cleanup media identity fixture");
+  }
 }
 
 /// Parses video headers to read duration (header-only, low-RAM, lightweight).

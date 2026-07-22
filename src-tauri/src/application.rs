@@ -48,6 +48,7 @@ pub fn run() {
     .setup(move |app| {
       let app_handle = app.handle().clone();
       let download_manager = downloader::DownloadManager::load(&app_handle)?;
+      let activity_store = activity::ActivityStore::load(&app_handle)?;
       // A process handle cannot survive a restart. Convert durable active jobs
       // before the renderer requests the queue so users can retry honestly.
       download_manager.recover_interrupted()?;
@@ -56,6 +57,7 @@ pub fn run() {
       download_manager.cleanup_cancelled_staging(&app_handle)?;
       let app_state = AppState {
         download_manager,
+        activity_store,
         allowed_directories: allowed_directories.clone(),
         stream_port: port,
         stream_token: stream_token.clone(),
@@ -116,6 +118,7 @@ pub fn run() {
       commands::get_stream_config,
       commands::get_settings,
       commands::save_settings,
+      commands::record_playback_milestone,
       commands::clear_download_history,
       commands::reset_databases,
       commands::inspect_video_tracks,

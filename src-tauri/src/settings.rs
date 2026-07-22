@@ -179,6 +179,7 @@ pub fn reset_databases(app_handle: &AppHandle) -> Result<(), String> {
     "playlists.json",
     "downloads.json",
     "theater-media.json",
+    "activity.json",
   ] {
     let path = app_data.join(name);
     if path.exists() {

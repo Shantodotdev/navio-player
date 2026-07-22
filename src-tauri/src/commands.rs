@@ -58,12 +58,13 @@ pub fn clear_download_history(
 
 /// Resets Navio's databases and managed downloader tools while preserving media and downloads.
 #[tauri::command]
-pub fn reset_databases(
+pub async fn reset_databases(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
   state.download_manager.clear_history()?;
   settings::reset_databases(&app_handle)?;
+  state.activity_store.reset().await?;
   state.allowed_directories.lock().unwrap().clear();
   Ok(())
 }
@@ -155,6 +156,16 @@ pub async fn save_theater_state(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+  let activity_path = PathBuf::from(&path)
+    .canonicalize()
+    .map_err(|error| format!("Could not resolve the selected video: {error}"))?;
+  let activity_id = library::stable_media_id(&activity_path);
+  let activity_path_string = activity_path.to_string_lossy().to_string();
+  let retained_position = if duration_secs >= 10.0 * 60.0 {
+    position_secs.max(0.0)
+  } else {
+    0.0
+  };
   media_tools::save_theater_state(
     &app_handle,
     &state.allowed_directories,
@@ -169,7 +180,26 @@ pub async fn save_theater_state(
       save_preferences,
     },
   )
-  .await
+  .await?;
+
+  match state
+    .activity_store
+    .record_progress(
+      &activity_id,
+      &activity_path_string,
+      retained_position,
+      duration_secs,
+    )
+    .await
+  {
+    Ok(entry) => {
+      if let Err(error) = app_handle.emit("activity-updated", entry) {
+        log::warn!("Could not emit activity progress update: {error}");
+      }
+    }
+    Err(error) => log::warn!("Could not persist activity progress: {error}"),
+  }
+  Ok(())
 }
 
 /// Enters or leaves native fullscreen with a single Windows window transition.
@@ -217,9 +247,48 @@ pub fn toggle_theater_fullscreen(app_handle: tauri::AppHandle) -> Result<bool, S
   set_theater_fullscreen(app_handle, next_fullscreen)
 }
 
+/// Live library data joined with the current activity snapshot.
+#[derive(serde::Serialize)]
+pub struct LibraryResponse {
+  pub scanned_directories: Vec<String>,
+  pub tracks: Vec<library::MediaItem>,
+  pub activity: std::collections::HashMap<String, activity::ActivityEntry>,
+}
+
+/// Converts one live library track into the activity reconciliation contract.
+fn activity_media_from_track(track: &library::MediaItem) -> activity::ActivityMedia {
+  activity::ActivityMedia {
+    id: track.id.clone(),
+    path: track.path.clone(),
+    duration_secs: track.duration_secs,
+    media_type: track.media_type.clone(),
+  }
+}
+
+/// Joins a scanned live library with its reconciled local activity records.
+async fn join_library_activity(
+  state: &AppState,
+  view: library::LibraryView,
+) -> Result<LibraryResponse, String> {
+  let media = view
+    .tracks
+    .iter()
+    .map(activity_media_from_track)
+    .collect::<Vec<_>>();
+  let activity = state.activity_store.reconcile(&media).await?;
+  Ok(LibraryResponse {
+    scanned_directories: view.scanned_directories,
+    tracks: view.tracks,
+    activity,
+  })
+}
+
 /// Retrieves a live media view assembled from the currently configured folders.
 #[tauri::command]
-pub async fn get_library(app_handle: tauri::AppHandle) -> Result<library::LibraryView, String> {
+pub async fn get_library(
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<LibraryResponse, String> {
   let db = library::load_db(&app_handle)?;
   let cache_dir = app_handle
     .path()
@@ -233,7 +302,51 @@ pub async fn get_library(app_handle: tauri::AppHandle) -> Result<library::Librar
     view.tracks.len(),
     view.scanned_directories.len()
   );
-  Ok(view)
+  join_library_activity(&state, view).await
+}
+
+/// Records one validated meaningful-playback milestone and returns its new activity state.
+#[tauri::command]
+pub async fn record_playback_milestone(
+  media_id: String,
+  path: String,
+  milestone: activity::PlaybackMilestone,
+  state: tauri::State<'_, AppState>,
+) -> Result<activity::ActivityEntry, String> {
+  let media_path = PathBuf::from(path);
+  if !media_path.is_file() {
+    return Err("The selected media no longer exists.".to_string());
+  }
+  let canonical_path = media_path
+    .canonicalize()
+    .map_err(|error| format!("Could not resolve selected media: {error}"))?;
+  let is_allowed = state
+    .allowed_directories
+    .lock()
+    .unwrap()
+    .iter()
+    .any(|directory| {
+      directory
+        .canonicalize()
+        .map(|allowed| canonical_path.starts_with(allowed))
+        .unwrap_or(false)
+    });
+  if !is_allowed {
+    return Err("The selected media is outside your Navio library.".to_string());
+  }
+  let stable_id = library::stable_media_id(&canonical_path);
+  if stable_id != media_id {
+    return Err("The media identity does not match its validated path.".to_string());
+  }
+
+  state
+    .activity_store
+    .record_milestone(
+      &stable_id,
+      canonical_path.to_string_lossy().as_ref(),
+      milestone,
+    )
+    .await
 }
 
 /// Waits for the next authenticated MCP request assigned to the renderer.
@@ -494,7 +607,7 @@ pub async fn scan_folder(
   folder_path: String,
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
-) -> Result<library::LibraryView, String> {
+) -> Result<LibraryResponse, String> {
   println!("[Navio Command] scan_folder | folder={}", folder_path);
 
   let path = PathBuf::from(&folder_path);
@@ -552,10 +665,11 @@ pub async fn scan_folder(
     view.scanned_directories.len()
   );
 
-  Ok(view)
+  join_library_activity(&state, view).await
 }
 
 use super::*;
+use tauri::Emitter;
 
 #[cfg(test)]
 mod mcp_control_tests {
@@ -569,6 +683,27 @@ mod mcp_control_tests {
   /// Creates an isolated temporary root for authorized-media boundary tests.
   fn test_directory(name: &str) -> PathBuf {
     std::env::temp_dir().join(format!("navio-control-{name}-{}", uuid::Uuid::new_v4()))
+  }
+
+  #[test]
+  fn library_tracks_map_to_activity_reconciliation_inputs() {
+    let track = library::MediaItem {
+      id: "media-1".to_string(),
+      path: r"C:\Media\movie.mp4".to_string(),
+      name: "movie.mp4".to_string(),
+      title: None,
+      duration_secs: 600.0,
+      file_size_bytes: 42,
+      media_type: "video".to_string(),
+      cover_cache_path: None,
+    };
+
+    let activity = activity_media_from_track(&track);
+
+    assert_eq!(activity.id, track.id);
+    assert_eq!(activity.path, track.path);
+    assert_eq!(activity.duration_secs, 600.0);
+    assert_eq!(activity.media_type, "video");
   }
 
   #[test]
