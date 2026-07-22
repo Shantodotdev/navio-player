@@ -31,7 +31,9 @@ import {
   type VideoContainer,
 } from "../lib/downloads";
 import { getMediaDisplayName } from "../lib/mediaLabels";
+import { getErrorMessage } from "../lib/errorMessage";
 import { useSettingsStore } from "../store/settingsStore";
+import { toast } from "../store/toastStore";
 
 export const Route = createFileRoute("/downloader")({
   component: DownloaderView,
@@ -115,9 +117,18 @@ function DownloaderView() {
       });
       return true;
     } catch (error) {
-      setFormError(
-        getDownloadErrorMessage(error, "Could not start the download."),
-      );
+      const message = getErrorMessage(error, "Could not start the download.");
+      setFormError(message);
+      toast.error("Could not start download", {
+        description: message,
+        dedupeKey: `download-start:${targetUrl}`,
+        action: {
+          label: "Retry",
+          run: async () => {
+            await triggerDownload(targetUrl, targetFormat, noPlaylist, options);
+          },
+        },
+      });
       return false;
     }
   }
@@ -181,9 +192,15 @@ function DownloaderView() {
         if (started) setUrl("");
       }
     } catch (error) {
-      setFormError(
-        getDownloadErrorMessage(error, "Could not inspect this media URL."),
+      const message = getErrorMessage(
+        error,
+        "Could not inspect this media URL.",
       );
+      setFormError(message);
+      toast.error("Could not inspect media", {
+        description: message,
+        dedupeKey: `download-inspect:${targetUrl}`,
+      });
     } finally {
       setIsChecking(false);
     }
@@ -222,19 +239,22 @@ function DownloaderView() {
     try {
       await controlDownload(command, id);
     } catch (error) {
+      const message = getErrorMessage(error, "Download action failed.");
       setDownloads((previous) =>
         previous.map((job) =>
           job.id === id
             ? {
                 ...job,
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "Download action failed.",
+                error: message,
               }
             : job,
         ),
       );
+      toast.error("Download action failed", {
+        description: message,
+        dedupeKey: `download-action:${command}:${id}`,
+        action: { label: "Retry", run: () => handleAction(command, id) },
+      });
     } finally {
       setPendingActionId(null);
     }
@@ -245,8 +265,15 @@ function DownloaderView() {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       await invoke("open_folder");
-    } catch {
-      // Folder controls are intentionally inert during browser-only development.
+    } catch (error) {
+      toast.error("Could not open Downloads", {
+        description: getErrorMessage(
+          error,
+          "Opening Downloads is available in the Navio desktop app.",
+        ),
+        dedupeKey: "open-download-folder",
+        action: { label: "Retry", run: handleOpenFolder },
+      });
     }
   }
 
@@ -465,13 +492,6 @@ function parseOptionalItemNumber(value: string): number | null {
   if (!value.trim()) return null;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-
-/** Preserves useful Tauri string failures instead of replacing them with generic copy. */
-function getDownloadErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === "string" && error.trim()) return error;
-  return fallback;
 }
 
 /** Labels Navio's shared Select for the compact advanced-options grid. */
