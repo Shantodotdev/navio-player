@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useLibraryStore } from "../store/libraryStore";
+import type { MediaActivity } from "../lib/smartPlaylists";
 
 /**
  * Keeps the in-memory library catalog synchronized with Navio's Rust backend.
@@ -11,6 +12,7 @@ import { useLibraryStore } from "../store/libraryStore";
  */
 export function useLibrarySync() {
   const fetchLibrary = useLibraryStore((state) => state.fetchLibrary);
+  const updateActivity = useLibraryStore((state) => state.updateActivity);
 
   /** Loads the initial catalog once, while the store avoids redundant reads. */
   useEffect(() => {
@@ -48,4 +50,30 @@ export function useLibrarySync() {
       unlistenFn?.();
     };
   }, [fetchLibrary]);
+
+  /** Merges lightweight playback checkpoints without rebuilding the library. */
+  useEffect(() => {
+    let isActive = true;
+    let unlistenFn: (() => void) | null = null;
+
+    async function setupActivityListener() {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const unlisten = await listen<MediaActivity>(
+          "activity-updated",
+          (event) => updateActivity(event.payload),
+        );
+        if (isActive) unlistenFn = unlisten;
+        else unlisten();
+      } catch (error) {
+        console.warn("Failed to subscribe to activity updates:", error);
+      }
+    }
+
+    void setupActivityListener();
+    return () => {
+      isActive = false;
+      unlistenFn?.();
+    };
+  }, [updateActivity]);
 }

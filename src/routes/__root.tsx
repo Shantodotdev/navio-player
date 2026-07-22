@@ -15,6 +15,7 @@ import { usePlayerStore } from "../store/playerStore";
 import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
 import { useMcpControl } from "../hooks/useMcpControl";
+import { usePlaybackActivity } from "../hooks/usePlaybackActivity";
 import { WatchView } from "./watch";
 import "../styles.css";
 
@@ -27,6 +28,7 @@ export default function Root() {
   const { loadSettings } = useSettingsStore();
   useLibrarySync();
   useMcpControl();
+  usePlaybackActivity();
   const isWatchRoute = useRouterState({
     select: (state) => state.location.pathname === "/watch",
   });
