@@ -20,7 +20,7 @@ Make Navio remember how the local library is used and surface useful automatic c
 
 Make common library and playback-management actions clearer and faster.
 
-- Add a global toast and actionable error-feedback system.
+- [x] Add a global toast and actionable error-feedback system.
 - Add library sorting without introducing permanently empty metadata columns.
 - Add drag-and-drop queue reordering.
 - Add drag-and-drop ordering for tracks in user-created playlists.
