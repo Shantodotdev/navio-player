@@ -1,4 +1,6 @@
 import { create } from "zustand";
+import { getErrorMessage } from "../lib/errorMessage";
+import { toast } from "./toastStore";
 
 export type LibraryViewMode = "list" | "grid";
 
@@ -42,14 +44,16 @@ export const DEFAULT_SETTINGS: NavioSettings = {
 
 interface SettingsState {
   settings: NavioSettings;
+  lastPersistedSettings: NavioSettings;
   isLoaded: boolean;
   loadSettings: () => Promise<void>;
+  /** Persists a partial update and restores the previous snapshot on failure. */
   updateSettings: (update: PartialSettingsUpdate) => Promise<void>;
   clearDownloadHistory: (deleteFiles: boolean) => Promise<void>;
   resetDatabases: () => Promise<void>;
 }
 
-type PartialSettingsUpdate = {
+export type PartialSettingsUpdate = {
   playback?: Partial<NavioSettings["playback"]>;
   library?: Partial<NavioSettings["library"]>;
   downloads?: Partial<NavioSettings["downloads"]>;
@@ -60,6 +64,23 @@ type PartialSettingsUpdate = {
 /** Whether the current renderer can call Tauri commands. */
 const isTauri = () =>
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+
+let settingsSaveQueue: Promise<void> = Promise.resolve();
+
+/** Serializes persistence operations and keeps the queue usable after failures. */
+function enqueueSettingsOperation(operation: () => Promise<void>): Promise<void> {
+  const result = settingsSaveQueue.then(operation);
+  settingsSaveQueue = result.catch(() => undefined);
+  return result;
+}
+
+/** Enqueues one full settings snapshot behind every earlier persistence operation. */
+function enqueueSettingsSave(settings: NavioSettings): Promise<void> {
+  return enqueueSettingsOperation(async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("save_settings", { settings: toBackend(settings) });
+  });
+}
 
 /** Converts the Rust snake_case settings contract into the frontend camel_case shape. */
 function fromBackend(value: BackendSettings): NavioSettings {
@@ -130,6 +151,7 @@ interface BackendSettings {
 
 export const useSettingsStore = create<SettingsState>((set, get) => ({
   settings: DEFAULT_SETTINGS,
+  lastPersistedSettings: DEFAULT_SETTINGS,
   isLoaded: false,
   loadSettings: async () => {
     if (!isTauri()) {
@@ -138,22 +160,45 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
     const { invoke } = await import("@tauri-apps/api/core");
     const backend = await invoke<BackendSettings>("get_settings");
-    set({ settings: fromBackend(backend), isLoaded: true });
+    const loadedSettings = fromBackend(backend);
+    set({
+      settings: loadedSettings,
+      lastPersistedSettings: loadedSettings,
+      isLoaded: true,
+    });
   },
   updateSettings: async (update) => {
+    const previous = get().settings;
     const next: NavioSettings = {
-      ...get().settings,
+      ...previous,
       ...update,
-      playback: { ...get().settings.playback, ...update.playback },
-      library: { ...get().settings.library, ...update.library },
-      downloads: { ...get().settings.downloads, ...update.downloads },
-      interface: { ...get().settings.interface, ...update.interface },
-      updates: { ...get().settings.updates, ...update.updates },
+      playback: { ...previous.playback, ...update.playback },
+      library: { ...previous.library, ...update.library },
+      downloads: { ...previous.downloads, ...update.downloads },
+      interface: { ...previous.interface, ...update.interface },
+      updates: { ...previous.updates, ...update.updates },
     };
     set({ settings: next });
     if (isTauri()) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("save_settings", { settings: toBackend(next) });
+      try {
+        await enqueueSettingsSave(next);
+        set({ lastPersistedSettings: next });
+      } catch (error) {
+        // Only the active optimistic snapshot rolls back, always to confirmed disk state.
+        set((state) =>
+          state.settings === next
+            ? { settings: state.lastPersistedSettings }
+            : state,
+        );
+        toast.error("Could not save settings", {
+          description: getErrorMessage(
+            error,
+            "Your previous preferences were restored.",
+          ),
+          dedupeKey: "settings-save",
+        });
+        throw error;
+      }
     }
   },
   clearDownloadHistory: async (deleteFiles) => {
@@ -163,9 +208,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
   resetDatabases: async () => {
     if (isTauri()) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("reset_databases");
+      await enqueueSettingsOperation(async () => {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("reset_databases");
+      });
     }
-    set({ settings: DEFAULT_SETTINGS, isLoaded: true });
+    set({
+      settings: DEFAULT_SETTINGS,
+      lastPersistedSettings: DEFAULT_SETTINGS,
+      isLoaded: true,
+    });
   },
 }));
