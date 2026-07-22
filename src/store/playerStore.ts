@@ -216,7 +216,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
   setVolume: (volume) => {
     const { mediaElement } = get();
     set({ volume });
-    void useSettingsStore.getState().updateSettings({ playback: { volume } });
+    void useSettingsStore
+      .getState()
+      .updateSettings({ playback: { volume } })
+      .catch(() => undefined);
     if (mediaElement) {
       mediaElement.volume = volume / 100;
     }
@@ -436,8 +439,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     });
   },
   addToQueue: (track) => {
-    const { currentTrack, playlist, shuffleEnabled, shufflePendingIds } =
-      get();
+    const { currentTrack, playlist, shuffleEnabled, shufflePendingIds } = get();
     const base =
       playlist.length > 0 ? playlist : currentTrack ? [currentTrack] : [];
     if (base.some((item) => item.id === track.id)) return;
@@ -445,9 +447,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
       playlist: [...base, track],
       shufflePendingIds: shuffleEnabled
         ? shuffleTrackIds([
-            ...base.filter((item) =>
-              shufflePendingIds.includes(item.id),
-            ),
+            ...base.filter((item) => shufflePendingIds.includes(item.id)),
             track,
           ])
         : [],
@@ -470,12 +470,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
     if (!removed) return false;
     const updated = playlist.filter((_, itemIndex) => itemIndex !== index);
     const traversalPatch = {
-      shufflePendingIds: shufflePendingIds.filter(
-        (id) => id !== removed.id,
-      ),
-      shuffleHistoryIds: shuffleHistoryIds.filter(
-        (id) => id !== removed.id,
-      ),
+      shufflePendingIds: shufflePendingIds.filter((id) => id !== removed.id),
+      shuffleHistoryIds: shuffleHistoryIds.filter((id) => id !== removed.id),
     };
     if (index < playIndex) {
       set({ playlist: updated, playIndex: playIndex - 1, ...traversalPatch });

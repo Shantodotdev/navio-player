@@ -418,7 +418,9 @@ export function NowPlayingDrawer() {
   const updateDrawerWidth = (nextWidth: number) => {
     const clampedWidth = clampDrawerWidth(nextWidth, window.innerWidth);
     setDrawerWidth(clampedWidth);
-    void updateSettings({ interface: { nowPlayingDrawerWidth: clampedWidth } });
+    void updateSettings({
+      interface: { nowPlayingDrawerWidth: clampedWidth },
+    }).catch(() => undefined);
   };
 
   const handleResizePointerDown = (event: PointerEvent<HTMLDivElement>) => {
