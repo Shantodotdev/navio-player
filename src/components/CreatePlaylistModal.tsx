@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "../store/toastStore";
+import { getErrorMessage } from "../lib/errorMessage";
+import { isPlaylistValidationMessage } from "../lib/playlistErrors";
 
 interface CreatePlaylistModalProps {
   onPlaylistCreated: (name: string) => void | Promise<void>;
@@ -22,17 +25,26 @@ export function CreatePlaylistModal({
     return () => window.cancelAnimationFrame(frameId);
   }, [isCreating]);
 
+  /** Creates one validated playlist and keeps validation feedback beside the form. */
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
     try {
       await onPlaylistCreated(name);
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to create playlist.",
+      const message = getErrorMessage(
+        submitError,
+        "Unable to create playlist.",
       );
+      if (isPlaylistValidationMessage(message)) {
+        setError(message);
+      } else {
+        setError("");
+        toast.error("Could not create playlist", {
+          description: message,
+          dedupeKey: "playlist-create",
+        });
+      }
       return;
     }
     setName("");
@@ -71,10 +83,14 @@ export function CreatePlaylistModal({
           </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="block text-sm text-zinc-400 font-medium">
+              <label
+                htmlFor="new-playlist-name"
+                className="block text-sm text-zinc-400 font-medium"
+              >
                 Playlist name
               </label>
               <input
+                id="new-playlist-name"
                 type="text"
                 required
                 ref={nameInputRef}
