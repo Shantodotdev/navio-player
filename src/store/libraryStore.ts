@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { Track } from "./playerStore";
+import type { MediaActivity } from "../lib/smartPlaylists";
 
 export interface Playlist {
   id: string;
@@ -14,6 +15,7 @@ interface LibraryDatabase {
 interface LibraryView {
   scanned_directories: string[];
   tracks: Track[];
+  activity: Record<string, MediaActivity>;
 }
 
 interface PlaylistsDatabase {
@@ -31,6 +33,8 @@ interface LibraryState {
   scannedDirs: string[];
   /** List of custom user-defined playlists. */
   playlists: Playlist[];
+  /** Durable activity records keyed by the stable media ID. */
+  activity: Record<string, MediaActivity>;
   /** Flag showing if the library has been loaded from disk at least once in this session. */
   isInitialized: boolean;
   /** True when a background I/O database operation (saving or directory scanning) is active. */
@@ -67,12 +71,15 @@ interface LibraryState {
     playlistId: string,
     trackId: string,
   ) => Promise<void>;
+  /** Merges one backend activity update without forcing a filesystem scan. */
+  updateActivity: (entry: MediaActivity) => void;
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
   tracks: [],
   scannedDirs: [],
   playlists: [],
+  activity: {},
   isInitialized: false,
   isLoading: false,
 
@@ -88,6 +95,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       set({
         tracks: db.tracks || [],
         scannedDirs: db.scanned_directories || [],
+        activity: db.activity || {},
         isInitialized: true,
       });
 
@@ -131,6 +139,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
           set({
             tracks: db.tracks || [],
             scannedDirs: db.scanned_directories || [],
+            activity: db.activity || {},
             isInitialized: true,
           });
         }
@@ -241,7 +250,57 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     await savePlaylists(updated);
     set({ playlists: updated });
   },
+
+  updateActivity: (entry) => {
+    set((state) => {
+      const existing = state.activity[entry.media_id];
+      return {
+        activity: {
+          ...state.activity,
+          [entry.media_id]: existing
+            ? mergeActivityEntry(existing, entry)
+            : entry,
+        },
+      };
+    });
+  },
 }));
+
+/** Preserves monotonic activity when concurrent Tauri responses arrive out of order. */
+function mergeActivityEntry(
+  existing: MediaActivity,
+  incoming: MediaActivity,
+): MediaActivity {
+  const existingProgress = existing.progress_updated_at_ms ?? -1;
+  const incomingProgress = incoming.progress_updated_at_ms ?? -1;
+  const latestProgress =
+    incomingProgress >= existingProgress ? incoming : existing;
+  const addedAt =
+    existing.added_at_ms === null
+      ? incoming.added_at_ms
+      : incoming.added_at_ms === null
+        ? existing.added_at_ms
+        : Math.min(existing.added_at_ms, incoming.added_at_ms);
+
+  return {
+    ...incoming,
+    added_at_ms: addedAt,
+    last_played_at_ms: Math.max(
+      existing.last_played_at_ms ?? -1,
+      incoming.last_played_at_ms ?? -1,
+    ) >= 0
+      ? Math.max(
+          existing.last_played_at_ms ?? -1,
+          incoming.last_played_at_ms ?? -1,
+        )
+      : null,
+    play_count: Math.max(existing.play_count, incoming.play_count),
+    resume_position_secs: latestProgress.resume_position_secs,
+    duration_secs: latestProgress.duration_secs,
+    progress_updated_at_ms: latestProgress.progress_updated_at_ms,
+    last_seen_at_ms: Math.max(existing.last_seen_at_ms, incoming.last_seen_at_ms),
+  };
+}
 
 async function savePlaylists(playlists: Playlist[]): Promise<void> {
   const { invoke } = await import("@tauri-apps/api/core");

@@ -1,4 +1,5 @@
 import { useLibraryStore } from "../store/libraryStore";
+import { deriveSmartPlaylists } from "../lib/smartPlaylists";
 
 /**
  * Custom React hook to interact with the local media library database.
@@ -12,6 +13,7 @@ export function useLibrary() {
     tracks,
     scannedDirs,
     playlists,
+    activity,
     isLoading,
     addFolder,
     deleteFolder,
@@ -36,11 +38,14 @@ export function useLibrary() {
 
   // Extract recently added tracks (last 3 items indexed in reverse order)
   const recentTracks = tracks.slice(-3).reverse();
+  const smartPlaylists = deriveSmartPlaylists(tracks, activity);
 
   return {
     tracks,
     scannedDirs,
     playlists,
+    activity,
+    smartPlaylists,
     isLoading,
     addFolder,
     deleteFolder,
