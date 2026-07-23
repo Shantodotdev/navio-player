@@ -24,7 +24,7 @@ Make common library and playback-management actions clearer and faster.
 - [x] Add library sorting without introducing permanently empty metadata columns.
 - [x] Add drag-and-drop queue reordering.
 - [x] Add drag-and-drop ordering for tracks in user-created playlists.
-- Improve progress and failure feedback for scans, filesystem changes, and local operations.
+- [x] Improve progress and failure feedback for scans, filesystem changes, and local operations.
 
 ## Milestone 3: Desktop Playback Integration
 
