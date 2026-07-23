@@ -118,6 +118,19 @@ body:fullscreen,
   animation: toast-exit 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
 
+@keyframes library-progress {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(410%);
+  }
+}
+
+.library-progress {
+  animation: library-progress 1.35s ease-in-out infinite;
+}
+
 .playback-feedback--rewind {
   left: calc(25% - 48px);
   top: calc(50% - 48px);
@@ -134,7 +147,8 @@ body:fullscreen,
   }
 
   .toast-enter,
-  .toast-exit {
+  .toast-exit,
+  .library-progress {
     animation-duration: 1ms;
   }
 }

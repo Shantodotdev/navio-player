@@ -40,6 +40,8 @@ describe("library activity state", () => {
       playlists: [],
       isInitialized: false,
       isLoading: false,
+      activeScan: null,
+      removingFolders: [],
     });
   });
 
@@ -60,6 +62,31 @@ describe("library activity state", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
+  it("reports the selected folder while its scan is running", async () => {
+    const scan = createDeferred<{
+      scanned_directories: string[];
+      tracks: Track[];
+      activity: Record<string, MediaActivity>;
+    }>();
+    openMock.mockResolvedValue("C:\\Media");
+    invokeMock.mockReturnValue(scan.promise);
+
+    const result = useLibraryStore.getState().addFolder();
+    await vi.waitFor(() => {
+      expect(useLibraryStore.getState().activeScan).toEqual({
+        folder: "C:\\Media",
+      });
+    });
+
+    scan.resolve({
+      scanned_directories: ["C:\\Media"],
+      tracks: [],
+      activity: {},
+    });
+    await result;
+    expect(useLibraryStore.getState().activeScan).toBeNull();
+  });
+
   it("rejects a failed folder removal without changing the catalog", async () => {
     useLibraryStore.setState({ scannedDirs: ["C:\\Media"] });
     invokeMock.mockRejectedValue(new Error("Could not save library."));
@@ -68,6 +95,23 @@ describe("library activity state", () => {
       useLibraryStore.getState().deleteFolder("C:\\Media"),
     ).rejects.toThrow("Could not save library.");
     expect(useLibraryStore.getState().scannedDirs).toEqual(["C:\\Media"]);
+  });
+
+  it("reports a folder as pending until its removal finishes", async () => {
+    const removal = createDeferred<void>();
+    useLibraryStore.setState({ scannedDirs: ["C:\\Media"] });
+    invokeMock.mockReturnValue(removal.promise);
+
+    const result = useLibraryStore.getState().deleteFolder("C:\\Media");
+    await vi.waitFor(() => {
+      expect(useLibraryStore.getState().removingFolders).toEqual([
+        "C:\\Media",
+      ]);
+    });
+
+    removal.resolve();
+    await result;
+    expect(useLibraryStore.getState().removingFolders).toEqual([]);
   });
 
   it("merges a returned activity entry without replacing other records", () => {
@@ -163,4 +207,15 @@ function createTrack(id: string): Track {
     duration_secs: 120,
     media_type: "audio",
   };
+}
+
+/** Creates a controllable promise for observing state during asynchronous work. */
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }

@@ -13,6 +13,7 @@ import {
   X,
   Grid2X2,
   List,
+  LoaderCircle,
 } from "lucide-react";
 import { buildStreamUrl } from "../lib/theaterMedia";
 import { getTrackDisplayName } from "../lib/mediaLabels";
@@ -25,6 +26,7 @@ import {
   sortLibraryTracks,
   type LibrarySortMode,
 } from "../lib/librarySorting";
+import { LibraryOperationFeedback } from "../components/LibraryOperationFeedback";
 
 export const Route = createFileRoute("/library")({
   component: LibraryView,
@@ -33,8 +35,15 @@ export const Route = createFileRoute("/library")({
 /** Renders the searchable local media catalog and its list/grid presentations. */
 function LibraryView() {
   const { playTrack, streamPort, streamToken } = usePlayerStore();
-  const { tracks, scannedDirs, activity, addFolder, deleteFolder } =
-    useLibrary();
+  const {
+    tracks,
+    scannedDirs,
+    activity,
+    activeScan,
+    removingFolders,
+    addFolder,
+    deleteFolder,
+  } = useLibrary();
   const {
     settings,
     isLoaded: settingsLoaded,
@@ -116,14 +125,24 @@ function LibraryView() {
 
         <div className="flex gap-3 shrink-0">
           <button
+            id="add-library-folder"
+            type="button"
             onClick={() => void handleAddFolder()}
-            className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer"
+            disabled={activeScan !== null}
+            aria-busy={activeScan !== null}
+            className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:cursor-wait disabled:opacity-65"
           >
-            <FolderPlus size={15} />
-            <span>Add folder</span>
+            {activeScan ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : (
+              <FolderPlus size={15} />
+            )}
+            <span>{activeScan ? "Working…" : "Add folder"}</span>
           </button>
         </div>
       </div>
+
+      <LibraryOperationFeedback activeScan={activeScan} />
 
       {scannedDirs.length === 0 ? (
         // Large Elegant Empty State Panel
@@ -150,38 +169,54 @@ function LibraryView() {
               Scanned directories
             </h2>
             <div className="flex flex-wrap gap-2">
-              {scannedDirs.map((dir) => (
-                <div
-                  key={dir}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedDirectory(dir)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedDirectory(dir);
-                    }
-                  }}
-                  className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group cursor-pointer transition-colors max-w-full min-w-0 ${
-                    selectedDirectory === dir
-                      ? "bg-brand/20 border-brand/50 text-zinc-200"
-                      : "bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200"
-                  }`}
-                >
-                  <span className="truncate flex-1 min-w-0">{dir}</span>
-                  <button
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      if (selectedDirectory === dir) setSelectedDirectory(null);
-                      void handleDeleteFolder(dir);
+              {scannedDirs.map((dir) => {
+                const isRemoving = removingFolders.includes(dir);
+                return (
+                  <div
+                    key={dir}
+                    role="button"
+                    tabIndex={0}
+                    aria-busy={isRemoving}
+                    onClick={() => {
+                      if (!isRemoving) setSelectedDirectory(dir);
                     }}
-                    className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0"
-                    aria-label={`Remove ${dir} from library`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        if (!isRemoving) setSelectedDirectory(dir);
+                      }
+                    }}
+                    className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group transition-colors max-w-full min-w-0 ${
+                      isRemoving ? "cursor-wait opacity-60" : "cursor-pointer"
+                    } ${
+                      selectedDirectory === dir
+                        ? "bg-brand/20 border-brand/50 text-zinc-200"
+                        : "bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200"
+                    }`}
                   >
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
+                    <span className="truncate flex-1 min-w-0">{dir}</span>
+                    <button
+                      type="button"
+                      disabled={isRemoving}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        if (selectedDirectory === dir) {
+                          setSelectedDirectory(null);
+                        }
+                        void handleDeleteFolder(dir);
+                      }}
+                      className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0 disabled:cursor-wait"
+                      aria-label={`Remove ${dir} from library`}
+                    >
+                      {isRemoving ? (
+                        <LoaderCircle size={13} className="animate-spin" />
+                      ) : (
+                        <Trash2 size={13} />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

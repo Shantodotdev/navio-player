@@ -22,6 +22,11 @@ interface PlaylistsDatabase {
   playlists: Playlist[];
 }
 
+export interface LibraryScanOperation {
+  /** Null while the native folder picker is open, then the selected path. */
+  folder: string | null;
+}
+
 /**
  * Interface representing the state and actions of our local media library catalog.
  * This state is shared globally across the frontend.
@@ -39,6 +44,10 @@ interface LibraryState {
   isInitialized: boolean;
   /** True when a background I/O database operation (saving or directory scanning) is active. */
   isLoading: boolean;
+  /** The user-triggered folder selection or scan currently in progress. */
+  activeScan: LibraryScanOperation | null;
+  /** Folder paths whose removal is awaiting durable persistence. */
+  removingFolders: string[];
 
   /**
    * Loads configured folders from disk and derives current tracks from the filesystem.
@@ -88,6 +97,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activity: {},
   isInitialized: false,
   isLoading: false,
+  activeScan: null,
+  removingFolders: [],
 
   fetchLibrary: async (force = false) => {
     // Prevent redundant load calls unless force parameter is set to true
@@ -119,6 +130,8 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   addFolder: async () => {
+    if (get().activeScan) return null;
+    set({ activeScan: { folder: null } });
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { invoke } = await import("@tauri-apps/api/core");
@@ -134,7 +147,7 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
         // Resolve target folder path (supports array fallbacks if dialog returns lists)
         const folderPath = Array.isArray(selected) ? selected[0] : selected;
         if (folderPath) {
-          set({ isLoading: true });
+          set({ isLoading: true, activeScan: { folder: folderPath } });
 
           // Invoke the heavy I/O lofty recursive scanner in Rust
           const db = await invoke<LibraryView>("scan_folder", {
@@ -153,29 +166,42 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
       return null;
     } finally {
-      set({ isLoading: false });
+      set({ isLoading: false, activeScan: null });
     }
   },
 
   deleteFolder: async (folder) => {
-    const { invoke } = await import("@tauri-apps/api/core");
+    if (get().removingFolders.includes(folder)) return;
+    set((state) => ({
+      removingFolders: [...state.removingFolders, folder],
+    }));
 
-    const { scannedDirs } = get();
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
 
-    // Filter out the selected folder and all tracks residing within its path
-    const updatedDirs = scannedDirs.filter((d) => d !== folder);
-    const db: LibraryDatabase = { scanned_directories: updatedDirs };
+      const { scannedDirs } = get();
 
-    // Persist the changes to disk
-    await invoke("save_library", { db });
+      // Filter out the selected folder and all tracks residing within its path
+      const updatedDirs = scannedDirs.filter((d) => d !== folder);
+      const db: LibraryDatabase = { scanned_directories: updatedDirs };
 
-    // Update memory store state
-    set({
-      scannedDirs: updatedDirs,
-      tracks: get().tracks.filter(
-        (track) => !isPathWithinDirectory(track.path, folder),
-      ),
-    });
+      // Persist the changes to disk
+      await invoke("save_library", { db });
+
+      // Update memory store state
+      set({
+        scannedDirs: updatedDirs,
+        tracks: get().tracks.filter(
+          (track) => !isPathWithinDirectory(track.path, folder),
+        ),
+      });
+    } finally {
+      set((state) => ({
+        removingFolders: state.removingFolders.filter(
+          (pendingFolder) => pendingFolder !== folder,
+        ),
+      }));
+    }
   },
 
   createPlaylist: async (name) => {

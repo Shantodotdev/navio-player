@@ -1,7 +1,6 @@
 import { useRouterState } from "@tanstack/react-router";
 import { Keyboard, X } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useLibraryStore } from "../store/libraryStore";
 import { usePlayerStore } from "../store/playerStore";
 
 const SHORTCUTS = [
@@ -100,7 +99,7 @@ export function KeyboardShortcuts() {
       ) {
         event.preventDefault();
         event.stopImmediatePropagation();
-        void useLibraryStore.getState().addFolder();
+        document.getElementById("add-library-folder")?.click();
         return;
       }
 
