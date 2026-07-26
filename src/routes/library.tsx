@@ -26,7 +26,6 @@ import {
   sortLibraryTracks,
   type LibrarySortMode,
 } from "../lib/librarySorting";
-import { LibraryOperationFeedback } from "../components/LibraryOperationFeedback";
 
 export const Route = createFileRoute("/library")({
   component: LibraryView,
@@ -137,12 +136,10 @@ function LibraryView() {
             ) : (
               <FolderPlus size={15} />
             )}
-            <span>{activeScan ? "Working…" : "Add folder"}</span>
+            <span>{activeScan ? "Scanning" : "Add folder"}</span>
           </button>
         </div>
       </div>
-
-      <LibraryOperationFeedback activeScan={activeScan} />
 
       {scannedDirs.length === 0 ? (
         // Large Elegant Empty State Panel
