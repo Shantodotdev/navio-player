@@ -26,6 +26,47 @@ describe("Navio settings defaults", () => {
     expect(DEFAULT_SETTINGS.library.viewMode).toBe("list");
     expect(DEFAULT_SETTINGS.library.showThumbnails).toBe(true);
     expect(DEFAULT_SETTINGS.library.showFileExtensions).toBe(false);
+    expect(DEFAULT_SETTINGS.library.excludedFolderNames).toContain(
+      "node_modules",
+    );
+  });
+
+  it("loads and persists configured library exclusions", async () => {
+    invokeMock.mockResolvedValue({
+      version: 1,
+      playback: {
+        volume: 80,
+        play_video_in_sidebar: false,
+        default_audio_language: null,
+        default_subtitle_language: null,
+        subtitles_enabled: false,
+      },
+      library: {
+        show_thumbnails: true,
+        view_mode: "list",
+        show_file_extensions: false,
+        excluded_folder_names: [".git", "generated"],
+      },
+      downloads: { folder: null },
+      interface: { now_playing_drawer_width: 640 },
+      updates: { automatic: true },
+    });
+
+    await useSettingsStore.getState().loadSettings();
+    expect(
+      useSettingsStore.getState().settings.library.excludedFolderNames,
+    ).toEqual([".git", "generated"]);
+
+    await useSettingsStore.getState().updateSettings({
+      library: { excludedFolderNames: [".git", "cache"] },
+    });
+    expect(invokeMock).toHaveBeenLastCalledWith("save_settings", {
+      settings: expect.objectContaining({
+        library: expect.objectContaining({
+          excluded_folder_names: [".git", "cache"],
+        }),
+      }),
+    });
   });
 
   it("restores the prior settings when persistence fails", async () => {

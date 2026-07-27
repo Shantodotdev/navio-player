@@ -4,6 +4,23 @@ import { toast } from "./toastStore";
 
 export type LibraryViewMode = "list" | "grid";
 
+export const DEFAULT_LIBRARY_EXCLUSIONS = [
+  ".git",
+  ".hg",
+  ".svn",
+  "node_modules",
+  "target",
+  "dist",
+  "build",
+  ".next",
+  ".nuxt",
+  ".cache",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "vendor",
+] as const;
+
 export interface NavioSettings {
   version: number;
   playback: {
@@ -17,6 +34,7 @@ export interface NavioSettings {
     showThumbnails: boolean;
     viewMode: LibraryViewMode;
     showFileExtensions: boolean;
+    excludedFolderNames: string[];
   };
   downloads: { folder: string | null };
   interface: { nowPlayingDrawerWidth: number };
@@ -36,6 +54,7 @@ export const DEFAULT_SETTINGS: NavioSettings = {
     showThumbnails: true,
     viewMode: "list",
     showFileExtensions: false,
+    excludedFolderNames: [...DEFAULT_LIBRARY_EXCLUSIONS],
   },
   downloads: { folder: null },
   interface: { nowPlayingDrawerWidth: 640 },
@@ -97,6 +116,9 @@ function fromBackend(value: BackendSettings): NavioSettings {
       showThumbnails: value.library.show_thumbnails,
       viewMode: value.library.view_mode === "grid" ? "grid" : "list",
       showFileExtensions: value.library.show_file_extensions,
+      excludedFolderNames:
+        value.library.excluded_folder_names ??
+        [...DEFAULT_LIBRARY_EXCLUSIONS],
     },
     downloads: { folder: value.downloads.folder },
     interface: {
@@ -121,6 +143,7 @@ function toBackend(value: NavioSettings): BackendSettings {
       show_thumbnails: value.library.showThumbnails,
       view_mode: value.library.viewMode,
       show_file_extensions: value.library.showFileExtensions,
+      excluded_folder_names: value.library.excludedFolderNames,
     },
     downloads: { folder: value.downloads.folder },
     interface: {
@@ -143,6 +166,7 @@ interface BackendSettings {
     show_thumbnails: boolean;
     view_mode: string;
     show_file_extensions: boolean;
+    excluded_folder_names?: string[];
   };
   downloads: { folder: string | null };
   interface: { now_playing_drawer_width: number };
