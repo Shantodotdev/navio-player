@@ -8,13 +8,13 @@ Navio remains a local-first, video-friendly media player. Library improvements s
 
 Make Navio remember how the local library is used and surface useful automatic collections.
 
-- Track when media is added to the library.
-- Track when media is played and maintain a bounded recent-play history.
-- Surface true Recently Added and Recently Played collections.
-- Surface resumable videos as Continue Watching.
-- Add automatic smart playlists derived from local activity and existing file data.
-- Keep generated collections separate from user-created playlists.
-- Preserve all activity locally without accounts or network services.
+- [x] Track when media is added to the library.
+- [x] Track when media is played and maintain a bounded recent-play history.
+- [x] Surface true Recently Added and Recently Played collections.
+- [x] Surface resumable videos as Continue Watching.
+- [x] Add automatic smart playlists derived from local activity and existing file data.
+- [x] Keep generated collections separate from user-created playlists.
+- [x] Preserve all activity locally without accounts or network services.
 
 ## Milestone 2: Core Library and Queue UX
 
