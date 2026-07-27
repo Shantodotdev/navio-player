@@ -1,7 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Info,
+  LoaderCircle,
+  RefreshCw,
   Settings as SettingsIcon,
   ShieldAlert,
   Volume2,
@@ -16,6 +18,8 @@ import {
 } from "../store/settingsStore";
 import { toast } from "../store/toastStore";
 import { getErrorMessage } from "../lib/errorMessage";
+import { useLibraryStore } from "../store/libraryStore";
+import { parseLibraryExclusions } from "../lib/libraryExclusions";
 
 export const Route = createFileRoute("/settings")({ component: SettingsView });
 
@@ -28,6 +32,8 @@ function SettingsView() {
     clearDownloadHistory,
     resetDatabases,
   } = useSettingsStore();
+  const { scanJobs, rebuildLibraryIndex } = useLibraryStore();
+  const hasActiveScans = Object.keys(scanJobs).length > 0;
   const [activeAction, setActiveAction] = useState<
     "clear-history" | "full-reset" | null
   >(null);
@@ -100,6 +106,21 @@ function SettingsView() {
   function openAction(action: "clear-history" | "full-reset") {
     setActionError("");
     setActiveAction(action);
+  }
+
+  /** Rebuilds the persistent catalog after exclusion or filesystem changes. */
+  async function handleReindex() {
+    try {
+      await rebuildLibraryIndex();
+    } catch (error) {
+      toast.error("Could not reindex library", {
+        description: getErrorMessage(
+          error,
+          "Navio could not rebuild the media index.",
+        ),
+        dedupeKey: "library-reindex",
+      });
+    }
   }
 
   if (!isLoaded) return <div className="text-zinc-400">Loading settings…</div>;
@@ -192,6 +213,25 @@ function SettingsView() {
               />
             </div>
           </div>
+          <ExcludedFoldersField
+            value={settings.library.excludedFolderNames}
+            onSave={(excludedFolderNames) =>
+              savePreference({ library: { excludedFolderNames } })
+            }
+          />
+          <button
+            type="button"
+            onClick={() => void handleReindex()}
+            disabled={hasActiveScans}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-brand/30 bg-brand/10 px-3.5 py-2 text-sm font-medium text-brand-light transition-colors hover:border-brand/50 hover:bg-brand/20 disabled:cursor-wait disabled:opacity-50"
+          >
+            {hasActiveScans ? (
+              <LoaderCircle size={15} className="animate-spin" />
+            ) : (
+              <RefreshCw size={15} />
+            )}
+            {hasActiveScans ? "Scanning" : "Reindex library"}
+          </button>
         </section>
 
         <section className="bg-panel-bg/30 backdrop-blur-md rounded-2xl border border-white/5 p-6 space-y-4">
@@ -285,6 +325,45 @@ function SettingsView() {
         onClose={() => setActiveAction(null)}
       />
     </div>
+  );
+}
+
+/** Edits ignored directory names without persisting every keystroke. */
+function ExcludedFoldersField({
+  value,
+  onSave,
+}: {
+  value: string[];
+  onSave: (value: string[]) => void;
+}) {
+  const [draft, setDraft] = useState(value.join(", "));
+
+  useEffect(() => {
+    setDraft(value.join(", "));
+  }, [value]);
+
+  /** Normalizes and persists the draft when editing finishes. */
+  function saveDraft() {
+    const parsed = parseLibraryExclusions(draft);
+    setDraft(parsed.join(", "));
+    if (parsed.join("\0") !== value.join("\0")) onSave(parsed);
+  }
+
+  return (
+    <label className="block space-y-2 py-2">
+      <span className="block text-zinc-200">Ignored folder names</span>
+      <span className="block text-sm text-zinc-500">
+        Comma-separated names skipped anywhere below a library folder.
+      </span>
+      <textarea
+        rows={3}
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={saveDraft}
+        spellCheck={false}
+        className="w-full resize-none rounded-lg border border-white/10 bg-black/20 px-3 py-2 text-sm text-zinc-300 outline-none transition-colors focus:border-brand/50 focus:ring-2 focus:ring-brand/20"
+      />
+    </label>
   );
 }
 
