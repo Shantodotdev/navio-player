@@ -5,7 +5,7 @@
 ## Key Features
 
 - 🎬 **Universal Playback**: A premium, custom-styled media player for both audio tracks and video streams.
-- 📂 **Local Library Scanning**: Automatically scans your folders for music and videos, extracting metadata and organizing them into a unified catalog.
+- 📂 **Incremental Local Library**: Concurrently indexes selected folders into a rebuildable local cache, skips common development folders, and updates only changed filesystem paths.
 - 📋 **Custom Playlists**: Create and manage custom, user-defined local playlists stored securely on your desktop.
 - 📥 **Universal Media Downloader**: Inspects and downloads public videos, audio tracks, and collections supported by Navio's managed `yt-dlp`, with quality, format, subtitle, and collection-range controls.
 - 🤖 **Local AI Agent Control**: A packaged STDIO MCP server lets compatible coding agents inspect and control playback, search the local library, manage the queue, and download explicit media URLs without leaving the agent.
@@ -29,9 +29,9 @@ Navio Player operates via two cooperative layers:
 │  - Manage downloads       │  - Full Range-seek support  │
 ├───────────────────────────┴─────────────────────────────┤
 │                   Rust Backend (Tauri)                  │
-│  - Directory Scanner & Lofty Tag Extractor              │
+│  - Incremental Indexer & Lofty Tag Extractor             │
 │  - Dynamic yt-dlp downloader manager                    │
-│  - AppData navio-player/library.json database           │
+│  - Local JSON configuration + SQLite media index        │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -48,7 +48,7 @@ The frontend runs as a static Single Page Application (SPA) inside the Tauri Web
 The Rust backend performs security-checked file actions and system access.
 
 - **Local HTTP Stream Server**: Running on a dynamic localhost port (via `axum`), it streams local files securely with full HTTP Range request support to allow smooth seeking and scrubbing on both audio and video files.
-- **JSON Local Database**: Scanned folder configuration is stored at `$APPDATA/navio-player/library.json`; the current media list is derived from those folders at startup and on filesystem changes. Independent playlists are stored in `$APPDATA/navio-player/playlists.json`.
+- **Persistent Local Library Index**: Scanned-folder configuration stays in `$APPDATA/navio-player/library.json`, while rebuildable media metadata is cached in a local SQLite index. Different roots can reconcile concurrently with progress and cancellation shown per directory; unchanged files reuse cached metadata, common generated folders are ignored, and filesystem watcher batches update only affected paths. Independent playlists remain in `$APPDATA/navio-player/playlists.json`.
 - **Verified yt-dlp sidecar**: Instead of bundling `yt-dlp` statically, Rust installs a pinned, checksum-verified release into `$APPDATA/navio-player/bin/` on demand. Navio updates the pinned version through application releases so an unverified executable cannot silently replace it.
 - **Private MCP bridge**: The same packaged executable runs as a STDIO MCP server with `--mcp`. It discovers or starts the desktop app and communicates through a per-run authenticated loopback channel. Local searches never fall back to the internet, and online downloads require a URL explicitly supplied by the user.
 
