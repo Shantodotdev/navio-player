@@ -40,6 +40,20 @@ mod tests {
   }
 
   #[tokio::test]
+  async fn reading_a_placeholder_snapshot_does_not_initialize_the_catalog() {
+    let (activity_path, theater_path) = test_paths("placeholder");
+    let store = ActivityStore::for_paths(activity_path, theater_path).expect("create store");
+
+    assert!(store.snapshot().await.is_empty());
+    let snapshot = store
+      .reconcile_at(&[media("existing")], 1_000)
+      .await
+      .expect("reconcile first populated catalog");
+
+    assert_eq!(snapshot["existing"].added_at_ms, None);
+  }
+
+  #[tokio::test]
   async fn later_discovery_receives_the_discovery_timestamp() {
     let (activity_path, theater_path) = test_paths("discovery");
     let store = ActivityStore::for_paths(activity_path, theater_path).expect("create store");

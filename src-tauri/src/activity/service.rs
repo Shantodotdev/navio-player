@@ -49,6 +49,11 @@ impl ActivityStore {
     self.reconcile_at(media, now_ms()).await
   }
 
+  /// Returns current activity without treating an incomplete catalog as initialized.
+  pub async fn snapshot(&self) -> HashMap<String, ActivityEntry> {
+    self.database.lock().await.entries.clone()
+  }
+
   /// Reconciles current media with an explicit timestamp for deterministic tests.
   pub async fn reconcile_at(
     &self,
