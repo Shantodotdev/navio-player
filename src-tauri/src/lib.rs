@@ -48,6 +48,10 @@ pub struct AppState {
   pub download_manager: downloader::DownloadManager,
   /// Versioned local playback activity and smart-playlist source data.
   pub activity_store: activity::ActivityStore,
+  /// Exclusive cancellable coordinator for foreground and background library scans.
+  pub library_scan: library::ScanCoordinator,
+  /// Serializes short reload/merge/save operations on the folder configuration.
+  pub library_config_lock: tokio::sync::Mutex<()>,
   /// Set of directories allowed for file streaming.
   /// Scanned folders are added here to authorize file accesses.
   pub allowed_directories: Arc<Mutex<HashSet<PathBuf>>>,

@@ -58,6 +58,8 @@ pub fn run() {
       let app_state = AppState {
         download_manager,
         activity_store,
+        library_scan: library::ScanCoordinator::default(),
+        library_config_lock: tokio::sync::Mutex::new(()),
         allowed_directories: allowed_directories.clone(),
         stream_port: port,
         stream_token: stream_token.clone(),
@@ -107,9 +109,11 @@ pub fn run() {
       }
 
       // Initialize and start the background filesystem event watcher
-      let watcher = watcher::start_watcher(app_handle).expect("Failed to start directory watcher");
+      let watcher =
+        watcher::start_watcher(app_handle.clone()).expect("Failed to start directory watcher");
       *state.watcher.lock().unwrap() = Some(watcher);
       println!("[Navio Watcher] Watcher started");
+      commands::start_background_library_reconcile(app_handle);
 
       Ok(())
     })
@@ -130,6 +134,9 @@ pub fn run() {
       commands::set_theater_fullscreen,
       commands::toggle_theater_fullscreen,
       commands::get_library,
+      commands::get_library_scan_status,
+      commands::cancel_library_scan,
+      commands::rebuild_library_index,
       commands::wait_for_mcp_command,
       commands::complete_mcp_command,
       commands::inspect_authorized_media_file,

@@ -62,6 +62,9 @@ pub async fn reset_databases(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<(), String> {
+  if state.library_scan.has_active_jobs() {
+    return Err("Cancel active library scans before resetting Navio.".to_string());
+  }
   state.download_manager.clear_history()?;
   settings::reset_databases(&app_handle)?;
   state.activity_store.reset().await?;
@@ -275,7 +278,14 @@ async fn join_library_activity(
     .iter()
     .map(activity_media_from_track)
     .collect::<Vec<_>>();
-  let activity = state.activity_store.reconcile(&media).await?;
+  // A configured library can briefly have an empty cache during first index
+  // migration. Do not mark that placeholder as the user's initial catalog or
+  // every existing file would later appear as newly added.
+  let activity = if view.tracks.is_empty() && !view.scanned_directories.is_empty() {
+    state.activity_store.snapshot().await
+  } else {
+    state.activity_store.reconcile(&media).await?
+  };
   Ok(LibraryResponse {
     scanned_directories: view.scanned_directories,
     tracks: view.tracks,
@@ -283,26 +293,235 @@ async fn join_library_activity(
   })
 }
 
-/// Retrieves a live media view assembled from the currently configured folders.
+/// Builds a renderer view entirely from the persistent index.
+fn cached_library_view(
+  db: &library::LibraryDb,
+  index: &library::LibraryIndex,
+) -> Result<library::LibraryView, String> {
+  Ok(library::LibraryView {
+    scanned_directories: db.scanned_directories.clone(),
+    tracks: index.load_all()?,
+  })
+}
+
+/// Adds one normalized configured root unless its canonical identity already exists.
+fn add_directory_if_missing(db: &mut library::LibraryDb, directory: &std::path::Path) -> bool {
+  let key = library::path_key(directory);
+  if db
+    .scanned_directories
+    .iter()
+    .map(PathBuf::from)
+    .any(|configured| library::path_key(&configured) == key)
+  {
+    return false;
+  }
+  db.scanned_directories
+    .push(library::display_path(directory));
+  true
+}
+
+/// Runs one exclusive scan job without blocking the async command runtime.
+async fn run_index_scan(
+  app_handle: &tauri::AppHandle,
+  roots: Vec<PathBuf>,
+) -> Result<bool, String> {
+  if roots.is_empty() {
+    return Ok(true);
+  }
+  let state = app_handle.state::<AppState>();
+  let coordinator = state.library_scan.clone();
+  let exclusions = settings::load_db(app_handle)?.library.excluded_folder_names;
+  let label = if roots.len() == 1 {
+    library::display_path(&roots[0])
+  } else {
+    "Library".to_string()
+  };
+  let job = coordinator.begin(label)?;
+  if let Some(progress) = coordinator
+    .statuses()
+    .into_iter()
+    .find(|progress| progress.job_id == job.id())
+  {
+    app_handle
+      .emit("library-scan-progress", progress)
+      .map_err(|error| error.to_string())?;
+  }
+
+  let scan_app = app_handle.clone();
+  let scan_coordinator = coordinator.clone();
+  let scan_job = job.clone();
+  let result = tokio::task::spawn_blocking(move || {
+    library::run_scan_roots(&scan_app, &scan_coordinator, &scan_job, &roots, &exclusions)
+  })
+  .await
+  .map_err(|error| format!("Library scan task failed: {error}"));
+
+  match result {
+    Ok(Ok(outcome)) => {
+      let cancelled = outcome.cancelled;
+      library::finish_scan(
+        app_handle,
+        &coordinator,
+        &job,
+        if cancelled {
+          library::LibraryScanPhase::Cancelled
+        } else {
+          library::LibraryScanPhase::Completed
+        },
+        None,
+      );
+      Ok(!cancelled)
+    }
+    Ok(Err(error)) => {
+      library::finish_scan(
+        app_handle,
+        &coordinator,
+        &job,
+        library::LibraryScanPhase::Failed,
+        Some(error.clone()),
+      );
+      Err(error)
+    }
+    Err(error) => {
+      library::finish_scan(
+        app_handle,
+        &coordinator,
+        &job,
+        library::LibraryScanPhase::Failed,
+        Some(error.clone()),
+      );
+      Err(error)
+    }
+  }
+}
+
+/// Runs independent root jobs concurrently while Rayon's global pool bounds probing.
+async fn run_index_scans(
+  app_handle: &tauri::AppHandle,
+  roots: Vec<PathBuf>,
+) -> Result<bool, String> {
+  let mut jobs = tokio::task::JoinSet::new();
+  for root in roots {
+    let scan_app = app_handle.clone();
+    jobs.spawn(async move { run_index_scan(&scan_app, vec![root]).await });
+  }
+
+  let mut all_completed = true;
+  let mut first_error = None;
+  while let Some(result) = jobs.join_next().await {
+    match result {
+      Ok(Ok(completed)) => all_completed &= completed,
+      Ok(Err(error)) => {
+        if first_error.is_none() {
+          first_error = Some(error);
+        }
+      }
+      Err(error) => {
+        if first_error.is_none() {
+          first_error = Some(format!("Library scan task failed: {error}"));
+        }
+      }
+    }
+  }
+  first_error.map_or(Ok(all_completed), Err)
+}
+
+/// Starts a non-blocking startup reconciliation using the current cached index.
+pub fn start_background_library_reconcile(app_handle: tauri::AppHandle) {
+  tauri::async_runtime::spawn(async move {
+    let roots = match library::load_db(&app_handle) {
+      Ok(db) => db
+        .scanned_directories
+        .into_iter()
+        .map(PathBuf::from)
+        .filter(|path| path.is_dir())
+        .collect::<Vec<_>>(),
+      Err(error) => {
+        log::error!("Could not load folders for startup reconciliation: {error}");
+        return;
+      }
+    };
+    if roots.is_empty() {
+      return;
+    }
+    match run_index_scans(&app_handle, roots).await {
+      Ok(_) => {
+        if let Err(error) = app_handle.emit("library-updated", ()) {
+          log::error!("Could not publish reconciled library: {error}");
+        }
+      }
+      Err(error) => log::error!("Background library reconciliation failed: {error}"),
+    }
+  });
+}
+
+/// Retrieves the cached media view without recursively scanning configured folders.
 #[tauri::command]
 pub async fn get_library(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
 ) -> Result<LibraryResponse, String> {
   let db = library::load_db(&app_handle)?;
-  let cache_dir = app_handle
-    .path()
-    .app_cache_dir()
-    .map_err(|e| e.to_string())?;
-  let view = tokio::task::spawn_blocking(move || library::build_library_view(&db, &cache_dir))
-    .await
-    .map_err(|e| e.to_string())?;
+  let index = library::LibraryIndex::open_for_app(&app_handle)?;
+  let view = cached_library_view(&db, &index)?;
   println!(
-    "[Navio Command] get_library | tracks={} scanned_dirs={}",
+    "[Navio Command] get_library cached | tracks={} scanned_dirs={}",
     view.tracks.len(),
     view.scanned_directories.len()
   );
   join_library_activity(&state, view).await
+}
+
+/// Returns the active scan snapshot so a newly mounted renderer can reconcile state.
+#[tauri::command]
+pub fn get_library_scan_status(
+  state: tauri::State<'_, AppState>,
+) -> Vec<library::LibraryScanProgress> {
+  state.library_scan.statuses()
+}
+
+/// Cooperatively cancels one folder or background reconciliation scan.
+#[tauri::command]
+pub fn cancel_library_scan(
+  job_id: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<bool, String> {
+  let cancelled = state.library_scan.cancel(&job_id);
+  if cancelled {
+    if let Some(progress) = state
+      .library_scan
+      .statuses()
+      .into_iter()
+      .find(|progress| progress.job_id == job_id)
+    {
+      app_handle
+        .emit("library-scan-progress", progress)
+        .map_err(|error| error.to_string())?;
+    }
+  }
+  Ok(cancelled)
+}
+
+/// Reconciles every configured root using the current exclusion settings.
+#[tauri::command]
+pub async fn rebuild_library_index(
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<LibraryResponse, String> {
+  let db = library::load_db(&app_handle)?;
+  let roots = db
+    .scanned_directories
+    .iter()
+    .map(PathBuf::from)
+    .filter(|path| path.is_dir())
+    .collect::<Vec<_>>();
+  run_index_scans(&app_handle, roots).await?;
+  app_handle
+    .emit("library-updated", ())
+    .map_err(|error| error.to_string())?;
+  let index = library::LibraryIndex::open_for_app(&app_handle)?;
+  join_library_activity(&state, cached_library_view(&db, &index)?).await
 }
 
 /// Records one validated meaningful-playback milestone and returns its new activity state.
@@ -483,25 +702,50 @@ pub fn save_playlists(
 
 /// Tauri command to save the user's scanned-folder configuration.
 #[tauri::command]
-pub fn save_library(
+pub async fn save_library(
   app_handle: tauri::AppHandle,
   state: tauri::State<'_, AppState>,
-  db: library::LibraryDb,
+  mut db: library::LibraryDb,
 ) -> Result<(), String> {
+  let _configuration_guard = state.library_config_lock.lock().await;
+  db.normalize_directories();
   println!(
     "[Navio Command] save_library | scanned_dirs={}",
     db.scanned_directories.len()
   );
 
   // Dynamically unwatch directories that were removed from the catalog
-  if let Ok(old_db) = library::load_db(&app_handle) {
-    let old_dirs: HashSet<String> = old_db.scanned_directories.into_iter().collect();
-    let new_dirs: HashSet<String> = db.scanned_directories.iter().cloned().collect();
+  let old_db = library::load_db(&app_handle).unwrap_or_default();
+  let old_dirs = old_db
+    .scanned_directories
+    .iter()
+    .map(|directory| {
+      (
+        library::path_key(&PathBuf::from(directory)),
+        directory.clone(),
+      )
+    })
+    .collect::<std::collections::HashMap<_, _>>();
+  let new_dir_keys = db
+    .scanned_directories
+    .iter()
+    .map(|directory| library::path_key(&PathBuf::from(directory)))
+    .collect::<HashSet<_>>();
+  for progress in state.library_scan.statuses() {
+    let root_key = library::path_key(&PathBuf::from(&progress.root));
+    if old_dirs.contains_key(&root_key) && !new_dir_keys.contains(&root_key) {
+      state.library_scan.cancel(&progress.job_id);
+    }
+  }
 
+  {
     let mut watcher_opt = state.watcher.lock().unwrap();
     if let Some(ref mut watcher) = *watcher_opt {
       use notify::Watcher;
-      for dir in old_dirs.difference(&new_dirs) {
+      for (key, dir) in &old_dirs {
+        if new_dir_keys.contains(key) {
+          continue;
+        }
         let path = PathBuf::from(dir);
         let _ = watcher.unwatch(&path);
         println!(
@@ -513,6 +757,12 @@ pub fn save_library(
   }
 
   library::save_db(&app_handle, &db)?;
+  let mut index = library::LibraryIndex::open_for_app(&app_handle)?;
+  for key in old_dirs.keys() {
+    if !new_dir_keys.contains(key) {
+      index.remove_root(key)?;
+    }
+  }
   let playlist_directories = playlists::load_db(&app_handle)
     .ok()
     .map(|playlist_db| {
@@ -533,7 +783,7 @@ pub fn save_library(
         .scanned_directories
         .iter()
         .map(PathBuf::from)
-        .any(|configured| directory == &configured);
+        .any(|configured| library::path_key(directory) == library::path_key(&configured));
       let is_playlist_directory = playlist_directories.contains(directory);
       let is_app_cache = app_cache_dir
         .as_ref()
@@ -600,8 +850,7 @@ pub fn open_folder(app_handle: tauri::AppHandle) -> Result<(), String> {
   Ok(())
 }
 
-/// Tauri command to add a local directory and return the complete live library view.
-/// Runs the heavy I/O scan in a background thread pool to keep the UI fluid.
+/// Scans only one selected root and publishes it to the persistent index.
 #[tauri::command]
 pub async fn scan_folder(
   folder_path: String,
@@ -610,61 +859,55 @@ pub async fn scan_folder(
 ) -> Result<LibraryResponse, String> {
   println!("[Navio Command] scan_folder | folder={}", folder_path);
 
-  let path = PathBuf::from(&folder_path);
-  if !path.is_dir() {
-    return Err("Selected folder does not exist.".to_string());
-  }
-  let canonical_path = path
-    .canonicalize()
-    .map_err(|e| format!("Could not resolve selected folder: {}", e))?;
-
-  // Authorize this folder path in the streaming server's allowlist
+  let canonical_path =
+    library::normalize_existing_directory(PathBuf::from(&folder_path).as_path())?;
+  let db = {
+    // Reload while holding the short configuration lock so simultaneous
+    // selections merge instead of replacing one another's folder.
+    let _configuration_guard = state.library_config_lock.lock().await;
+    let mut db = library::load_db(&app_handle)?;
+    if !add_directory_if_missing(&mut db, &canonical_path) {
+      let index = library::LibraryIndex::open_for_app(&app_handle)?;
+      return join_library_activity(&state, cached_library_view(&db, &index)?).await;
+    }
+    library::save_db(&app_handle, &db)?;
+    db
+  };
+  state
+    .allowed_directories
+    .lock()
+    .unwrap()
+    .insert(canonical_path.clone());
   {
-    let mut allowed = state.allowed_directories.lock().unwrap();
-    allowed.insert(canonical_path.clone());
-    println!(
-      "[Navio Server] Allowed scanned directory for streaming: {:?}",
-      canonical_path
-    );
-  }
-
-  // Register path with directory watcher dynamically
-  {
-    let mut watcher_opt = state.watcher.lock().unwrap();
-    if let Some(ref mut watcher) = *watcher_opt {
+    let mut watcher = state.watcher.lock().unwrap();
+    if let Some(watcher) = watcher.as_mut() {
       use notify::Watcher;
-      let _ = watcher.watch(&canonical_path, notify::RecursiveMode::Recursive);
-      println!(
-        "[Navio Watcher] Watching scanned directory: {:?}",
-        canonical_path
-      );
+      watcher
+        .watch(&canonical_path, notify::RecursiveMode::Recursive)
+        .unwrap_or_else(|error| {
+          log::warn!("Could not watch selected folder before indexing: {error}");
+        });
     }
   }
+  // Publish the configured row immediately; metadata continues independently.
+  app_handle
+    .emit("library-updated", ())
+    .map_err(|error| error.to_string())?;
 
-  // Load the current database state
-  let mut db = library::load_db(&app_handle)?;
-
-  // Add the path to the scanned directories catalog if not already present
-  let canonical_path = canonical_path.to_string_lossy().to_string();
-  if !db.scanned_directories.contains(&canonical_path) {
-    db.scanned_directories.push(canonical_path);
+  if !run_index_scan(&app_handle, vec![canonical_path.clone()]).await? {
+    let index = library::LibraryIndex::open_for_app(&app_handle)?;
+    return join_library_activity(&state, cached_library_view(&db, &index)?).await;
   }
-
-  // Persist only folder configuration; media membership is always derived from disk.
-  library::save_db(&app_handle, &db)?;
-  let cache_dir = app_handle
-    .path()
-    .app_cache_dir()
-    .map_err(|e| e.to_string())?;
-  let view = tokio::task::spawn_blocking(move || library::build_library_view(&db, &cache_dir))
-    .await
-    .map_err(|e| e.to_string())?;
+  app_handle
+    .emit("library-updated", ())
+    .map_err(|error| error.to_string())?;
+  let index = library::LibraryIndex::open_for_app(&app_handle)?;
+  let view = cached_library_view(&db, &index)?;
   println!(
-    "[Navio Command] scan_folder returned live view | tracks={} scanned_dirs={}",
+    "[Navio Command] scan_folder indexed root | tracks={} scanned_dirs={}",
     view.tracks.len(),
     view.scanned_directories.len()
   );
-
   join_library_activity(&state, view).await
 }
 
@@ -704,6 +947,58 @@ mod mcp_control_tests {
     assert_eq!(activity.path, track.path);
     assert_eq!(activity.duration_secs, 600.0);
     assert_eq!(activity.media_type, "video");
+  }
+
+  #[test]
+  fn cached_library_view_does_not_require_live_filesystem_scanning() {
+    let root = test_directory("cached-view");
+    fs::create_dir_all(&root).expect("create cached-view fixture");
+    let index_path = root.join("index.sqlite3");
+    let mut index = library::LibraryIndex::open(&index_path).expect("open test index");
+    let media_path = root.join("missing-now.mp4");
+    let root_key = library::path_key(&root);
+    let indexed = library::IndexedMedia {
+      path_key: library::path_key(&media_path),
+      root_key: root_key.clone(),
+      modified_ns: 1,
+      item: library::MediaItem {
+        id: "cached".to_string(),
+        path: library::display_path(&media_path),
+        name: "missing-now.mp4".to_string(),
+        title: None,
+        duration_secs: 90.0,
+        file_size_bytes: 12,
+        media_type: "video".to_string(),
+        cover_cache_path: None,
+      },
+    };
+    index
+      .replace_root(&root_key, &[indexed])
+      .expect("seed cached index");
+    let db = library::LibraryDb {
+      scanned_directories: vec![library::display_path(&root)],
+    };
+
+    let view = cached_library_view(&db, &index).expect("build cached view");
+
+    assert_eq!(view.tracks.len(), 1);
+    assert_eq!(view.tracks[0].id, "cached");
+    drop(index);
+    fs::remove_dir_all(root).expect("remove cached-view fixture");
+  }
+
+  #[test]
+  fn adding_a_canonical_duplicate_does_not_create_another_root() {
+    let root = test_directory("duplicate-root");
+    fs::create_dir_all(&root).expect("create duplicate-root fixture");
+    let canonical = root.canonicalize().expect("canonicalize duplicate root");
+    let mut db = library::LibraryDb {
+      scanned_directories: vec![library::display_path(&root)],
+    };
+
+    assert!(!add_directory_if_missing(&mut db, &canonical));
+    assert_eq!(db.scanned_directories.len(), 1);
+    fs::remove_dir_all(root).expect("remove duplicate-root fixture");
   }
 
   #[test]
