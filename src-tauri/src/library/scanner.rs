@@ -4,64 +4,17 @@ const SUPPORTED_EXTENSIONS: [&str; 10] = [
   "mp3", "m4a", "flac", "ogg", "wav", "mp4", "mkv", "webm", "avi", "mov",
 ];
 
-/// Builds a transient library view from the current contents of every saved folder.
-pub fn build_library_view(db: &LibraryDb, app_cache_dir: &Path) -> LibraryView {
-  let mut tracks = Vec::new();
-
-  for directory in &db.scanned_directories {
-    let path = PathBuf::from(directory);
-    if path.is_dir() {
-      tracks.extend(scan_dir_recursive(
-        &path,
-        app_cache_dir,
-        &SUPPORTED_EXTENSIONS,
-      ));
-    }
-  }
-
-  LibraryView {
-    scanned_directories: db.scanned_directories.clone(),
-    tracks,
-  }
-}
-
-/// Recursively scans a system directory tree for supported media extensions.
-///
-/// # Arguments
-/// * `dir_path` - The system folder path to scan.
-/// * `app_cache_dir` - Path to the application cache folder (used to write cover art).
-pub fn scan_dir_recursive(
-  dir_path: &Path,
-  app_cache_dir: &Path,
-  allowed_extensions: &[&str],
-) -> Vec<MediaItem> {
-  let mut items = Vec::new();
-
-  // Read target directory entries
-  let entries = match fs::read_dir(dir_path) {
-    Ok(e) => e,
-    Err(_) => return items, // Silently skip directories we don't have access to
-  };
-
-  for entry in entries.flatten() {
-    let path = entry.path();
-    if path.is_dir() {
-      // Recurse into subdirectory
-      items.extend(scan_dir_recursive(&path, app_cache_dir, allowed_extensions));
-    } else if path.is_file() {
-      if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-        let ext_lower = ext.to_lowercase();
-        if allowed_extensions.contains(&ext_lower.as_str()) {
-          // Process file and extract metadata tags
-          if let Some(item) = process_media_file(&path, app_cache_dir) {
-            items.push(item);
-          }
-        }
-      }
-    }
-  }
-
-  items
+/// Checks whether a path has one of Navio's supported local media extensions.
+pub fn is_supported_media_path(path: &Path) -> bool {
+  path
+    .extension()
+    .and_then(|extension| extension.to_str())
+    .map(|extension| {
+      SUPPORTED_EXTENSIONS
+        .iter()
+        .any(|supported| supported.eq_ignore_ascii_case(extension))
+    })
+    .unwrap_or(false)
 }
 
 /// Inspects a media file, reads metadata tags, and wraps them in a `MediaItem` struct.
@@ -156,6 +109,25 @@ pub fn stable_media_id(path: &Path) -> String {
   format!("media-{:016x}", hasher.finish())
 }
 
+/// Parses video headers to read duration (header-only, low-RAM, lightweight).
+fn read_video_duration(path: &Path) -> Option<f64> {
+  let ext = path.extension()?.to_str()?.to_lowercase();
+  if ext == "mp4" {
+    let f = fs::File::open(path).ok()?;
+    let size = f.metadata().ok()?.len();
+    let reader = std::io::BufReader::new(f);
+    // Reads only the metadata atoms/boxes (e.g. 'moov') from the file
+    let mp4 = mp4::Mp4Reader::read_header(reader, size).ok()?;
+    Some(mp4.duration().as_secs_f64())
+  } else if ext == "mkv" || ext == "webm" {
+    // Reads Matroska segment info headers using matroska::get_from
+    let info = matroska::get_from::<_, matroska::Info>(path).ok()??;
+    Some(info.duration?.as_secs_f64())
+  } else {
+    None
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use super::stable_media_id;
@@ -176,24 +148,5 @@ mod tests {
     );
 
     std::fs::remove_dir_all(root).expect("cleanup media identity fixture");
-  }
-}
-
-/// Parses video headers to read duration (header-only, low-RAM, lightweight).
-fn read_video_duration(path: &Path) -> Option<f64> {
-  let ext = path.extension()?.to_str()?.to_lowercase();
-  if ext == "mp4" {
-    let f = fs::File::open(path).ok()?;
-    let size = f.metadata().ok()?.len();
-    let reader = std::io::BufReader::new(f);
-    // Reads only the metadata atoms/boxes (e.g. 'moov') from the file
-    let mp4 = mp4::Mp4Reader::read_header(reader, size).ok()?;
-    Some(mp4.duration().as_secs_f64())
-  } else if ext == "mkv" || ext == "webm" {
-    // Reads Matroska segment info headers using matroska::get_from
-    let info = matroska::get_from::<_, matroska::Info>(path).ok()??;
-    Some(info.duration?.as_secs_f64())
-  } else {
-    None
   }
 }

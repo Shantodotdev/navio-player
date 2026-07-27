@@ -27,9 +27,12 @@ pub fn load_db(app_handle: &tauri::AppHandle) -> Result<LibraryDb, String> {
   let file = fs::File::open(db_path).map_err(|e| format!("Failed to open database file: {}", e))?;
   let reader = std::io::BufReader::new(file);
 
-  let db: LibraryDb =
+  let mut db: LibraryDb =
     serde_json::from_reader(reader).map_err(|e| format!("Failed to parse database JSON: {}", e))?;
 
+  if db.normalize_directories() {
+    save_db(app_handle, &db)?;
+  }
   Ok(db)
 }
 

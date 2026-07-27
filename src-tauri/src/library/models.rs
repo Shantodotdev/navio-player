@@ -33,6 +33,19 @@ pub struct LibraryDb {
   pub scanned_directories: Vec<String>,
 }
 
+impl LibraryDb {
+  /// Canonicalizes configured roots and reports whether persistence should update.
+  pub fn normalize_directories(&mut self) -> bool {
+    let normalized =
+      super::path_policy::normalize_configured_directories(&self.scanned_directories);
+    if normalized == self.scanned_directories {
+      return false;
+    }
+    self.scanned_directories = normalized;
+    true
+  }
+}
+
 /// A transient library response assembled from the current filesystem state.
 ///
 /// Tracks are intentionally excluded from `LibraryDb`; this view is returned
@@ -73,5 +86,23 @@ mod tests {
       json,
       serde_json::json!({"scanned_directories": ["C:\\Media"]})
     );
+  }
+
+  #[test]
+  fn normalizing_library_configuration_removes_duplicate_paths() {
+    let root = std::env::temp_dir().join(format!("navio-db-normalize-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("create normalization fixture");
+    let canonical = root.canonicalize().expect("canonicalize fixture");
+    let mut db = LibraryDb {
+      scanned_directories: vec![
+        root.to_string_lossy().to_string(),
+        canonical.to_string_lossy().to_string(),
+      ],
+    };
+
+    assert!(db.normalize_directories());
+    assert_eq!(db.scanned_directories.len(), 1);
+    assert!(!db.normalize_directories());
+    std::fs::remove_dir_all(root).expect("remove normalization fixture");
   }
 }
