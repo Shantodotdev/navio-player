@@ -44,6 +44,8 @@ pub struct LibrarySettings {
   pub view_mode: String,
   #[serde(default)]
   pub show_file_extensions: bool,
+  #[serde(default = "default_excluded_folder_names")]
+  pub excluded_folder_names: Vec<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -95,6 +97,7 @@ impl Default for LibrarySettings {
       show_thumbnails: true,
       view_mode: "list".to_string(),
       show_file_extensions: false,
+      excluded_folder_names: default_excluded_folder_names(),
     }
   }
 }
@@ -127,6 +130,14 @@ fn default_list_view() -> String {
 }
 fn default_drawer_width() -> u32 {
   640
+}
+
+/// Returns development and generated directories ignored by default scans.
+fn default_excluded_folder_names() -> Vec<String> {
+  crate::library::DEFAULT_EXCLUDED_DIRECTORY_NAMES
+    .iter()
+    .map(|name| (*name).to_string())
+    .collect()
 }
 
 /// Resolves Navio's versioned settings database path.
@@ -180,6 +191,9 @@ pub fn reset_databases(app_handle: &AppHandle) -> Result<(), String> {
     "downloads.json",
     "theater-media.json",
     "activity.json",
+    "library-index.sqlite3",
+    "library-index.sqlite3-wal",
+    "library-index.sqlite3-shm",
   ] {
     let path = app_data.join(name);
     if path.exists() {
@@ -206,7 +220,31 @@ mod tests {
     assert_eq!(settings.library.view_mode, "list");
     assert!(settings.library.show_thumbnails);
     assert!(!settings.library.show_file_extensions);
+    assert!(settings
+      .library
+      .excluded_folder_names
+      .iter()
+      .any(|name| name == "node_modules"));
     assert!(settings.updates.automatic);
+  }
+
+  #[test]
+  fn legacy_library_settings_receive_default_scan_exclusions() {
+    let settings: Settings = serde_json::from_value(serde_json::json!({
+      "version": 1,
+      "library": {
+        "show_thumbnails": true,
+        "view_mode": "list",
+        "show_file_extensions": false
+      }
+    }))
+    .expect("legacy settings remain readable");
+
+    assert!(settings
+      .library
+      .excluded_folder_names
+      .iter()
+      .any(|name| name == ".git"));
   }
 
   #[test]
