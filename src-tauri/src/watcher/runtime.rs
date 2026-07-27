@@ -1,4 +1,5 @@
 use super::*;
+use tauri::Manager;
 
 /**
  * Starts the file system watcher task in a background tokio pool.
@@ -92,12 +93,33 @@ pub fn start_watcher(app_handle: tauri::AppHandle) -> Result<RecommendedWatcher,
 
             // Process the batch of changed paths
             if !changed_paths.is_empty() {
+              // A root scan publishes a transactional snapshot. Keep collecting
+              // native events until it finishes, then replay them so a change
+              // made during that scan cannot be overwritten by its snapshot.
+              while app_handle_clone
+                .state::<crate::AppState>()
+                .library_scan
+                .has_active_jobs()
+              {
+                while let Ok(event) = rx.try_recv() {
+                  changed_paths.extend(event.paths);
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+              }
               println!(
                 "[Navio Watcher] Processing changed paths | count={}",
                 changed_paths.len()
               );
-              if let Err(e) = process_changed_paths(&app_handle_clone, &changed_paths) {
-                log::error!("Watcher sync error: {}", e);
+              let sync_app = app_handle_clone.clone();
+              let sync_paths = changed_paths.clone();
+              match tokio::task::spawn_blocking(move || {
+                process_changed_paths(&sync_app, &sync_paths)
+              })
+              .await
+              {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => log::error!("Watcher sync error: {error}"),
+                Err(error) => log::error!("Watcher sync task failed: {error}"),
               }
               changed_paths.clear();
             }
