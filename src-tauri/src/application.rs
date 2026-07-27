@@ -18,6 +18,15 @@ use super::*;
 pub fn run() {
   println!("[Navio App] Starting application");
 
+  // Windows passes the selected file after the executable path when a user
+  // chooses "Open with Navio Player". Keep those paths until the renderer is
+  // ready to validate them and start playback.
+  let pending_open_paths = std::env::args_os()
+    .skip(1)
+    .filter_map(|argument| argument.into_string().ok())
+    .filter(|argument| !argument.starts_with('-'))
+    .collect::<Vec<_>>();
+
   // Create shared directories registry
   let allowed_directories = Arc::new(Mutex::new(HashSet::new()));
   let stream_token = uuid::Uuid::new_v4().to_string();
@@ -67,6 +76,7 @@ pub fn run() {
         watcher: Arc::new(Mutex::new(None)),
         media_cache: media_tools::MediaCache::default(),
         control_broker: control_broker.clone(),
+        pending_open_paths: Mutex::new(pending_open_paths),
       };
       if !app.manage(app_state) {
         return Err("Failed to register application state.".into());
@@ -140,6 +150,8 @@ pub fn run() {
       commands::wait_for_mcp_command,
       commands::complete_mcp_command,
       commands::inspect_authorized_media_file,
+      commands::take_opened_media_paths,
+      commands::inspect_opened_media_file,
       commands::save_library,
       commands::get_playlists,
       commands::save_playlists,

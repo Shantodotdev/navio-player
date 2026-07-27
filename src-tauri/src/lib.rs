@@ -73,6 +73,9 @@ pub struct AppState {
 
   /// Bounded request bridge used by authenticated local MCP control calls.
   pub control_broker: control::ControlBroker,
+
+  /// Media paths supplied by the operating system when Navio was launched.
+  pub pending_open_paths: Mutex<Vec<String>>,
 }
 
 #[derive(serde::Serialize)]

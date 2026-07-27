@@ -35,6 +35,27 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "fileAssociations": [
+      {
+        "ext": [
+          "mp3",
+          "m4a",
+          "flac",
+          "ogg",
+          "wav",
+          "mp4",
+          "mkv",
+          "webm",
+          "avi",
+          "mov"
+        ],
+        "name": "Navio media",
+        "description": "Media file for Navio Player",
+        "mimeType": "application/octet-stream",
+        "role": "Viewer",
+        "rank": "Alternate"
+      }
+    ],
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }

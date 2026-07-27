@@ -622,6 +622,55 @@ pub fn inspect_authorized_media_file(
   inspect_authorized_media_file_impl(&path, &cache_dir, &state.allowed_directories)
 }
 
+/// Returns and clears media paths supplied by the operating system at launch.
+///
+/// The queue is consumed exactly once by the renderer so a reload does not
+/// unexpectedly replay the file that started Navio.
+#[tauri::command]
+pub fn take_opened_media_paths(state: tauri::State<'_, AppState>) -> Vec<String> {
+  state
+    .pending_open_paths
+    .lock()
+    .map(|mut paths| std::mem::take(&mut *paths))
+    .unwrap_or_default()
+}
+
+/// Validates one operating-system-opened media file and authorizes its parent
+/// directory for the existing local streaming server.
+///
+/// Opening a file from Explorer is an explicit user action, so the file does
+/// not need to already belong to a scanned library folder. The directory is
+/// authorized only for this process and is not persisted as a library folder.
+#[tauri::command]
+pub fn inspect_opened_media_file(
+  path: String,
+  app_handle: tauri::AppHandle,
+  state: tauri::State<'_, AppState>,
+) -> Result<library::MediaItem, String> {
+  let requested = PathBuf::from(path);
+  if !requested.is_file() {
+    return Err("The selected media file does not exist.".to_string());
+  }
+  let canonical = requested
+    .canonicalize()
+    .map_err(|error| format!("Could not resolve the selected media file: {error}"))?;
+  let cache_dir = app_handle
+    .path()
+    .app_cache_dir()
+    .map_err(|error| error.to_string())?;
+  let media = library::process_media_file(&canonical, &cache_dir)
+    .ok_or_else(|| "File is not a supported Navio media type.".to_string())?;
+  let parent = canonical
+    .parent()
+    .ok_or_else(|| "The selected media file has no parent directory.".to_string())?;
+  state
+    .allowed_directories
+    .lock()
+    .map_err(|_| "Navio's media authorization state is unavailable.".to_string())?
+    .insert(parent.to_path_buf());
+  Ok(media)
+}
+
 /// Canonicalizes and inspects one file without widening the streaming boundary.
 ///
 /// Directory membership is checked using resolved paths, preventing `..`, links,
