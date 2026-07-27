@@ -1,6 +1,10 @@
 import { useEffect } from "react";
-import { useLibraryStore } from "../store/libraryStore";
+import {
+  useLibraryStore,
+  type LibraryScanProgress,
+} from "../store/libraryStore";
 import type { MediaActivity } from "../lib/smartPlaylists";
+import { toast } from "../store/toastStore";
 
 /**
  * Keeps the in-memory library catalog synchronized with Navio's Rust backend.
@@ -13,6 +17,8 @@ import type { MediaActivity } from "../lib/smartPlaylists";
 export function useLibrarySync() {
   const fetchLibrary = useLibraryStore((state) => state.fetchLibrary);
   const updateActivity = useLibraryStore((state) => state.updateActivity);
+  const setScanProgress = useLibraryStore((state) => state.setScanProgress);
+  const setScanStatuses = useLibraryStore((state) => state.setScanStatuses);
 
   /** Loads the initial catalog once, while the store avoids redundant reads. */
   useEffect(() => {
@@ -22,24 +28,50 @@ export function useLibrarySync() {
   /** Subscribes once to backend changes for the whole lifetime of the app shell. */
   useEffect(() => {
     let isActive = true;
-    let unlistenFn: (() => void) | null = null;
+    const unlistenFns: Array<() => void> = [];
 
     async function setupListener() {
       try {
         const { listen } = await import("@tauri-apps/api/event");
-        const unlisten = await listen("library-updated", () => {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const unlistenLibrary = await listen("library-updated", () => {
           // Ignore the initialization cache: the backend has confirmed a change.
           void fetchLibrary(true);
         });
+        const unlistenScan = await listen<LibraryScanProgress>(
+          "library-scan-progress",
+          (event) => {
+            const progress = event.payload;
+            setScanProgress(progress);
+            if (progress.phase === "failed") {
+              toast.error("Library scan failed", {
+                description:
+                  progress.error ??
+                  "Navio could not finish indexing this folder.",
+                dedupeKey: `library-scan:${progress.job_id}`,
+              });
+            }
+          },
+        );
 
+        if (!isActive) {
+          unlistenLibrary();
+          unlistenScan();
+          return;
+        }
+        unlistenFns.push(unlistenLibrary, unlistenScan);
+
+        // Registration precedes these reads so a fast startup reconciliation
+        // cannot leave the renderer showing an older cached snapshot.
+        const progress = await invoke<LibraryScanProgress[]>(
+          "get_library_scan_status",
+        );
         if (isActive) {
-          unlistenFn = unlisten;
-        } else {
-          // React may unmount before Tauri finishes creating the subscription.
-          unlisten();
+          setScanStatuses(progress);
+          await fetchLibrary(true);
         }
       } catch (err) {
-        console.warn("Failed to subscribe to library-updated events:", err);
+        console.warn("Failed to subscribe to library events:", err);
       }
     }
 
@@ -47,9 +79,9 @@ export function useLibrarySync() {
 
     return () => {
       isActive = false;
-      unlistenFn?.();
+      unlistenFns.forEach((unlisten) => unlisten());
     };
-  }, [fetchLibrary]);
+  }, [fetchLibrary, setScanProgress, setScanStatuses]);
 
   /** Merges lightweight playback checkpoints without rebuilding the library. */
   useEffect(() => {

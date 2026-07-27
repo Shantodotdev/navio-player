@@ -38,9 +38,12 @@ function LibraryView() {
     tracks,
     scannedDirs,
     activity,
-    activeScan,
+    scanJobs,
+    pendingScanRoots,
+    isFolderPickerOpen,
     removingFolders,
     addFolder,
+    cancelLibraryScan,
     deleteFolder,
   } = useLibrary();
   const {
@@ -73,6 +76,18 @@ function LibraryView() {
         ),
         dedupeKey: "library-add-folder",
         action: { label: "Retry", run: handleAddFolder },
+      });
+    }
+  }
+
+  /** Requests cancellation without hiding backend failures. */
+  async function handleCancelScan(jobId: string) {
+    try {
+      await cancelLibraryScan(jobId);
+    } catch (error) {
+      toast.error("Could not cancel scan", {
+        description: getErrorMessage(error, "Navio could not stop indexing."),
+        dedupeKey: "library-cancel-scan",
       });
     }
   }
@@ -111,6 +126,18 @@ function LibraryView() {
     return matchesSearch && matchesFilter && matchesDirectory;
   });
   const visibleTracks = sortLibraryTracks(filteredTracks, activity, sortMode);
+  const scans = Object.values(scanJobs);
+  const visibleDirectories = [...scannedDirs];
+  for (const scan of scans) {
+    if (!visibleDirectories.some((root) => pathsEqual(root, scan.root))) {
+      visibleDirectories.push(scan.root);
+    }
+  }
+  for (const pendingRoot of pendingScanRoots) {
+    if (!visibleDirectories.some((root) => pathsEqual(root, pendingRoot))) {
+      visibleDirectories.push(pendingRoot);
+    }
+  }
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400 min-w-0">
@@ -122,26 +149,21 @@ function LibraryView() {
           </h1>
         </div>
 
-        <div className="flex gap-3 shrink-0">
+        <div className="flex gap-2 shrink-0">
           <button
             id="add-library-folder"
             type="button"
             onClick={() => void handleAddFolder()}
-            disabled={activeScan !== null}
-            aria-busy={activeScan !== null}
+            disabled={isFolderPickerOpen}
             className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:cursor-wait disabled:opacity-65"
           >
-            {activeScan ? (
-              <LoaderCircle size={15} className="animate-spin" />
-            ) : (
-              <FolderPlus size={15} />
-            )}
-            <span>{activeScan ? "Scanning" : "Add folder"}</span>
+            <FolderPlus size={15} />
+            <span>Add folder</span>
           </button>
         </div>
       </div>
 
-      {scannedDirs.length === 0 ? (
+      {visibleDirectories.length === 0 ? (
         // Large Elegant Empty State Panel
         <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-6 sm:p-8">
           <div className="p-4 sm:p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
@@ -166,25 +188,35 @@ function LibraryView() {
               Scanned directories
             </h2>
             <div className="flex flex-wrap gap-2">
-              {scannedDirs.map((dir) => {
+              {visibleDirectories.map((dir) => {
                 const isRemoving = removingFolders.includes(dir);
+                const scan = scans.find((progress) =>
+                  pathsEqual(progress.root, dir),
+                );
+                const isPending = pendingScanRoots.some((root) =>
+                  pathsEqual(root, dir),
+                );
+                const isScanning = Boolean(scan || isPending);
                 return (
                   <div
                     key={dir}
                     role="button"
                     tabIndex={0}
-                    aria-busy={isRemoving}
+                    aria-busy={isRemoving || isScanning}
                     onClick={() => {
-                      if (!isRemoving) setSelectedDirectory(dir);
+                      if (!isRemoving && !isScanning) setSelectedDirectory(dir);
                     }}
                     onKeyDown={(event) => {
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
-                        if (!isRemoving) setSelectedDirectory(dir);
+                        if (!isRemoving && !isScanning)
+                          setSelectedDirectory(dir);
                       }
                     }}
                     className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group transition-colors max-w-full min-w-0 ${
-                      isRemoving ? "cursor-wait opacity-60" : "cursor-pointer"
+                      isRemoving || isScanning
+                        ? "cursor-wait"
+                        : "cursor-pointer"
                     } ${
                       selectedDirectory === dir
                         ? "bg-brand/20 border-brand/50 text-zinc-200"
@@ -192,9 +224,30 @@ function LibraryView() {
                     }`}
                   >
                     <span className="truncate flex-1 min-w-0">{dir}</span>
+                    {isScanning ? (
+                      <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-brand-light sm:text-xs">
+                        <LoaderCircle size={13} className="animate-spin" />
+                        {formatDirectoryScanStatus(scan)}
+                      </span>
+                    ) : null}
+                    {scan ? (
+                      <button
+                        type="button"
+                        disabled={scan.phase === "cancelling"}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void handleCancelScan(scan.job_id);
+                        }}
+                        className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200 disabled:cursor-wait disabled:opacity-50"
+                        aria-label={`Cancel scan of ${dir}`}
+                        title="Cancel scan"
+                      >
+                        <X size={13} />
+                      </button>
+                    ) : null}
                     <button
                       type="button"
-                      disabled={isRemoving}
+                      disabled={isRemoving || isScanning}
                       onClick={(event) => {
                         event.stopPropagation();
                         if (selectedDirectory === dir) {
@@ -202,7 +255,7 @@ function LibraryView() {
                         }
                         void handleDeleteFolder(dir);
                       }}
-                      className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0 disabled:cursor-wait"
+                      className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0 disabled:cursor-wait disabled:opacity-40"
                       aria-label={`Remove ${dir} from library`}
                     >
                       {isRemoving ? (
@@ -404,6 +457,18 @@ function LibraryView() {
   );
 }
 
+/** Formats compact progress beside the directory that owns the scan. */
+function formatDirectoryScanStatus(
+  scan: ReturnType<typeof useLibrary>["scanJobs"][string] | undefined,
+): string {
+  if (!scan) return "Starting";
+  if (scan.phase === "cancelling") return "Cancelling";
+  if (scan.phase === "indexing" && scan.discovered > 0) {
+    return `Scanning ${scan.processed}/${scan.discovered}`;
+  }
+  return scan.phase === "discovering" ? "Discovering" : "Scanning";
+}
+
 interface FilterButtonProps {
   active: boolean;
   children: string;
@@ -597,5 +662,13 @@ function isPathWithinDirectory(
     normalizedFilePath === normalizedDirectoryPath ||
     normalizedFilePath.startsWith(`${normalizedDirectoryPath}\\`) ||
     normalizedFilePath.startsWith(`${normalizedDirectoryPath}/`)
+  );
+}
+
+/** Matches canonical and display forms when attaching progress to a directory row. */
+function pathsEqual(left: string, right: string): boolean {
+  return (
+    left.replace(/[\\/]+$/, "").replaceAll("\\", "/").toLowerCase() ===
+    right.replace(/[\\/]+$/, "").replaceAll("\\", "/").toLowerCase()
   );
 }

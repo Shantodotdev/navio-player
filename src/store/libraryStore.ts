@@ -22,9 +22,25 @@ interface PlaylistsDatabase {
   playlists: Playlist[];
 }
 
-export interface LibraryScanOperation {
-  /** Null while the native folder picker is open, then the selected path. */
-  folder: string | null;
+export type LibraryScanPhase =
+  | "discovering"
+  | "indexing"
+  | "cancelling"
+  | "completed"
+  | "cancelled"
+  | "failed";
+
+/** Progress snapshot emitted by Navio's persistent library indexer. */
+export interface LibraryScanProgress {
+  job_id: string;
+  phase: LibraryScanPhase;
+  root: string;
+  discovered: number;
+  processed: number;
+  indexed: number;
+  skipped: number;
+  failed: number;
+  error: string | null;
 }
 
 /**
@@ -44,8 +60,12 @@ interface LibraryState {
   isInitialized: boolean;
   /** True when a background I/O database operation (saving or directory scanning) is active. */
   isLoading: boolean;
-  /** The user-triggered folder selection or scan currently in progress. */
-  activeScan: LibraryScanOperation | null;
+  /** Active backend scan snapshots keyed by their independent job IDs. */
+  scanJobs: Record<string, LibraryScanProgress>;
+  /** Selected roots shown until their first backend progress or library event. */
+  pendingScanRoots: string[];
+  /** Guards only the short-lived native folder picker interaction. */
+  isFolderPickerOpen: boolean;
   /** Folder paths whose removal is awaiting durable persistence. */
   removingFolders: string[];
 
@@ -62,6 +82,14 @@ interface LibraryState {
    * the backend scanner, saves only the folder configuration, and updates the live view.
    */
   addFolder: () => Promise<string | null>;
+  /** Replaces the current scan snapshot with the latest backend event. */
+  setScanProgress: (progress: LibraryScanProgress | null) => void;
+  /** Reconciles the complete active scan registry after renderer startup. */
+  setScanStatuses: (progress: LibraryScanProgress[]) => void;
+  /** Requests cooperative cancellation of one indexing job. */
+  cancelLibraryScan: (jobId: string) => Promise<void>;
+  /** Rebuilds every configured root and replaces the cached library view. */
+  rebuildLibraryIndex: () => Promise<void>;
 
   /**
    * Removes a directory from the configured folder list, writes the change to disk,
@@ -97,7 +125,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   activity: {},
   isInitialized: false,
   isLoading: false,
-  activeScan: null,
+  scanJobs: {},
+  pendingScanRoots: [],
+  isFolderPickerOpen: false,
   removingFolders: [],
 
   fetchLibrary: async (force = false) => {
@@ -130,8 +160,9 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
   },
 
   addFolder: async () => {
-    if (get().activeScan) return null;
-    set({ activeScan: { folder: null } });
+    if (get().isFolderPickerOpen) return null;
+    set({ isFolderPickerOpen: true });
+    let folderPath: string | null = null;
     try {
       const { open } = await import("@tauri-apps/plugin-dialog");
       const { invoke } = await import("@tauri-apps/api/core");
@@ -145,11 +176,19 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
 
       if (selected) {
         // Resolve target folder path (supports array fallbacks if dialog returns lists)
-        const folderPath = Array.isArray(selected) ? selected[0] : selected;
+        folderPath = Array.isArray(selected) ? selected[0] : selected;
         if (folderPath) {
-          set({ isLoading: true, activeScan: { folder: folderPath } });
+          set((state) => ({
+            isFolderPickerOpen: false,
+            pendingScanRoots: state.pendingScanRoots.some((root) =>
+              pathsEqual(root, folderPath as string),
+            )
+              ? state.pendingScanRoots
+              : [...state.pendingScanRoots, folderPath as string],
+          }));
 
-          // Invoke the heavy I/O lofty recursive scanner in Rust
+          // The picker is already released; this promise may coexist with
+          // other independently selected folder scans.
           const db = await invoke<LibraryView>("scan_folder", {
             folderPath,
           });
@@ -166,8 +205,66 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
       }
       return null;
     } finally {
-      set({ isLoading: false, activeScan: null });
+      set((state) => ({
+        isFolderPickerOpen: false,
+        pendingScanRoots: folderPath
+          ? state.pendingScanRoots.filter(
+              (root) => !pathsEqual(root, folderPath as string),
+            )
+          : state.pendingScanRoots,
+      }));
     }
+  },
+
+  setScanProgress: (progress) => {
+    if (!progress) return;
+    const isTerminal =
+      progress.phase === "completed" ||
+      progress.phase === "cancelled" ||
+      progress.phase === "failed";
+    set((state) => {
+      const scanJobs = { ...state.scanJobs };
+      if (isTerminal) delete scanJobs[progress.job_id];
+      else scanJobs[progress.job_id] = progress;
+      return {
+        scanJobs,
+        pendingScanRoots: state.pendingScanRoots.filter(
+          (root) => !pathsEqual(root, progress.root),
+        ),
+      };
+    });
+  },
+
+  setScanStatuses: (progress) => {
+    set({
+      scanJobs: Object.fromEntries(
+        progress.map((scan) => [scan.job_id, scan]),
+      ),
+    });
+  },
+
+  cancelLibraryScan: async (jobId) => {
+    const scan = get().scanJobs[jobId];
+    if (!scan) return;
+    set((state) => ({
+      scanJobs: {
+        ...state.scanJobs,
+        [jobId]: { ...scan, phase: "cancelling" },
+      },
+    }));
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("cancel_library_scan", { jobId });
+  },
+
+  rebuildLibraryIndex: async () => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const db = await invoke<LibraryView>("rebuild_library_index");
+    set({
+      tracks: db.tracks || [],
+      scannedDirs: db.scanned_directories || [],
+      activity: db.activity || {},
+      isInitialized: true,
+    });
   },
 
   deleteFolder: async (folder) => {
@@ -390,5 +487,13 @@ function isPathWithinDirectory(
     normalizedFile === normalizedDirectory ||
     normalizedFile.startsWith(`${normalizedDirectory}\\`) ||
     normalizedFile.startsWith(`${normalizedDirectory}/`)
+  );
+}
+
+/** Compares Windows and browser-development folder forms consistently. */
+function pathsEqual(left: string, right: string): boolean {
+  return (
+    left.replace(/[\\/]+$/, "").replaceAll("\\", "/").toLowerCase() ===
+    right.replace(/[\\/]+$/, "").replaceAll("\\", "/").toLowerCase()
   );
 }

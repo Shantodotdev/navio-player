@@ -40,7 +40,9 @@ describe("library activity state", () => {
       playlists: [],
       isInitialized: false,
       isLoading: false,
-      activeScan: null,
+      scanJobs: {},
+      pendingScanRoots: [],
+      isFolderPickerOpen: false,
       removingFolders: [],
     });
   });
@@ -62,7 +64,7 @@ describe("library activity state", () => {
     expect(invokeMock).not.toHaveBeenCalled();
   });
 
-  it("reports the selected folder while its scan is running", async () => {
+  it("releases Add folder immediately after selection while scanning continues", async () => {
     const scan = createDeferred<{
       scanned_directories: string[];
       tracks: Track[];
@@ -73,9 +75,10 @@ describe("library activity state", () => {
 
     const result = useLibraryStore.getState().addFolder();
     await vi.waitFor(() => {
-      expect(useLibraryStore.getState().activeScan).toEqual({
-        folder: "C:\\Media",
-      });
+      expect(useLibraryStore.getState().isFolderPickerOpen).toBe(false);
+      expect(useLibraryStore.getState().pendingScanRoots).toEqual([
+        "C:\\Media",
+      ]);
     });
 
     scan.resolve({
@@ -84,7 +87,83 @@ describe("library activity state", () => {
       activity: {},
     });
     await result;
-    expect(useLibraryStore.getState().activeScan).toBeNull();
+    expect(useLibraryStore.getState().pendingScanRoots).toEqual([]);
+  });
+
+  it("tracks simultaneous scan jobs independently", () => {
+    const movies = createScanProgress("indexing");
+    const music = {
+      ...createScanProgress("discovering"),
+      job_id: "scan-2",
+      root: "C:\\Music",
+    };
+
+    useLibraryStore.getState().setScanProgress(movies);
+    useLibraryStore.getState().setScanProgress(music);
+
+    expect(Object.keys(useLibraryStore.getState().scanJobs)).toEqual([
+      "scan-1",
+      "scan-2",
+    ]);
+  });
+
+  it("marks only the requested scan as cancelling", async () => {
+    invokeMock.mockResolvedValue(true);
+    useLibraryStore.setState({
+      scanJobs: {
+        "scan-1": createScanProgress("indexing"),
+        "scan-2": {
+          ...createScanProgress("indexing"),
+          job_id: "scan-2",
+          root: "C:\\Music",
+        },
+      },
+    });
+
+    await useLibraryStore.getState().cancelLibraryScan("scan-1");
+
+    expect(useLibraryStore.getState().scanJobs["scan-1"]?.phase).toBe(
+      "cancelling",
+    );
+    expect(useLibraryStore.getState().scanJobs["scan-2"]?.phase).toBe(
+      "indexing",
+    );
+    expect(invokeMock).toHaveBeenCalledWith("cancel_library_scan", {
+      jobId: "scan-1",
+    });
+  });
+
+  it("completing one scan leaves other jobs active", () => {
+    const movies = createScanProgress("indexing");
+    const music = {
+      ...createScanProgress("indexing"),
+      job_id: "scan-2",
+      root: "C:\\Music",
+    };
+
+    useLibraryStore.getState().setScanProgress(movies);
+    useLibraryStore.getState().setScanProgress(music);
+
+    useLibraryStore.getState().setScanProgress({
+      ...movies,
+      phase: "completed",
+    });
+    expect(useLibraryStore.getState().scanJobs["scan-1"]).toBeUndefined();
+    expect(useLibraryStore.getState().scanJobs["scan-2"]).toEqual(music);
+  });
+
+  it("replaces the cached library after a manual index rebuild", async () => {
+    invokeMock.mockResolvedValue({
+      scanned_directories: ["C:\\Media"],
+      tracks: [playlistTracks[0]],
+      activity: { "media-1": updated },
+    });
+
+    await useLibraryStore.getState().rebuildLibraryIndex();
+
+    expect(invokeMock).toHaveBeenCalledWith("rebuild_library_index");
+    expect(useLibraryStore.getState().tracks).toEqual([playlistTracks[0]]);
+    expect(useLibraryStore.getState().scannedDirs).toEqual(["C:\\Media"]);
   });
 
   it("rejects a failed folder removal without changing the catalog", async () => {
@@ -218,4 +297,21 @@ function createDeferred<T>() {
     reject = rejectPromise;
   });
   return { promise, resolve, reject };
+}
+
+/** Creates one backend-shaped progress fixture for scan action tests. */
+function createScanProgress(
+  phase: "discovering" | "indexing" | "cancelling",
+) {
+  return {
+    job_id: "scan-1",
+    phase,
+    root: "C:\\Media",
+    discovered: 3,
+    processed: 1,
+    indexed: 1,
+    skipped: 0,
+    failed: 0,
+    error: null,
+  } as const;
 }
