@@ -205,12 +205,13 @@ pub async fn save_theater_state(
   Ok(())
 }
 
-/// Enters or leaves native fullscreen with a single Windows window transition.
+/// Enters or leaves native fullscreen while preserving each platform's window chrome.
 ///
 /// TAO clamps maximized frameless windows to the taskbar-excluding work area.
 /// A maximized window temporarily needs TAO's native decoration marker to
 /// calculate against the complete monitor. Restored windows skip that workaround,
 /// and the marker is removed before fullscreen exit so no titlebar frame is painted.
+/// macOS and Linux keep their native decorations and do not need this workaround.
 #[tauri::command]
 pub fn set_theater_fullscreen(
   app_handle: tauri::AppHandle,
@@ -226,13 +227,19 @@ pub fn set_theater_fullscreen(
   }
 
   if fullscreen {
-    if window.is_maximized().map_err(|e| e.to_string())? {
-      window.set_decorations(true).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+      if window.is_maximized().map_err(|e| e.to_string())? {
+        window.set_decorations(true).map_err(|e| e.to_string())?;
+      }
     }
     window.set_fullscreen(true).map_err(|e| e.to_string())?;
     window.set_focus().map_err(|e| e.to_string())?;
   } else {
-    window.set_decorations(false).map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+      window.set_decorations(false).map_err(|e| e.to_string())?;
+    }
     window.set_fullscreen(false).map_err(|e| e.to_string())?;
   }
 

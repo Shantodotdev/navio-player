@@ -6,16 +6,39 @@ import type { Window } from "@tauri-apps/api/window";
 const isTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+/** Renders Navio's window controls only when the native shell has no decorations. */
 export function Titlebar() {
   const [appWindow, setAppWindow] = useState<Window | null>(null);
+  const [usesCustomTitlebar, setUsesCustomTitlebar] = useState(!isTauri);
 
-  // Dynamically load Tauri APIs only if running within the desktop container
+  // The window's real decoration state is the source of truth across platforms.
   useEffect(() => {
-    if (isTauri) {
-      import("@tauri-apps/api/window").then((mod) => {
-        setAppWindow(mod.getCurrentWindow());
-      });
+    if (!isTauri) return;
+
+    let cancelled = false;
+
+    /** Resolves native window chrome without importing Tauri APIs in the browser. */
+    async function loadWindowChrome() {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const currentWindow = getCurrentWindow();
+        const isDecorated = await currentWindow.isDecorated();
+        if (cancelled) return;
+
+        setAppWindow(currentWindow);
+        setUsesCustomTitlebar(!isDecorated);
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("Could not determine Navio window decorations:", error);
+        // Keep frameless Windows windows usable if the decoration query fails.
+        setUsesCustomTitlebar(true);
+      }
     }
+
+    void loadWindowChrome();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleMinimize = () => {
@@ -35,6 +58,8 @@ export function Titlebar() {
       appWindow.close();
     }
   };
+
+  if (!usesCustomTitlebar) return null;
 
   return (
     <div className="w-full h-8 bg-[#09090c] border-b border-white/5 flex items-center justify-between select-none z-100 shrink-0">
