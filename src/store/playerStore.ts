@@ -55,6 +55,14 @@ interface PlayerState {
   /// Pause or play.
   setIsPlaying: (playing: boolean) => void;
   /**
+   * Synchronize playback state from a media event emitted by a specific element.
+   * Returns whether that element still owns the shared playback session.
+   */
+  syncMediaPlaybackState: (
+    element: HTMLVideoElement,
+    playing: boolean,
+  ) => boolean;
+  /**
    * Pause playback and reset both the active media element and stored position.
    * This provides true stop semantics shared by the UI and MCP transport.
    */
@@ -176,6 +184,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => ({
         mediaElement.pause();
       }
     }
+  },
+
+  // Retired elements can emit pause after a video handoff; only the owner may update state.
+  syncMediaPlaybackState: (element, playing) => {
+    if (get().mediaElement !== element) return false;
+    set({ isPlaying: playing });
+    return true;
   },
 
   stopPlayback: () => {

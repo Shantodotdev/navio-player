@@ -75,6 +75,7 @@ export function NowPlayingDrawer() {
     clearMediaElement,
     setCurrentTime,
     setIsPlaying,
+    syncMediaPlaybackState,
     handleTrackEnded,
     moveQueueItem,
     nextTrack,
@@ -577,13 +578,13 @@ export function NowPlayingDrawer() {
           }, 5_000);
         }
       }}
-      onPlay={() => {
-        setIsPlaying(true);
+      onPlay={(event) => {
+        if (!syncMediaPlaybackState(event.currentTarget, true)) return;
         consecutiveFailures.current = 0;
       }}
-      onPause={() => {
+      onPause={(event) => {
+        if (!syncMediaPlaybackState(event.currentTarget, false)) return;
         alternateAudioRef.current?.pause();
-        setIsPlaying(false);
         if (currentTrack && duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
           void persistTheaterState({
             path: currentTrack.path,

@@ -171,7 +171,7 @@ export function WatchView({ isActive }: { isActive: boolean }) {
     nextTrack,
     prevTrack,
     setCurrentTime,
-    setIsPlaying,
+    syncMediaPlaybackState,
     setMediaElement,
     clearMediaElement,
     setTheaterOpen,
@@ -839,10 +839,12 @@ export function WatchView({ isActive }: { isActive: boolean }) {
             }, 5_000);
           }
         }}
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => {
+        onPlay={(event) => {
+          syncMediaPlaybackState(event.currentTarget, true);
+        }}
+        onPause={(event) => {
+          if (!syncMediaPlaybackState(event.currentTarget, false)) return;
           alternateAudioRef.current?.pause();
-          setIsPlaying(false);
           if (duration >= MIN_RESUMABLE_VIDEO_DURATION_SECS) {
             void persistTheaterState({
               path: currentTrack.path,

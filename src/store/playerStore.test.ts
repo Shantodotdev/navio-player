@@ -212,4 +212,19 @@ describe("player shuffle and repeat modes", () => {
     expect(usePlayerStore.getState().moveQueueItem(1, 1)).toBe(false);
     expect(usePlayerStore.getState().playlist).toEqual(playlist);
   });
+
+  it("ignores a retired element pause after playback moves to its replacement", () => {
+    const retiredMedia = seedPlayer(trackOne, 0);
+    const replacementMedia = createMediaElement();
+    usePlayerStore.getState().setMediaElement(replacementMedia);
+
+    const accepted = usePlayerStore
+      .getState()
+      .syncMediaPlaybackState(retiredMedia, false);
+
+    expect(accepted).toBe(false);
+    expect(usePlayerStore.getState().isPlaying).toBe(true);
+    expect(replacementMedia.play).toHaveBeenCalledOnce();
+    expect(replacementMedia.pause).not.toHaveBeenCalled();
+  });
 });
