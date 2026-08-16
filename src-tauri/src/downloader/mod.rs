@@ -25,7 +25,9 @@ const MAX_FFMPEG_ZIP_BYTES: u64 = 128 * 1024 * 1024;
 
 #[cfg(windows)]
 const YTDLP_SHA256: &str = "52fe3c26dcf71fbdc85b528589020bb0b8e383155cfa81b64dd447bbe35e24b8";
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+const YTDLP_SHA256: &str = "498bd0dae17855c599d371d68ec5bafc439a9d8640e838be25c765a9792f261b";
+#[cfg(all(not(windows), not(target_os = "macos")))]
 const YTDLP_SHA256: &str = "495be29ff4d9d4e9be7eabdfef225221e5d5282e77f2f505abc6dca80349f3fd";
 #[cfg(target_os = "windows")]
 const FFMPEG_ZIP_SHA256: &str = "d1124593b7453fc54dd90ca3819dc82c22ffa957937f33dd650082f1a495b10e";

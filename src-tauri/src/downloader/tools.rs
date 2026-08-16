@@ -15,6 +15,17 @@
 /// * `download_id` - ID of the active download card to broadcast setup progress updates to.
 use super::*;
 
+/// Returns the official release asset Navio downloads for the current platform.
+fn ytdlp_release_asset() -> &'static str {
+  if cfg!(windows) {
+    "yt-dlp.exe"
+  } else if cfg!(target_os = "macos") {
+    "yt-dlp_macos"
+  } else {
+    "yt-dlp"
+  }
+}
+
 pub(super) async fn ensure_ytdlp_installed(
   app_handle: &AppHandle,
   download_id: &str,
@@ -48,17 +59,11 @@ pub(super) async fn ensure_ytdlp_installed(
 
   // If not present or hash-mismatched, download the pinned binary release.
   if needs_install {
-    let download_url = if cfg!(windows) {
-      format!(
-        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp.exe",
-        YTDLP_VERSION
-      )
-    } else {
-      format!(
-        "https://github.com/yt-dlp/yt-dlp/releases/download/{}/yt-dlp",
-        YTDLP_VERSION
-      )
-    };
+    let download_url = format!(
+      "https://github.com/yt-dlp/yt-dlp/releases/download/{}/{}",
+      YTDLP_VERSION,
+      ytdlp_release_asset()
+    );
 
     println!(
       "[Navio Downloader] Fetching yt-dlp tool from: {}",
@@ -190,4 +195,15 @@ pub async fn ensure_ffmpeg_installed(
   }
 
   Ok(ffmpeg_path)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[cfg(target_os = "macos")]
+  #[test]
+  fn macos_uses_the_standalone_ytdlp_release() {
+    assert_eq!(ytdlp_release_asset(), "yt-dlp_macos");
+  }
 }
