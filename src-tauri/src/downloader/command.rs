@@ -1061,27 +1061,30 @@ fn validate_start_request(id: &str, request: &DownloadRequest) -> Result<(), Str
 ///
 /// `best` in yt-dlp means the best *single* audio+video file. YouTube commonly
 /// provides that only at a lower resolution, while 4K and other high-quality
-/// formats are separate video-only and audio-only streams. `bv*+ba/b` matches
-/// yt-dlp's normal download default: select the best video stream, merge the
-/// best audio stream through FFmpeg, and fall back to a combined file only when
-/// separate streams are unavailable.
+/// formats are separate video-only and audio-only streams. Automatic container
+/// selection rejects AV1 because older desktop webviews cannot decode it, while
+/// leaving yt-dlp free to choose the highest-resolution compatible stream.
 fn format_selector(request: &DownloadRequest) -> String {
   if request.format == DownloadFormat::Bestaudio {
     return "bestaudio".to_string();
   }
-  let height = match request.quality {
-    DownloadQuality::Best => return "bv*+ba/b".to_string(),
-    DownloadQuality::P2160 => 2160,
-    DownloadQuality::P1440 => 1440,
-    DownloadQuality::P1080 => 1080,
-    DownloadQuality::P720 => 720,
-    DownloadQuality::P480 => 480,
-    DownloadQuality::P360 => 360,
+  let codec_filter = match request.video_container {
+    VideoContainer::Auto => "[vcodec!^=av01]",
+    VideoContainer::Mp4 | VideoContainer::Mkv | VideoContainer::Webm => "",
   };
-  format!("bv*[height<={height}]+ba/b[height<={height}]")
+  let height_filter = match request.quality {
+    DownloadQuality::Best => String::new(),
+    DownloadQuality::P2160 => "[height<=2160]".to_string(),
+    DownloadQuality::P1440 => "[height<=1440]".to_string(),
+    DownloadQuality::P1080 => "[height<=1080]".to_string(),
+    DownloadQuality::P720 => "[height<=720]".to_string(),
+    DownloadQuality::P480 => "[height<=480]".to_string(),
+    DownloadQuality::P360 => "[height<=360]".to_string(),
+  };
+  format!("bv{codec_filter}{height_filter}+ba/b{codec_filter}{height_filter}")
 }
 
-/// Builds only curated yt-dlp options represented by Navio's typed request model.
+/// Builds curated yt-dlp options, including codecs desktop webviews can decode.
 fn build_ytdlp_options(request: &DownloadRequest) -> Vec<String> {
   let mut options = Vec::new();
   if request.format == DownloadFormat::Best {
@@ -1093,6 +1096,17 @@ fn build_ytdlp_options(request: &DownloadRequest) -> Vec<String> {
     };
     if let Some(container) = container {
       options.extend(["--merge-output-format".to_string(), container.to_string()]);
+    }
+
+    // Automatic selection rejects AV1 in the selector without putting codecs
+    // ahead of resolution. Explicit containers still need a compatible pair.
+    let format_sort = match request.video_container {
+      VideoContainer::Auto => None,
+      VideoContainer::Webm => Some("vcodec:vp9,acodec:opus"),
+      VideoContainer::Mp4 | VideoContainer::Mkv => Some("vcodec:h264,acodec:aac"),
+    };
+    if let Some(format_sort) = format_sort {
+      options.extend(["--format-sort".to_string(), format_sort.to_string()]);
     }
   } else {
     let audio_format = match request.audio_format {
@@ -1208,13 +1222,49 @@ mod tests {
   #[test]
   fn video_mode_selects_best_video_and_audio_streams_for_merging() {
     let video = DownloadRequest::default();
-    assert_eq!(format_selector(&video), "bv*+ba/b");
+    assert_eq!(
+      format_selector(&video),
+      "bv[vcodec!^=av01]+ba/b[vcodec!^=av01]"
+    );
 
     let audio = DownloadRequest {
       format: DownloadFormat::Bestaudio,
       ..DownloadRequest::default()
     };
     assert_eq!(format_selector(&audio), "bestaudio");
+  }
+
+  #[test]
+  fn automatic_4k_selection_excludes_av1_without_capping_resolution() {
+    let request = DownloadRequest {
+      quality: DownloadQuality::P2160,
+      ..DownloadRequest::default()
+    };
+
+    assert_eq!(
+      format_selector(&request),
+      "bv[vcodec!^=av01][height<=2160]+ba/b[vcodec!^=av01][height<=2160]"
+    );
+  }
+
+  #[test]
+  fn automatic_video_downloads_do_not_override_resolution_ranking() {
+    let automatic = DownloadRequest::default();
+    assert!(build_ytdlp_options(&automatic).is_empty());
+
+    let webm = DownloadRequest {
+      video_container: VideoContainer::Webm,
+      ..DownloadRequest::default()
+    };
+    assert_eq!(
+      build_ytdlp_options(&webm),
+      vec![
+        "--merge-output-format",
+        "webm",
+        "--format-sort",
+        "vcodec:vp9,acodec:opus",
+      ]
+    );
   }
 
   #[test]
@@ -1233,13 +1283,15 @@ mod tests {
 
     assert_eq!(
       format_selector(&request),
-      "bv*[height<=1080]+ba/b[height<=1080]"
+      "bv[height<=1080]+ba/b[height<=1080]"
     );
     assert_eq!(
       build_ytdlp_options(&request),
       vec![
         "--merge-output-format",
         "mkv",
+        "--format-sort",
+        "vcodec:h264,acodec:aac",
         "--write-subs",
         "--write-auto-subs",
         "--sub-langs",
