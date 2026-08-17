@@ -31,6 +31,7 @@ import {
   type PointerEvent,
   type RefObject,
 } from "react";
+import { PlayingIndicator } from "./PlayingIndicator";
 import {
   buildStreamUrl,
   cancelMediaPreparation,
@@ -749,12 +750,19 @@ export function NowPlayingDrawer() {
             </div>
 
             <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
-              <h2 className="text-lg sm:text-xl font-medium text-zinc-100 truncate">
-                {getTrackDisplayName(
-                  activeTrack,
-                  settings.library.showFileExtensions,
+              <div className="flex items-center justify-between gap-2">
+                <h2 className="text-lg sm:text-xl font-medium text-zinc-100 truncate">
+                  {getTrackDisplayName(
+                    activeTrack,
+                    settings.library.showFileExtensions,
+                  )}
+                </h2>
+                {currentTrack && (
+                  <div className="flex items-center justify-center shrink-0">
+                    <PlayingIndicator isPlaying={isPlaying} size="sm" />
+                  </div>
                 )}
-              </h2>
+              </div>
               <p className="text-sm text-zinc-400 capitalize">
                 {activeTrack.media_type}
               </p>
@@ -770,6 +778,7 @@ export function NowPlayingDrawer() {
             <Queue
               tracks={activeQueue}
               currentTrackId={activeTrack.id}
+              isPlaying={isPlaying}
               showFileExtensions={settings.library.showFileExtensions}
               onSelect={playTrack}
               onMove={moveQueueItem}
@@ -806,12 +815,14 @@ export function NowPlayingDrawer() {
 function Queue({
   tracks,
   currentTrackId,
+  isPlaying,
   showFileExtensions,
   onSelect,
   onMove,
 }: {
   tracks: Track[];
   currentTrackId: string;
+  isPlaying: boolean;
   showFileExtensions: boolean;
   onSelect: (track: Track, queue: Track[]) => void;
   onMove: (fromIndex: number, toIndex: number) => boolean;
@@ -852,6 +863,7 @@ function Queue({
               queueLength={tracks.length}
               tracks={tracks}
               isCurrent={currentTrackId === track.id}
+              isPlaying={isPlaying}
               showFileExtensions={showFileExtensions}
               onSelect={onSelect}
               onMove={moveItem}
@@ -873,6 +885,7 @@ function SortableQueueItem({
   queueLength,
   tracks,
   isCurrent,
+  isPlaying,
   showFileExtensions,
   onSelect,
   onMove,
@@ -882,6 +895,7 @@ function SortableQueueItem({
   queueLength: number;
   tracks: Track[];
   isCurrent: boolean;
+  isPlaying: boolean;
   showFileExtensions: boolean;
   onSelect: (track: Track, queue: Track[]) => void;
   onMove: (fromIndex: number, toIndex: number) => void;
@@ -928,15 +942,25 @@ function SortableQueueItem({
         }}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 p-2 text-left sm:gap-3 sm:p-2.5"
       >
-        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded bg-white/5 flex items-center justify-center shrink-0">
-          {track.media_type === "video" ? (
+        <div
+          className={`w-8 h-8 sm:w-9 sm:h-9 rounded flex items-center justify-center shrink-0 ${
+            isCurrent ? "bg-brand/20" : "bg-white/5"
+          }`}
+        >
+          {isCurrent ? (
+            <PlayingIndicator isPlaying={isPlaying} size="sm" />
+          ) : track.media_type === "video" ? (
             <Film size={13} className="text-purple-400" />
           ) : (
             <Music size={13} className="text-emerald-400" />
           )}
         </div>
         <div className="flex-1 min-w-0">
-          <span className="block text-xs sm:text-sm truncate">
+          <span
+            className={`block text-xs sm:text-sm truncate ${
+              isCurrent ? "text-brand-light font-semibold" : ""
+            }`}
+          >
             {displayName}
           </span>
           <span className="block text-[10px] sm:text-xs text-zinc-500 truncate mt-0.5 capitalize">

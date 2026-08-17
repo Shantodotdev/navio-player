@@ -5,6 +5,7 @@ import {
   Plus,
   Music,
   Play,
+  Pause,
   Clock,
   Film,
   ListMusic,
@@ -18,6 +19,7 @@ import { useLibrary } from "../hooks/useLibrary";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
 import { PlaylistModal } from "../components/PlaylistModal";
+import { PlayingIndicator } from "../components/PlayingIndicator";
 import {
   getWatchProgress,
   type MediaActivity,
@@ -30,7 +32,8 @@ export const Route = createFileRoute("/")({
 });
 
 function DashboardView() {
-  const { playTrack, setDrawerOpen } = usePlayerStore();
+  const { playTrack, setDrawerOpen, currentTrack, isPlaying, setIsPlaying } =
+    usePlayerStore();
   const { settings } = useSettingsStore();
   const { stats, smartPlaylists, activity } = useLibrary();
   const [selectedPlaylist, setSelectedPlaylist] = useState<SmartPlaylist | null>(
@@ -38,8 +41,12 @@ function DashboardView() {
   );
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  /** Starts one smart collection using its derived ordering as the queue. */
+  /** Starts one smart collection using its derived ordering as the queue, or toggles if already active. */
   function playSmartTrack(track: Track, queue: Track[]) {
+    if (currentTrack?.id === track.id) {
+      setIsPlaying(!isPlaying);
+      return;
+    }
     playTrack(track, queue);
     setDrawerOpen(true);
   }
@@ -112,6 +119,8 @@ function DashboardView() {
               key={playlist.id}
               playlist={playlist}
               activity={activity}
+              currentTrackId={currentTrack?.id ?? null}
+              isPlaying={isPlaying}
               showFileExtensions={settings.library.showFileExtensions}
               onOpen={() => openSmartPlaylist(playlist)}
               onPlay={(track) => playSmartTrack(track, playlist.tracks)}
@@ -143,12 +152,16 @@ function DashboardView() {
 function SmartCollectionSection({
   playlist,
   activity,
+  currentTrackId,
+  isPlaying,
   showFileExtensions,
   onOpen,
   onPlay,
 }: {
   playlist: SmartPlaylist;
   activity: Record<string, MediaActivity>;
+  currentTrackId: string | null;
+  isPlaying: boolean;
   showFileExtensions: boolean;
   onOpen: () => void;
   onPlay: (track: Track) => void;
@@ -181,22 +194,32 @@ function SmartCollectionSection({
       <div className="space-y-1">
         {playlist.tracks.slice(0, 5).map((track) => {
           const progress = getWatchProgress(track, activity);
+          const isCurrent = currentTrackId === track.id;
+
           return (
             <button
               key={track.id}
               type="button"
               onClick={() => onPlay(track)}
-              className="group flex w-full items-center justify-between gap-4 rounded-lg border border-transparent p-3 text-left transition-colors hover:border-white/5 hover:bg-white/5 cursor-pointer sm:p-4"
+              className="group flex w-full items-center justify-between gap-4 rounded-xl border border-transparent hover:border-white/5 hover:bg-white/5 p-3 text-left transition-all cursor-pointer sm:p-4"
             >
               <span className="flex min-w-0 items-center gap-3 sm:gap-4">
-                <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded bg-white/5 sm:h-11 sm:w-11">
-                  {track.media_type === "video" ? (
+                <span className="relative grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-lg sm:h-11 sm:w-11 bg-white/5">
+                  {isCurrent ? (
+                    <div className="flex items-center justify-center group-hover:opacity-0 transition-opacity">
+                      <PlayingIndicator isPlaying={isPlaying} size="md" />
+                    </div>
+                  ) : track.media_type === "video" ? (
                     <Film size={16} className="text-purple-400 group-hover:opacity-0" />
                   ) : (
                     <Music size={16} className="text-emerald-400 group-hover:opacity-0" />
                   )}
                   <span className="absolute inset-0 grid place-items-center bg-brand opacity-0 transition-opacity group-hover:opacity-100">
-                    <Play size={14} fill="currentColor" className="text-white" />
+                    {isCurrent && isPlaying ? (
+                      <Pause size={14} fill="currentColor" className="text-white" />
+                    ) : (
+                      <Play size={14} fill="currentColor" className="text-white" />
+                    )}
                   </span>
                   {playlist.id === "continue-watching" && (
                     <span className="absolute inset-x-0 bottom-0 h-0.5 bg-white/15">
@@ -208,15 +231,19 @@ function SmartCollectionSection({
                   )}
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium text-zinc-200 sm:text-base">
+                  <span className={`block truncate text-sm font-medium sm:text-base ${
+                    isCurrent ? "text-brand-light font-semibold" : "text-zinc-200"
+                  }`}>
                     {getTrackDisplayName(track, showFileExtensions)}
                   </span>
                   {playlist.id === "continue-watching" && (
-                    <span className="text-xs text-zinc-600">{Math.round(progress)}% watched</span>
+                    <span className="text-xs text-zinc-500">{Math.round(progress)}% watched</span>
                   )}
                 </span>
               </span>
-              <span className="flex shrink-0 items-center gap-1 text-xs text-zinc-500 sm:text-sm">
+              <span className={`flex shrink-0 items-center gap-1 text-xs sm:text-sm ${
+                isCurrent ? "text-brand-light font-medium" : "text-zinc-500"
+              }`}>
                 <Clock size={14} /> {formatTime(track.duration_secs)}
               </span>
             </button>

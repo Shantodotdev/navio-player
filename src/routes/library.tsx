@@ -7,6 +7,7 @@ import {
   FolderPlus,
   Search,
   Play,
+  Pause,
   Music,
   Film,
   Trash2,
@@ -21,6 +22,7 @@ import { useSettingsStore } from "../store/settingsStore";
 import { toast } from "../store/toastStore";
 import { getErrorMessage } from "../lib/errorMessage";
 import { Select } from "../components/Select";
+import { PlayingIndicator } from "../components/PlayingIndicator";
 import {
   LIBRARY_SORT_OPTIONS,
   sortLibraryTracks,
@@ -33,7 +35,14 @@ export const Route = createFileRoute("/library")({
 
 /** Renders the searchable local media catalog and its list/grid presentations. */
 function LibraryView() {
-  const { playTrack, streamPort, streamToken } = usePlayerStore();
+  const {
+    playTrack,
+    currentTrack,
+    isPlaying,
+    setIsPlaying,
+    streamPort,
+    streamToken,
+  } = usePlayerStore();
   const {
     tracks,
     scannedDirs,
@@ -366,11 +375,19 @@ function LibraryView() {
                 <MediaCard
                   key={track.id}
                   track={track}
+                  isCurrent={currentTrack?.id === track.id}
+                  isPlaying={isPlaying}
                   streamPort={streamPort}
                   streamToken={streamToken}
                   showThumbnails={settings.library.showThumbnails}
                   showFileExtensions={settings.library.showFileExtensions}
-                  onPlay={() => playTrack(track, visibleTracks)}
+                  onPlay={() => {
+                    if (currentTrack?.id === track.id) {
+                      setIsPlaying(!isPlaying);
+                      return;
+                    }
+                    playTrack(track, visibleTracks);
+                  }}
                 />
               ))}
               {visibleTracks.length === 0 && (
@@ -386,7 +403,7 @@ function LibraryView() {
                 <table className="w-full border-collapse text-left text-xs sm:text-sm font-medium">
                   <thead>
                     <tr className="border-b border-white/5 text-zinc-450 text-[11px] sm:text-xs bg-white/1">
-                      <th className="p-2 sm:p-3 w-10 text-center">Play</th>
+                      <th className="p-2 sm:p-3 w-10 text-center">Status</th>
                       <th className="p-2 sm:p-3">Title</th>
                       <th className="p-2 sm:p-3 w-20 sm:w-24">Type</th>
                       <th className="p-2 sm:p-3 w-20 sm:w-24">Size</th>
@@ -394,48 +411,108 @@ function LibraryView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 text-zinc-400">
-                    {visibleTracks.map((track) => (
-                      <tr
-                        key={track.id}
-                        className="hover:bg-white/1 group transition-all duration-150 cursor-pointer"
-                        onDoubleClick={() => playTrack(track, visibleTracks)}
-                      >
-                        <td className="p-2 sm:p-3 text-center">
-                          <button
-                            onClick={() => playTrack(track, visibleTracks)}
-                            className="w-6 h-6 sm:w-7.5 sm:h-7.5 bg-brand/20 text-brand-light group-hover:bg-brand group-hover:text-zinc-200 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer"
-                          >
-                            <Play
-                              size={10}
-                              fill="currentColor"
-                              className="translate-x-[0.5px]"
-                            />
-                          </button>
-                        </td>
-                        <td className="p-2 sm:p-3 text-zinc-300 font-medium text-xs sm:text-sm truncate max-w-50 md:max-w-none">
-                          {getTrackDisplayName(
-                            track,
-                            settings.library.showFileExtensions,
-                          )}
-                        </td>
-                        <td className="p-2 sm:p-3">
-                          <span className="flex items-center gap-1 text-[10px] sm:text-xs text-zinc-400 font-medium lowercase">
-                            {track.media_type === "video" ? (
-                              <Film size={13} className="text-purple-400" />
-                            ) : (
-                              <Music size={13} className="text-emerald-400" />
-                            )}
-                            <span>{track.media_type}</span>
-                          </span>
-                        </td>
-                        <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
-                          {formatFileSize(track.file_size_bytes)}
-                        </td>
-                        <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
-                          {formatDuration(track.duration_secs)}
-                        </td>
-                      </tr>
-                    ))}
+                    {visibleTracks.map((track) => {
+                      const isCurrent = currentTrack?.id === track.id;
+
+                      return (
+                        <tr
+                          key={track.id}
+                          className="hover:bg-white/5 group transition-all duration-150 cursor-pointer"
+                          onDoubleClick={() => {
+                            if (isCurrent) {
+                              setIsPlaying(!isPlaying);
+                              return;
+                            }
+                            playTrack(track, visibleTracks);
+                          }}
+                        >
+                          <td className="p-2 sm:p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isCurrent) {
+                                  setIsPlaying(!isPlaying);
+                                  return;
+                                }
+                                playTrack(track, visibleTracks);
+                              }}
+                              className={`w-6 h-6 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer ${
+                                isCurrent
+                                  ? "bg-brand/20 text-brand-light hover:bg-brand hover:text-zinc-100"
+                                  : "bg-white/5 text-zinc-400 group-hover:bg-brand group-hover:text-zinc-200"
+                              }`}
+                              title={
+                                isCurrent
+                                  ? isPlaying
+                                    ? "Pause"
+                                    : "Resume"
+                                  : `Play ${track.title || track.name}`
+                              }
+                            >
+                              {isCurrent ? (
+                                isPlaying ? (
+                                  <>
+                                    <span className="group-hover:hidden flex items-center justify-center">
+                                      <PlayingIndicator
+                                        isPlaying={true}
+                                        size="sm"
+                                      />
+                                    </span>
+                                    <Pause
+                                      size={11}
+                                      fill="currentColor"
+                                      className="hidden group-hover:block"
+                                    />
+                                  </>
+                                ) : (
+                                  <Play
+                                    size={10}
+                                    fill="currentColor"
+                                    className="translate-x-[0.5px]"
+                                  />
+                                )
+                              ) : (
+                                <Play
+                                  size={10}
+                                  fill="currentColor"
+                                  className="translate-x-[0.5px]"
+                                />
+                              )}
+                            </button>
+                          </td>
+                          <td className="p-2 sm:p-3 truncate max-w-50 md:max-w-none">
+                            <span
+                              className={`truncate text-xs sm:text-sm font-medium ${
+                                isCurrent
+                                  ? "text-brand-light font-semibold"
+                                  : "text-zinc-200"
+                              }`}
+                            >
+                              {getTrackDisplayName(
+                                track,
+                                settings.library.showFileExtensions,
+                              )}
+                            </span>
+                          </td>
+                          <td className="p-2 sm:p-3">
+                            <span className="flex items-center gap-1 text-[10px] sm:text-xs text-zinc-400 font-medium lowercase">
+                              {track.media_type === "video" ? (
+                                <Film size={13} className="text-purple-400" />
+                              ) : (
+                                <Music size={13} className="text-emerald-400" />
+                              )}
+                              <span>{track.media_type}</span>
+                            </span>
+                          </td>
+                          <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
+                            {formatFileSize(track.file_size_bytes)}
+                          </td>
+                          <td className="p-2 sm:p-3 text-zinc-450 text-[10px] sm:text-xs">
+                            {formatDuration(track.duration_secs)}
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {visibleTracks.length === 0 && (
                       <tr>
                         <td
@@ -530,6 +607,8 @@ function ViewButton({ active, children, label, onClick }: ViewButtonProps) {
 
 interface MediaCardProps {
   track: Track;
+  isCurrent?: boolean;
+  isPlaying?: boolean;
   streamPort: number;
   streamToken: string;
   showThumbnails: boolean;
@@ -540,6 +619,8 @@ interface MediaCardProps {
 /** Displays a media track as a visual card with a cached video still when available. */
 function MediaCard({
   track,
+  isCurrent = false,
+  isPlaying = false,
   streamPort,
   streamToken,
   showThumbnails,
@@ -598,20 +679,50 @@ function MediaCard({
             )}
           </div>
         )}
+
+        {/* Minimal equalizer indicator for current active track */}
+        {isCurrent && (
+          <div className="absolute top-2 left-2 flex items-center justify-center h-6 w-6 rounded-full bg-black/70 backdrop-blur-xs border border-white/10 shadow-md">
+            <PlayingIndicator isPlaying={isPlaying} size="sm" />
+          </div>
+        )}
+
         <button
           type="button"
           onClick={onPlay}
-          aria-label={`Play ${track.title || track.name}`}
-          className="absolute bottom-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-brand text-zinc-200 opacity-0 shadow-lg shadow-brand-glow transition-all group-hover:opacity-100 group-focus-within:opacity-100 hover:bg-brand-light active:scale-90 cursor-pointer"
+          aria-label={
+            isCurrent
+              ? isPlaying
+                ? "Pause playback"
+                : "Resume playback"
+              : `Play ${track.title || track.name}`
+          }
+          className={`absolute bottom-2.5 right-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-brand text-zinc-200 shadow-lg shadow-brand-glow transition-all hover:bg-brand-light active:scale-90 cursor-pointer ${
+            isCurrent
+              ? "opacity-100"
+              : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100"
+          }`}
         >
-          <Play size={12} fill="currentColor" className="translate-x-[0.5px]" />
+          {isCurrent && isPlaying ? (
+            <Pause size={12} fill="currentColor" />
+          ) : (
+            <Play
+              size={12}
+              fill="currentColor"
+              className="translate-x-[0.5px]"
+            />
+          )}
         </button>
         <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-zinc-300">
           {formatDuration(track.duration_secs)}
         </span>
       </div>
       <div className="p-3 sm:p-4">
-        <h3 className="truncate text-xs sm:text-sm font-medium text-zinc-200">
+        <h3
+          className={`truncate text-xs sm:text-sm font-medium ${
+            isCurrent ? "text-brand-light font-semibold" : "text-zinc-200"
+          }`}
+        >
           {getTrackDisplayName(track, showFileExtensions)}
         </h3>
         <div className="mt-1.5 flex items-center justify-between gap-2 text-[10px] sm:text-xs text-zinc-500">
