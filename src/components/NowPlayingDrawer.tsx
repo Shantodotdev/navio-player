@@ -659,140 +659,144 @@ export function NowPlayingDrawer() {
           type="button"
           onClick={() => setDrawerOpen(false)}
           aria-label="Close now playing"
-          className="p-1.5 rounded-lg  hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+          className="p-1.5 rounded-lg hover:bg-white/10 border border-white/5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
         >
           <PanelRightClose size={20} />
         </button>
       </header>
 
-      <div
-        className={`${
-          isTheaterOpen
-            ? "absolute inset-0 min-h-0"
-            : "flex-1 min-h-0 flex flex-col gap-4 sm:gap-6 p-4 sm:p-5"
-        } ${currentTrack ? "" : "hidden"}`}
-      >
+      {currentTrack ? (
         <div
           className={
-            isTheaterOpen ? "absolute inset-0" : "space-y-4 min-w-0 shrink-0"
+            isTheaterOpen
+              ? "absolute inset-0 min-h-0"
+              : "flex-1 min-h-0 flex flex-col gap-4 sm:gap-6 p-4 sm:p-5"
           }
         >
           <div
-            onDoubleClick={openWatch}
-            className={`relative overflow-hidden group ${
-              isVideo
-                ? "aspect-video rounded-xl border border-white/5 shadow-lg bg-black"
-                : "aspect-video rounded-xl border border-white/5 shadow-lg bg-card-bg"
-            }`}
+            className={
+              isTheaterOpen ? "absolute inset-0" : "space-y-4 min-w-0 shrink-0"
+            }
           >
-            {!isTheaterOpen && (
-              <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
-            )}
-            {isVideo ? (
-              <div
-                ref={registerVideoSurfaceHost}
-                className="absolute inset-0"
-              />
-            ) : (
-              mediaPlayer
-            )}
+            <div
+              onDoubleClick={openWatch}
+              className={`relative overflow-hidden group ${
+                isVideo
+                  ? "aspect-video rounded-xl border border-white/5 shadow-lg bg-black"
+                  : "aspect-video rounded-xl border border-white/5 shadow-lg bg-card-bg"
+              }`}
+            >
+              {!isTheaterOpen && (
+                <div className="absolute inset-0 bg-linear-to-tr from-brand-glow to-transparent z-10 mix-blend-color-dodge pointer-events-none" />
+              )}
+              {isVideo ? (
+                <div
+                  ref={registerVideoSurfaceHost}
+                  className="absolute inset-0"
+                />
+              ) : (
+                mediaPlayer
+              )}
 
-            {isVideo && activeSubtitle.text && (
-              <div
-                className={`pointer-events-none absolute inset-x-4 z-30 flex justify-center text-center ${
-                  isTheaterOpen ? "bottom-32" : "bottom-4"
-                }`}
-              >
-                <p
-                  className={`max-w-4xl whitespace-pre-line rounded-md bg-black/75 px-3 py-1.5 font-medium leading-snug text-white shadow-lg ${
-                    isTheaterOpen ? "text-xl" : "text-sm"
+              {isVideo && activeSubtitle.text && (
+                <div
+                  className={`pointer-events-none absolute inset-x-4 z-30 flex justify-center text-center ${
+                    isTheaterOpen ? "bottom-32" : "bottom-4"
                   }`}
                 >
-                  {activeSubtitle.text}
+                  <p
+                    className={`max-w-4xl whitespace-pre-line rounded-md bg-black/75 px-3 py-1.5 font-medium leading-snug text-white shadow-lg ${
+                      isTheaterOpen ? "text-xl" : "text-sm"
+                    }`}
+                  >
+                    {activeSubtitle.text}
+                  </p>
+                </div>
+              )}
+
+              {(!isVideo || audioOnlySidebarVideo) && <AudioOrbit />}
+
+              {isVideo && !isTheaterOpen && (
+                <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      aria-label={isPlaying ? "Pause video" : "Play video"}
+                      onClick={() => setIsPlaying(!isPlaying)}
+                      className="w-12 h-12 rounded-full bg-black/65 hover:bg-brand text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
+                    >
+                      {isPlaying ? (
+                        <Pause size={19} fill="currentColor" />
+                      ) : (
+                        <Play
+                          size={19}
+                          fill="currentColor"
+                          className="translate-x-px"
+                        />
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Open theater mode"
+                      onClick={openWatch}
+                      className="w-10 h-10 rounded-full bg-black/65 hover:bg-white/20 text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
+                    >
+                      <MonitorPlay size={17} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
+              <h2 className="text-lg sm:text-xl font-medium text-zinc-100 truncate">
+                {getTrackDisplayName(
+                  activeTrack,
+                  settings.library.showFileExtensions,
+                )}
+              </h2>
+              <p className="text-sm text-zinc-400 capitalize">
+                {activeTrack.media_type}
+              </p>
+              {playbackError && (
+                <p role="alert" className="text-xs text-red-300 pt-1">
+                  {playbackError}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {!isTheaterOpen && (
+            <Queue
+              tracks={activeQueue}
+              currentTrackId={activeTrack.id}
+              showFileExtensions={settings.library.showFileExtensions}
+              onSelect={playTrack}
+              onMove={moveQueueItem}
+            />
+          )}
+        </div>
+      ) : (
+        <>
+          <div className="hidden" aria-hidden="true">
+            {mediaPlayer}
+          </div>
+          <div className="flex-1 grid place-items-center p-8 text-center">
+            <div className="max-w-xs space-y-4">
+              <div className="mx-auto w-16 h-16 rounded-2xl bg-brand/10 border border-brand/20 text-brand-light grid place-items-center">
+                <Music size={28} className="text-emerald-400" />
+              </div>
+              <div className="space-y-1.5">
+                <h2 className="text-lg font-medium text-zinc-200">
+                  Nothing playing
+                </h2>
+                <p className="text-sm leading-relaxed text-zinc-500">
+                  Choose an item from your library to start playback.
                 </p>
               </div>
-            )}
-
-            {(!isVideo || audioOnlySidebarVideo) && <AudioOrbit />}
-
-            {isVideo && !isTheaterOpen && (
-              <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/10 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    aria-label={isPlaying ? "Pause video" : "Play video"}
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    className="w-12 h-12 rounded-full bg-black/65 hover:bg-brand text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
-                  >
-                    {isPlaying ? (
-                      <Pause size={19} fill="currentColor" />
-                    ) : (
-                      <Play
-                        size={19}
-                        fill="currentColor"
-                        className="translate-x-px"
-                      />
-                    )}
-                  </button>
-                  <button
-                    type="button"
-                    aria-label="Open theater mode"
-                    onClick={openWatch}
-                    className="w-10 h-10 rounded-full bg-black/65 hover:bg-white/20 text-white grid place-items-center border border-white/15 transition-colors cursor-pointer"
-                  >
-                    <MonitorPlay size={17} />
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-
-          <div className={isTheaterOpen ? "hidden" : "space-y-1 px-1"}>
-            <h2 className="text-lg sm:text-xl font-medium text-zinc-100 truncate">
-              {getTrackDisplayName(
-                activeTrack,
-                settings.library.showFileExtensions,
-              )}
-            </h2>
-            <p className="text-sm text-zinc-400 capitalize">
-              {activeTrack.media_type}
-            </p>
-            {playbackError && (
-              <p role="alert" className="text-xs text-red-300 pt-1">
-                {playbackError}
-              </p>
-            )}
-          </div>
-        </div>
-
-        {!isTheaterOpen && (
-          <Queue
-            tracks={activeQueue}
-            currentTrackId={activeTrack.id}
-            showFileExtensions={settings.library.showFileExtensions}
-            onSelect={playTrack}
-            onMove={moveQueueItem}
-          />
-        )}
-      </div>
-
-      {!currentTrack && (
-        <div className="flex-1 grid place-items-center p-8 text-center">
-          <div className="max-w-xs space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-2xl bg-brand/10 border border-brand/20 text-brand-light grid place-items-center">
-              <Music size={28} className="text-emerald-400" />
-            </div>
-            <div className="space-y-1.5">
-              <h2 className="text-lg font-medium text-zinc-200">
-                Nothing playing
-              </h2>
-              <p className="text-sm leading-relaxed text-zinc-500">
-                Choose an item from your library to start playback.
-              </p>
             </div>
           </div>
-        </div>
+        </>
       )}
     </aside>
   );

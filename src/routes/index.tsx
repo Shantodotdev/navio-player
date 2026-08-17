@@ -12,10 +12,12 @@ import {
   TrendingUp,
   ChevronRight,
 } from "lucide-react";
+import { useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
 import { useLibrary } from "../hooks/useLibrary";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
+import { PlaylistModal } from "../components/PlaylistModal";
 import {
   getWatchProgress,
   type MediaActivity,
@@ -28,9 +30,13 @@ export const Route = createFileRoute("/")({
 });
 
 function DashboardView() {
-  const { playTrack, setDrawerOpen, setPlaylist } = usePlayerStore();
+  const { playTrack, setDrawerOpen } = usePlayerStore();
   const { settings } = useSettingsStore();
   const { stats, smartPlaylists, activity } = useLibrary();
+  const [selectedPlaylist, setSelectedPlaylist] = useState<SmartPlaylist | null>(
+    null,
+  );
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   /** Starts one smart collection using its derived ordering as the queue. */
   function playSmartTrack(track: Track, queue: Track[]) {
@@ -38,10 +44,10 @@ function DashboardView() {
     setDrawerOpen(true);
   }
 
-  /** Loads a generated collection into the standard Now Playing sidebar. */
+  /** Opens a smart collection in the playlist modal. */
   function openSmartPlaylist(playlist: SmartPlaylist) {
-    setPlaylist(playlist.tracks);
-    setDrawerOpen(true);
+    setSelectedPlaylist(playlist);
+    setIsModalOpen(true);
   }
 
   return (
@@ -112,6 +118,23 @@ function DashboardView() {
             />
           ))}
       </div>
+
+      {selectedPlaylist && (
+        <PlaylistModal
+          playlist={selectedPlaylist}
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          onExited={() => setSelectedPlaylist(null)}
+          onPlayTrack={(track, queue) => {
+            playSmartTrack(track, queue);
+          }}
+          onPlayAll={(queue) => {
+            if (queue.length > 0) {
+              playSmartTrack(queue[0], queue);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

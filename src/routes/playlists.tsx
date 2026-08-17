@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Clock, Film, ListMusic, Music, Pencil, Play } from "lucide-react";
 import { CreatePlaylistModal } from "../components/CreatePlaylistModal";
 import { PlaylistEditorModal } from "../components/PlaylistEditorModal";
+import { PlaylistModal } from "../components/PlaylistModal";
 import { useLibrary } from "../hooks/useLibrary";
 import type { Playlist } from "../store/libraryStore";
 import { usePlayerStore } from "../store/playerStore";
@@ -13,7 +14,7 @@ export const Route = createFileRoute("/playlists")({
 });
 
 function PlaylistsView() {
-  const { playTrack, setDrawerOpen, setPlaylist } = usePlayerStore();
+  const { playTrack, setDrawerOpen } = usePlayerStore();
   const {
     tracks,
     playlists,
@@ -27,9 +28,22 @@ function PlaylistsView() {
   } = useLibrary();
   const [editingPlaylist, setEditingPlaylist] = useState<Playlist | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [viewingPlaylist, setViewingPlaylist] = useState<
+    (Playlist | SmartPlaylist) | null
+  >(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
 
   const activePlaylist = editingPlaylist
     ? (playlists.find((playlist) => playlist.id === editingPlaylist.id) ?? null)
+    : null;
+
+  const isViewingCustom = Boolean(
+    viewingPlaylist && playlists.some((p) => p.id === viewingPlaylist.id),
+  );
+  const currentViewingPlaylist = viewingPlaylist
+    ? isViewingCustom
+      ? (playlists.find((p) => p.id === viewingPlaylist.id) ?? viewingPlaylist)
+      : (smartPlaylists.find((p) => p.id === viewingPlaylist.id) ?? viewingPlaylist)
     : null;
 
   const openEditor = (playlist: Playlist) => {
@@ -55,10 +69,16 @@ function PlaylistsView() {
     setDrawerOpen(true);
   }
 
-  /** Loads a generated collection into the standard Now Playing sidebar. */
+  /** Opens a smart collection in the playlist viewer modal. */
   function handleOpenSmartPlaylist(playlist: SmartPlaylist) {
-    setPlaylist(playlist.tracks);
-    setDrawerOpen(true);
+    setViewingPlaylist(playlist);
+    setIsViewOpen(true);
+  }
+
+  /** Opens a manual playlist in the playlist viewer modal. */
+  function handleOpenPlaylist(playlist: Playlist) {
+    setViewingPlaylist(playlist);
+    setIsViewOpen(true);
   }
 
   return (
@@ -128,7 +148,7 @@ function PlaylistsView() {
                   <div className="flex items-start justify-between">
                     <button
                       type="button"
-                      onClick={() => setDrawerOpen(true)}
+                      onClick={() => handleOpenPlaylist(playlist)}
                       title="Open Now Playing sidebar"
                       className="flex h-12 w-12 items-center justify-center rounded-xl border border-brand/20 bg-brand/10 text-brand-light hover:bg-brand/25 transition-all duration-200 cursor-pointer"
                     >
@@ -154,7 +174,7 @@ function PlaylistsView() {
                     </div>
                   </div>
                   <h3
-                    onClick={() => setDrawerOpen(true)}
+                    onClick={() => handleOpenPlaylist(playlist)}
                     className="mt-4 truncate text-lg font-medium text-zinc-200 hover:text-brand-light cursor-pointer transition-colors"
                   >
                     {playlist.name}
@@ -197,6 +217,36 @@ function PlaylistsView() {
           onReorderTrack={(fromIndex, toIndex) =>
             reorderPlaylistTracks(activePlaylist.id, fromIndex, toIndex)
           }
+        />
+      )}
+
+      {currentViewingPlaylist && (
+        <PlaylistModal
+          playlist={currentViewingPlaylist}
+          isOpen={isViewOpen}
+          onClose={() => setIsViewOpen(false)}
+          onExited={() => setViewingPlaylist(null)}
+          onPlayTrack={(track, queue) => {
+            playTrack(track, queue);
+            setDrawerOpen(true);
+          }}
+          onPlayAll={(queue) => {
+            if (queue.length > 0) {
+              playTrack(queue[0], queue);
+              setDrawerOpen(true);
+            }
+          }}
+          isCustom={isViewingCustom}
+          onEdit={(playlistToEdit) => {
+            setIsViewOpen(false);
+            setViewingPlaylist(null);
+            openEditor(playlistToEdit);
+          }}
+          onDelete={async (playlistToDelete) => {
+            await deletePlaylist(playlistToDelete.id);
+            setIsViewOpen(false);
+            setViewingPlaylist(null);
+          }}
         />
       )}
 
