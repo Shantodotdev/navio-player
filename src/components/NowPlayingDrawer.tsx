@@ -111,7 +111,6 @@ export function NowPlayingDrawer() {
   const lastPlayerUpdate = useRef(0);
   const persistTimer = useRef<number | null>(null);
 
-  const hasCurrentTrack = currentTrack !== null;
   const isVideo = currentTrack?.media_type === "video";
   const audioOnlySidebarVideo =
     isVideo && settings.playback.playVideoInSidebar && !isTheaterOpen;
@@ -132,11 +131,6 @@ export function NowPlayingDrawer() {
     subtitleCursor.current,
   );
   subtitleCursor.current = activeSubtitle.index;
-
-  useEffect(() => {
-    // Keep Now Playing contextual to the Library without interrupting playback.
-    setDrawerOpen(pathname === "/library" && hasCurrentTrack);
-  }, [hasCurrentTrack, pathname, setDrawerOpen]);
 
   useEffect(() => {
     const media = videoRef.current;
