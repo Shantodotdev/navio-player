@@ -1,4 +1,4 @@
-import { useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { Keyboard, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
@@ -7,6 +7,7 @@ const SHORTCUTS = [
   { keys: "Space / K", action: "Play or pause" },
   { keys: "← / →", action: "Seek backward or forward 10 seconds" },
   { keys: "↑ / ↓", action: "Volume up or down" },
+  { keys: "F", action: "Full screen current playback" },
   { keys: "Q", action: "Toggle Now Playing" },
   { keys: "?", action: "Show keyboard shortcuts" },
   { keys: "Ctrl + F", action: "Focus library search" },
@@ -24,6 +25,7 @@ function blurPointerActivatedButton(event: PointerEvent) {
 
 /** Provides Navio's fixed app-wide shortcuts and their reference overlay. */
 export function KeyboardShortcuts() {
+  const navigate = useNavigate();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -143,6 +145,15 @@ export function KeyboardShortcuts() {
         event.preventDefault();
         event.stopImmediatePropagation();
         player.setVolume(Math.max(0, player.volume - 5));
+      } else if (key === "f" && !event.repeat && player.currentTrack) {
+        if (theaterHandlesKey) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (player.currentTrack.media_type === "video") {
+          void navigate({ to: "/watch" });
+        } else {
+          player.setDrawerOpen(true);
+        }
       } else if (key === "q" && !event.repeat) {
         event.preventDefault();
         event.stopImmediatePropagation();
@@ -157,7 +168,7 @@ export function KeyboardShortcuts() {
     // Capture prevents view-specific listeners from applying the same shortcut twice.
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [isOpen, pathname]);
+  }, [isOpen, navigate, pathname]);
 
   return (
     <div
