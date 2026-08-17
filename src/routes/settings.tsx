@@ -297,10 +297,15 @@ function SettingsView() {
 
         <section className="bg-panel-bg/30 rounded-2xl border border-white/5 p-6 space-y-4">
           <SectionTitle icon={<Info size={20} />} title="About Navio Player" />
-          <p className="text-sm text-zinc-500">
-            Navio is a privacy-focused local media player. Your library,
-            preferences, and history remain on this computer.
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <p className="text-sm text-zinc-500">
+              Navio is a privacy-focused local media player. Your library,
+              preferences, and history remain on this computer.
+            </p>
+            <span className="text-xs font-mono text-zinc-400 bg-white/5 border border-white/10 rounded-md px-2.5 py-1 shrink-0 self-start sm:self-auto">
+              v{__APP_VERSION__}
+            </span>
+          </div>
         </section>
       </div>
       <SettingsActionModal
