@@ -23,6 +23,15 @@ function blurPointerActivatedButton(event: PointerEvent) {
   if (button instanceof HTMLButtonElement) button.blur();
 }
 
+const OPEN_SHORTCUTS_EVENT = "navio:open-keyboard-shortcuts";
+
+/** Programmatically displays the global keyboard shortcuts modal. */
+export function openKeyboardShortcutsModal(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent(OPEN_SHORTCUTS_EVENT));
+  }
+}
+
 /** Provides Navio's fixed app-wide shortcuts and their reference overlay. */
 export function KeyboardShortcuts() {
   const navigate = useNavigate();
@@ -30,6 +39,12 @@ export function KeyboardShortcuts() {
     select: (state) => state.location.pathname,
   });
   const [isOpen, setIsOpen] = useState(false);
+
+  useEffect(() => {
+    const handleOpen = () => setIsOpen(true);
+    window.addEventListener(OPEN_SHORTCUTS_EVENT, handleOpen);
+    return () => window.removeEventListener(OPEN_SHORTCUTS_EVENT, handleOpen);
+  }, []);
 
   useEffect(() => {
     // Pointerup occurs before click, so actions still fire without retaining focus.

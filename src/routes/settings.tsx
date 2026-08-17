@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import {
   Info,
+  Keyboard,
   LoaderCircle,
   RefreshCw,
   Settings as SettingsIcon,
@@ -11,6 +12,7 @@ import {
 import { Switch } from "../components/Switch";
 import { Select } from "../components/Select";
 import { SettingsActionModal } from "../components/SettingsActionModal";
+import { openKeyboardShortcutsModal } from "../components/KeyboardShortcuts";
 import { NAVIO_LANGUAGE_OPTIONS } from "../lib/mediaLanguages";
 import {
   useSettingsStore,
@@ -305,6 +307,22 @@ function SettingsView() {
             <span className="text-xs font-mono text-zinc-400 bg-white/5 border border-white/10 rounded-md px-2.5 py-1 shrink-0 self-start sm:self-auto">
               v{__APP_VERSION__}
             </span>
+          </div>
+          <div className="pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-base text-zinc-200">Keyboard shortcuts</div>
+              <div className="text-sm text-zinc-500">
+                View all player controls and navigation shortcuts.
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={openKeyboardShortcutsModal}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3.5 py-2 text-sm font-medium text-zinc-300 transition-colors hover:border-white/20 hover:bg-white/10 cursor-pointer shrink-0"
+            >
+              <Keyboard size={16} className="text-brand-light" />
+              <span>View shortcuts</span>
+            </button>
           </div>
         </section>
       </div>
