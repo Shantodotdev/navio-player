@@ -4,12 +4,19 @@
 //! authorization, streaming tokens, filesystem watchers, media preparation,
 //! downloader persistence, and operating-system process control stay in Rust.
 //! `AppState` is the narrow shared surface exposed to Tauri commands. Its fields
+//! Native Navio application composition and shared cross-module state.
+//!
+//! This crate deliberately keeps the browser-facing renderer thin: local file
+//! authorization, streaming tokens, filesystem watchers, media preparation,
+//! downloader persistence, and operating-system process control stay in Rust.
+//! `AppState` is the narrow shared surface exposed to Tauri commands. Its fields
 //! are long-lived services or guarded resources, never unvalidated renderer
 //! inputs; commands validate and narrow their own parameters before using them.
 
 mod activity;
 mod application;
 mod commands;
+pub mod connect;
 mod control;
 mod downloader;
 mod library;
@@ -73,6 +80,12 @@ pub struct AppState {
 
   /// Bounded request bridge used by authenticated local MCP control calls.
   pub control_broker: control::ControlBroker,
+
+  /// Navio Connect P2P Discovery and WebSocket session hub.
+  pub connect_hub: connect::ConnectHub,
+
+  /// Navio Connect client session manager for controlling remote peers.
+  pub connect_client: connect::ConnectClientManager,
 
   /// Media paths supplied by the operating system when Navio was launched.
   pub pending_open_paths: Mutex<Vec<String>>,

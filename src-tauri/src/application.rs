@@ -32,6 +32,7 @@ pub fn run() {
   let stream_token = uuid::Uuid::new_v4().to_string();
   let control_token = uuid::Uuid::new_v4().to_string();
   let control_broker = control::ControlBroker::new(32);
+  let connect_hub_slot = Arc::new(std::sync::RwLock::new(None));
   println!("[Navio Server] Generated per-run stream token");
 
   // Setup oneshot channel for server graceful shutdown
@@ -42,6 +43,7 @@ pub fn run() {
     stream_token: stream_token.clone(),
     control_token: control_token.clone(),
     control_broker: control_broker.clone(),
+    connect_hub: connect_hub_slot.clone(),
   };
 
   // Start the server and block until it binds to a dynamic port.
@@ -51,6 +53,8 @@ pub fn run() {
     tauri::async_runtime::block_on(async { server::start_server(server_state, shutdown_rx).await })
       .expect("Failed to initialize stream server");
 
+  let connect_hub_ref = connect_hub_slot.clone();
+
   // Build the Tauri application context
   let app = tauri::Builder::default()
     .plugin(tauri_plugin_dialog::init())
@@ -58,6 +62,10 @@ pub fn run() {
       let app_handle = app.handle().clone();
       let download_manager = downloader::DownloadManager::load(&app_handle)?;
       let activity_store = activity::ActivityStore::load(&app_handle)?;
+      let connect_hub = connect::ConnectHub::new(app_handle.clone(), port);
+      let connect_client = connect::ConnectClientManager::new(app_handle.clone());
+      *connect_hub_ref.write().unwrap() = Some(connect_hub.clone());
+
       // A process handle cannot survive a restart. Convert durable active jobs
       // before the renderer requests the queue so users can retry honestly.
       download_manager.recover_interrupted()?;
@@ -76,6 +84,8 @@ pub fn run() {
         watcher: Arc::new(Mutex::new(None)),
         media_cache: media_tools::MediaCache::default(),
         control_broker: control_broker.clone(),
+        connect_hub: connect_hub.clone(),
+        connect_client,
         pending_open_paths: Mutex::new(pending_open_paths),
       };
       if !app.manage(app_state) {
@@ -163,7 +173,20 @@ pub fn run() {
       downloader::command::get_downloads,
       downloader::command::remove_download,
       downloader::inspection::inspect_download_url,
-      commands::open_folder
+      commands::open_folder,
+      connect::commands::connect_get_local_device,
+      connect::commands::connect_get_discovered_peers,
+      connect::commands::connect_get_paired_devices,
+      connect::commands::connect_generate_pairing_pin,
+      connect::commands::connect_get_active_pin,
+      connect::commands::connect_update_device_permissions,
+      connect::commands::connect_revoke_device,
+      connect::commands::connect_broadcast_playback_state,
+      connect::commands::connect_pair_with_peer,
+      connect::commands::connect_connect_to_peer,
+      connect::commands::connect_send_remote_command,
+      connect::commands::connect_disconnect_remote,
+      connect::commands::connect_get_active_remote_host,
     ])
     .build(tauri::generate_context!())
     .expect("error while building tauri application");
@@ -190,6 +213,7 @@ pub fn run() {
         // Send empty tuple to oneshot trigger
         let _ = tx.send(());
       }
+      state.connect_hub.shutdown();
       control::remove_runtime_descriptor(std::process::id());
     }
   });
