@@ -26,9 +26,14 @@ tauri-plugin-dialog = "2"
 lofty = "0.21"
 mp4 = "0.14"
 matroska = "0.30"
-axum = { version = "0.7", features = ["tokio"] }
+axum = { version = "0.7", features = ["tokio", "ws"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }
 tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = { version = "0.24" }
+futures-util = "0.3"
+mdns-sd = "0.13"
+local-ip-address = "0.6"
+hostname = "0.4"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 rmcp = { version = "2.2.0", features = ["transport-io"] }
 schemars = "1.0"
