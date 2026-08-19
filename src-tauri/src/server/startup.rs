@@ -1,6 +1,6 @@
 use super::*;
 
-/// Spawns a lightweight local HTTP streaming server on a dynamic port.
+/// Spawns a lightweight local HTTP streaming & connect server on a dynamic port.
 ///
 /// # Arguments
 /// * `state` - The shared server configuration containing allowed directory paths.
@@ -11,17 +11,25 @@ pub async fn start_server(
   state: ServerState,
   shutdown_rx: oneshot::Receiver<()>,
 ) -> Result<u16, String> {
+  let cors = tower_http::cors::CorsLayer::new()
+    .allow_methods(tower_http::cors::Any)
+    .allow_origin(tower_http::cors::Any)
+    .allow_headers(tower_http::cors::Any);
+
   // Setup the server router
-  // We use percent-decoded path parameters to avoid URL segment clashes with file path separators.
   let app = Router::new()
     .route("/stream/:file_path", get(stream_file))
     .with_state(state.clone())
-    .merge(crate::control::http::control_router(state));
+    .merge(crate::control::http::control_router(state.clone()))
+    .merge(crate::connect::http::connect_router(
+      state.connect_hub.clone(),
+    ))
+    .layer(cors);
 
-  // Bind to 127.0.0.1 on a random available port (port 0 requests dynamic allocation)
-  let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+  // Bind to 0.0.0.0 on a dynamic port so both localhost and LAN peers can connect
+  let listener = tokio::net::TcpListener::bind("0.0.0.0:0")
     .await
-    .map_err(|e| format!("Failed to bind to local port: {}", e))?;
+    .map_err(|e| format!("Failed to bind to network port: {}", e))?;
 
   let port = listener
     .local_addr()
@@ -30,8 +38,8 @@ pub async fn start_server(
 
   // Print startup logs so developers can see the server address in the terminal
   println!(
-    "[Navio Server] Started local streaming server at http://127.0.0.1:{}",
-    port
+    "[Navio Server] Started streaming & connect server on port {} (0.0.0.0:{})",
+    port, port
   );
   // Spawn the server task with a graceful shutdown trigger
   tokio::spawn(async move {

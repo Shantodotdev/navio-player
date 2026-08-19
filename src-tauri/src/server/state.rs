@@ -16,6 +16,9 @@ pub struct ServerState {
 
   /// Bounded handoff from authenticated HTTP calls to the renderer.
   pub control_broker: crate::control::ControlBroker,
+
+  /// Navio Connect session and WebSocket hub.
+  pub connect_hub: Arc<std::sync::RwLock<Option<crate::connect::ConnectHub>>>,
 }
 
 #[derive(serde::Deserialize)]
