@@ -15,7 +15,7 @@
 //!    - A background thread continuously listens for incoming mDNS packets on the LAN.
 //!    - When another Navio peer resolves, its IP, port, and identity are stored in a thread-safe
 //!      in-memory registry (`Arc<RwLock<HashMap<String, DiscoveredPeer>>>`).
-//!    - When a peer shuts down or sends an mDNS goodbye packet (TTL=0), it is removed from the registry.
+//!    - Handles sleep/wake cycles and avoids duplicate or unneeded offline log spam.
 
 use super::models::{DeviceType, DiscoveredPeer, Platform};
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
@@ -66,7 +66,12 @@ impl DiscoveryManager {
     properties.insert("version".to_string(), "1.0.0".to_string());
 
     // Sanitize the instance name for DNS compliance (navio-<short_id>)
-    let instance_name = format!("navio-{}", &local_device_id[..8]);
+    let short_id = if local_device_id.len() >= 8 {
+      &local_device_id[..8]
+    } else {
+      &local_device_id
+    };
+    let instance_name = format!("navio-{}", short_id);
     let host_name = format!("{}.local.", instance_name);
 
     // Pick the primary LAN IP for the address record
@@ -101,13 +106,13 @@ impl DiscoveryManager {
     }
 
     // 3. Start browsing for other Navio peers on the local subnet.
-    // `browse` sends a multicast query for `_navio-connect._tcp.local.` and returns a channel receiver.
     let receiver = mdns
       .browse(SERVICE_TYPE)
       .map_err(|e| format!("Failed to browse mDNS services: {e}"))?;
 
     let peers_store = discovered_peers.clone();
     let self_id = local_device_id.clone();
+    let self_instance_prefix = format!("navio-{}", short_id);
 
     // 4. Spawn a dedicated background OS thread to continuously process incoming discovery events.
     std::thread::Builder::new()
@@ -115,13 +120,16 @@ impl DiscoveryManager {
       .spawn(move || {
         while let Ok(event) = receiver.recv() {
           match event {
-            // A remote peer was discovered and its DNS records successfully resolved
+            // A remote peer was discovered or its DNS records refreshed
             ServiceEvent::ServiceResolved(info) => {
               let props = info.get_properties();
               let peer_id = props.get_property_val_str("id").unwrap_or("").to_string();
 
               // Ignore self-broadcasts so this node does not list itself
-              if peer_id.is_empty() || peer_id == self_id {
+              if peer_id.is_empty()
+                || peer_id == self_id
+                || info.get_fullname().contains(&self_instance_prefix)
+              {
                 continue;
               }
 
@@ -164,27 +172,58 @@ impl DiscoveryManager {
                   .as_millis() as u64,
               };
 
-              println!(
-                "[Navio Connect] Discovered peer: \"{}\" ({}) at {:?}:{}",
-                peer_name,
-                peer_id,
-                addresses,
-                info.get_port()
-              );
-
-              // Update the in-memory peer cache with a write lock
+              // Insert or update in the peers store
               if let Ok(mut lock) = peers_store.write() {
-                lock.insert(peer_id, peer);
+                let is_new = !lock.contains_key(&peer_id);
+                lock.insert(peer_id.clone(), peer);
+                if is_new {
+                  println!(
+                    "[Navio Connect] Discovered peer: \"{}\" ({}) at {:?}:{}",
+                    peer_name,
+                    peer_id,
+                    addresses,
+                    info.get_port()
+                  );
+                }
               }
             }
 
-            // A remote peer shut down, disconnected, or timed out
+            // An mDNS record timed out, removed, or goodbye packet received
             ServiceEvent::ServiceRemoved(_service_type, fullname) => {
-              println!("[Navio Connect] Peer went offline: {}", fullname);
+              // Ignore removals of our own local service instance
+              if fullname.contains(&self_instance_prefix) || fullname.contains(&self_id) {
+                continue;
+              }
+
               if let Ok(mut lock) = peers_store.write() {
-                // Remove the offline peer from the store
-                lock
-                  .retain(|_, peer| !fullname.contains(&peer.name) && !fullname.contains(&peer.id));
+                let prev_count = lock.len();
+                let mut removed_name: Option<String> = None;
+
+                // Match against known peer ID, name, or short ID prefix
+                lock.retain(|peer_id, peer| {
+                  let short_id_match = if peer_id.len() >= 8 {
+                    fullname.contains(&format!("navio-{}", &peer_id[..8]))
+                  } else {
+                    false
+                  };
+
+                  let is_match =
+                    fullname.contains(peer_id) || fullname.contains(&peer.name) || short_id_match;
+
+                  if is_match {
+                    removed_name = Some(peer.name.clone());
+                    false
+                  } else {
+                    true
+                  }
+                });
+
+                // Only log if an active peer was actually in our store and removed
+                if lock.len() < prev_count {
+                  if let Some(name) = removed_name {
+                    println!("[Navio Connect] Peer went offline: \"{}\"", name);
+                  }
+                }
               }
             }
             _ => {}
@@ -200,12 +239,18 @@ impl DiscoveryManager {
     })
   }
 
-  /// Returns a snapshot list of all currently discovered peers on the local network.
+  /// Returns a snapshot list of all currently active discovered peers on the local network.
   ///
-  /// Uses a read lock on the internal `RwLock` so multiple threads/commands can query
-  /// the list concurrently without blocking each other.
+  /// Prunes stale peers that haven't been seen for more than 120 seconds.
   pub fn get_discovered_peers(&self) -> Vec<DiscoveredPeer> {
-    if let Ok(lock) = self.discovered_peers.read() {
+    let now = std::time::SystemTime::now()
+      .duration_since(std::time::UNIX_EPOCH)
+      .unwrap_or_default()
+      .as_millis() as u64;
+
+    if let Ok(mut lock) = self.discovered_peers.write() {
+      // Clean up stale peers that haven't sent heartbeats in 120 seconds
+      lock.retain(|_, peer| now.saturating_sub(peer.last_seen_ms) < 120_000);
       lock.values().cloned().collect()
     } else {
       Vec::new()

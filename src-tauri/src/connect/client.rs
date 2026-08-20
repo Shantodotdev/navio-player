@@ -282,13 +282,35 @@ impl ConnectClientManager {
     });
 
     let mut recv_task = tokio::spawn(async move {
-      while let Some(Ok(Message::Text(text))) = receiver.next().await {
-        if let Ok(ConnectMessage::StateSync { state }) =
-          serde_json::from_str::<ConnectMessage>(&text)
-        {
-          let _ = app_handle.emit("navio-connect://remote-state-sync", state);
+      while let Some(Ok(msg)) = receiver.next().await {
+        if let Message::Text(text) = msg {
+          if let Ok(connect_msg) = serde_json::from_str::<ConnectMessage>(&text) {
+            match connect_msg {
+              ConnectMessage::StateSync { state } => {
+                let _ = app_handle.emit("navio-connect://remote-state-sync", state);
+              }
+              ConnectMessage::RemoteDownloadProgress {
+                job_id,
+                url,
+                percent,
+                speed,
+                status,
+              } => {
+                let payload = serde_json::json!({
+                  "jobId": job_id,
+                  "url": url,
+                  "percent": percent,
+                  "speed": speed,
+                  "status": status,
+                });
+                let _ = app_handle.emit("navio-connect://remote-download-progress", payload);
+              }
+              _ => {}
+            }
+          }
         }
       }
+      println!("[Navio Connect Client] Disconnected from remote host");
       *active_host_ref.lock().unwrap() = None;
       let _ = app_handle.emit("navio-connect://remote-disconnected", ());
     });
