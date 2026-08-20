@@ -9,9 +9,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceType {
+  #[serde(rename = "desktop")]
   Desktop,
+  #[serde(rename = "mobile")]
   Mobile,
+  #[serde(rename = "tablet")]
   Tablet,
+  #[serde(rename = "web")]
   Web,
 }
 
@@ -19,12 +23,19 @@ pub enum DeviceType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Platform {
+  #[serde(rename = "windows")]
   Windows,
+  #[serde(rename = "macos")]
   MacOS,
+  #[serde(rename = "linux")]
   Linux,
+  #[serde(rename = "ios")]
   Ios,
+  #[serde(rename = "android")]
   Android,
+  #[serde(rename = "web")]
   Web,
+  #[serde(rename = "unknown")]
   Unknown,
 }
 
