@@ -58,13 +58,17 @@ export function useConnectSync() {
     }
     lastBroadcastRef.current = now;
 
+    const effectivePlaying = usePlayerStore.getState().mediaElement
+      ? !usePlayerStore.getState().mediaElement!.paused
+      : isPlaying;
+
     const playerState: ConnectPlayerState = {
       title: currentTrack?.title || currentTrack?.name || "No Media Playing",
       artist: null,
       album: null,
       durationMs: Math.round((currentTrack?.duration_secs || 0) * 1000),
       positionMs: Math.round(currentTime * 1000),
-      isPlaying,
+      isPlaying: effectivePlaying,
       volume: volume / 100,
       mediaType: currentTrack?.media_type || "audio",
       thumbnailUrl: currentTrack?.cover_cache_path || null,
@@ -98,15 +102,37 @@ export function useConnectSync() {
           const player = usePlayerStore.getState();
 
           switch (action.action) {
-            case "play":
+            case "play": {
+              const el = player.mediaElement;
+              if (el) {
+                void el.play().catch(() => {});
+              }
               player.setIsPlaying(true);
               break;
-            case "pause":
+            }
+            case "pause": {
+              const el = player.mediaElement;
+              if (el) {
+                el.pause();
+              }
               player.setIsPlaying(false);
               break;
-            case "toggle_play":
-              player.setIsPlaying(!player.isPlaying);
+            }
+            case "toggle_play": {
+              const el = player.mediaElement;
+              if (el) {
+                if (el.paused) {
+                  void el.play().catch(() => {});
+                  player.setIsPlaying(true);
+                } else {
+                  el.pause();
+                  player.setIsPlaying(false);
+                }
+              } else {
+                player.setIsPlaying(!player.isPlaying);
+              }
               break;
+            }
             case "seek":
               if (player.mediaElement) {
                 player.mediaElement.currentTime =
