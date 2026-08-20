@@ -1,24 +1,25 @@
 import { useState } from "react";
 import {
-  X,
-  Wifi,
+  Check,
+  Key,
   Laptop,
+  Radio,
+  RadioTower,
+  RefreshCw,
+  Shield,
   Smartphone,
   Tablet,
-  Key,
-  Shield,
   Trash2,
-  RefreshCw,
-  Radio,
-  Check,
-  RadioTower,
+  Wifi,
+  X,
 } from "lucide-react";
 import { useConnectStore } from "../store/connectStore";
 import { ConnectPairingDialog } from "./ConnectPairingDialog";
 import { Switch } from "./Switch";
 
 /**
- * Main Navio Connect dashboard modal for device management, PIN generation, and granular permissions.
+ * Modal dialog for Navio Connect management, local discovery, pairing, and permissions.
+ * Matches CreatePlaylistModal's persistent DOM structure and smooth enter/exit CSS transitions.
  */
 export function ConnectModal() {
   const isConnectModalOpen = useConnectStore(
@@ -45,10 +46,6 @@ export function ConnectModal() {
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  if (!isConnectModalOpen) {
-    return null;
-  }
-
   const handleRefresh = async () => {
     setIsRefreshing(true);
     await refreshDiscoveredPeers();
@@ -58,153 +55,157 @@ export function ConnectModal() {
   const getDeviceIcon = (type: string) => {
     switch (type) {
       case "mobile":
-        return <Smartphone size={18} className="text-zinc-300" />;
+        return <Smartphone size={18} />;
       case "tablet":
-        return <Tablet size={18} className="text-zinc-300" />;
+        return <Tablet size={18} />;
       default:
-        return <Laptop size={18} className="text-zinc-300" />;
+        return <Laptop size={18} />;
     }
   };
 
   return (
     <>
+      {/* Persistent modal shell supporting smooth enter and exit CSS transitions */}
       <div
         onClick={closeConnectModal}
-        className="fixed inset-0 z-40 bg-black/60 backdrop-blur-md flex items-center justify-center p-4 select-none animate-in fade-in duration-200"
+        className={`fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 select-none transition-opacity duration-200 ${
+          isConnectModalOpen
+            ? "opacity-100 pointer-events-auto"
+            : "opacity-0 pointer-events-none"
+        }`}
       >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="relative flex max-h-[85vh] w-full max-w-2xl flex-col rounded-2xl bg-[#0e0e12]/95 backdrop-blur-2xl border border-white/10 shadow-2xl overflow-hidden"
+          className={`flex max-h-[min(720px,90vh)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#0e0e12]/85 shadow-2xl backdrop-blur-sm transition-all duration-200 transform ${
+            isConnectModalOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
+          }`}
         >
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-white/5 px-6 py-5 bg-black/20">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-brand/10 border border-brand/20 rounded-xl text-brand-light shadow-md shadow-brand-glow">
-                <Wifi size={20} />
-              </div>
-              <div>
-                <h2 className="text-lg font-medium text-zinc-200 flex items-center gap-2">
-                  Navio Connect
-                  <span className="rounded-md bg-brand/15 border border-brand/30 px-2 py-0.5 text-[10px] font-mono text-brand-light uppercase tracking-wider">
-                    LAN P2P
-                  </span>
-                </h2>
-                <p className="text-xs text-zinc-400 font-medium">
-                  Two-way remote control and media streaming across your local network
-                </p>
-              </div>
+          <div className="flex items-center justify-between border-b border-white/10 bg-white/2.5 p-6">
+            <div>
+              <h2 className="mt-1 text-2xl font-medium text-zinc-200 flex items-center gap-2.5">
+                <Wifi size={25} className="text-brand-light" />
+                Navio Connect
+              </h2>
             </div>
             <button
               type="button"
               onClick={closeConnectModal}
-              className="p-2 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-white/5 transition-colors cursor-pointer"
+              className="rounded-full p-2 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 transition-colors cursor-pointer shrink-0"
               aria-label="Close modal"
             >
-              <X size={17} />
+              <X size={18} />
             </button>
           </div>
 
-          {/* Content Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-            {/* Active Control Mode Indicator */}
-            {activeRemoteHost && (
-              <div className="flex items-center justify-between rounded-xl bg-brand/10 border border-brand/30 p-4 shadow-inner shadow-brand-glow">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-3 w-3 relative">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-light opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-brand"></span>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-medium text-zinc-200">
-                      Currently Controlling: {activeRemoteHost.hostName}
-                    </h4>
-                    <p className="text-xs text-brand-light/80 font-medium">
-                      {activeRemoteHost.address}:{activeRemoteHost.port} • Connected
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void disconnectRemote()}
-                  className="rounded-lg bg-black/40 hover:bg-black/70 border border-white/10 px-3.5 py-1.5 text-xs font-medium text-zinc-300 hover:text-red-300 hover:border-red-500/30 transition-all cursor-pointer"
-                >
-                  Disconnect
-                </button>
+          {/* Active Controlling Bar */}
+          {activeRemoteHost && (
+            <div className="flex items-center justify-between bg-brand/10 border-b border-brand/20 px-6 py-3">
+              <div className="flex items-center gap-3">
+                <span className="flex h-2.5 w-2.5 rounded-full bg-brand-light animate-pulse" />
+                <span className="text-sm font-medium text-zinc-200">
+                  Currently controlling{" "}
+                  <span className="text-brand-light font-semibold">
+                    {activeRemoteHost.hostName}
+                  </span>
+                </span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={() => void disconnectRemote()}
+                className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
+              >
+                Disconnect session
+              </button>
+            </div>
+          )}
 
+          {/* Main Scrollable Content */}
+          <div className="min-h-0 flex-1 overflow-y-auto p-6 space-y-6 bg-black/10 custom-scrollbar">
             {/* Section 1: This Machine & Pairing PIN */}
-            <div className="rounded-xl bg-black/30 border border-white/5 p-4 sm:p-5 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div className="p-2 rounded-lg bg-white/5 text-zinc-400">
-                    <RadioTower size={18} />
+            <div className="rounded-xl border border-white/10 bg-black/40 p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3.5">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-300">
+                    <RadioTower size={22} />
                   </div>
                   <div>
-                    <h3 className="text-sm font-medium text-zinc-200">
-                      This Device: {localDevice?.name || "Navio Desktop"}
+                    <h3 className="text-base font-medium text-zinc-200">
+                      {localDevice?.name || "This Computer"}
                     </h3>
-                    <p className="text-xs text-zinc-500 font-medium">
-                      IP: {localDevice?.localIps.join(", ") || "127.0.0.1"} • Port: {localDevice?.port || 0}
-                    </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs font-mono text-zinc-300 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md">
+                        {localDevice?.localIps[0] || "127.0.0.1"}:{localDevice?.port || 0}
+                      </span>
+                      <span className="text-xs text-zinc-500 font-normal">
+                        • Local host
+                      </span>
+                    </div>
                   </div>
                 </div>
+
                 <button
                   type="button"
                   onClick={() => void generateNewPin()}
-                  className="flex items-center justify-center gap-2 rounded-xl bg-brand hover:bg-brand-light text-zinc-200 px-4 py-2 text-xs font-medium shadow-md shadow-brand-glow transition-all cursor-pointer shrink-0"
+                  className="flex items-center justify-center gap-2 rounded-lg bg-brand px-4 py-2 text-sm font-normal text-white hover:bg-brand-light shadow shadow-brand-glow transition-all cursor-pointer shrink-0"
                 >
-                  <Key size={14} />
-                  <span>{activePin ? "New PIN" : "Generate Pairing PIN"}</span>
+                  <Key size={16} />
+                  <span>
+                    {activePin ? "Generate new PIN" : "Show pairing PIN"}
+                  </span>
                 </button>
               </div>
 
-              {/* Display PIN Card when active */}
+              {/* Display PIN Box */}
               {activePin && (
-                <div className="flex items-center justify-between rounded-xl bg-brand/10 border border-brand/30 p-4">
+                <div className="flex items-center justify-between rounded-xl border border-brand/30 bg-brand/10 p-4">
                   <div>
-                    <div className="text-xs font-medium text-brand-light">
-                      Pairing Code for incoming connections:
-                    </div>
-                    <div className="text-xs text-zinc-400 mt-0.5 font-medium">
-                      Type this 4-digit code on your remote device
-                    </div>
+                    <p className="text-sm font-medium text-brand-light">
+                      Pairing code for incoming connections:
+                    </p>
+                    <p className="text-xs text-zinc-400 mt-0.5">
+                      Enter this 4-digit code on your remote device to pair.
+                    </p>
                   </div>
-                  <div className="font-mono text-3xl font-bold tracking-widest text-zinc-100 bg-black/60 border border-brand/40 rounded-xl px-5 py-2 shadow-inner">
+                  <div className="font-mono text-2xl font-bold tracking-widest text-zinc-100 bg-black/60 border border-brand/40 rounded-lg px-4 py-2 shadow-inner">
                     {activePin}
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Section 2: Discovered Peers on LAN */}
+            {/* Section 2: Discovered Network Devices */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-                  <Radio size={15} className="text-brand-light" />
-                  Discovered on Local Network ({discoveredPeers.length})
+                  <Radio size={16} className="text-brand-light" />
+                  <span>Discovered devices on network</span>
+                  <span className="text-xs text-zinc-500 font-normal">
+                    ({discoveredPeers.length})
+                  </span>
                 </h3>
+
                 <button
                   type="button"
                   onClick={() => void handleRefresh()}
-                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs text-zinc-400 hover:text-zinc-200 hover:bg-white/5 transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors cursor-pointer"
                 >
                   <RefreshCw
                     size={13}
-                    className={`${isRefreshing ? "animate-spin text-brand-light" : ""}`}
+                    className={
+                      isRefreshing ? "animate-spin text-brand-light" : ""
+                    }
                   />
                   <span>Scan</span>
                 </button>
               </div>
 
               {discoveredPeers.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-white/10 p-8 text-center bg-black/20">
-                  <Radio size={24} className="text-zinc-600 mx-auto mb-2" />
-                  <p className="text-sm font-medium text-zinc-400">
-                    No other Navio instances found on this Wi-Fi
-                  </p>
-                  <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto font-medium">
-                    Ensure Navio is running on your Mac, Windows PC, or Linux machine on the same local network.
+                <div className="rounded-xl border border-dashed border-white/10 p-8 text-center text-sm text-zinc-500">
+                  <p>No other Navio players found on this Wi-Fi network.</p>
+                  <p className="text-xs text-zinc-600 mt-1">
+                    Ensure Navio is running on your other computer or mobile
+                    device.
                   </p>
                 </div>
               ) : (
@@ -216,59 +217,66 @@ export function ConnectModal() {
                     return (
                       <div
                         key={peer.id}
-                        className="flex items-center justify-between rounded-xl bg-black/30 border border-white/5 p-3.5 hover:border-white/10 transition-colors"
+                        className="group flex items-center justify-between gap-4 rounded-xl border border-white/5 bg-black/30 p-4 hover:border-white/10 hover:bg-white/5 transition-all"
                       >
-                        <div className="flex items-center gap-3">
-                          <div className="p-2.5 rounded-lg bg-white/5 border border-white/5">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-400">
                             {getDeviceIcon(peer.deviceType)}
                           </div>
-                          <div>
-                            <div className="text-sm font-medium text-zinc-200 flex items-center gap-2">
-                              {peer.name}
-                              <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/40 text-zinc-400 border border-white/5">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate text-sm font-medium text-zinc-200">
+                                {peer.name}
+                              </p>
+                              <span className="text-xs uppercase font-mono px-2 py-0.5 rounded bg-white/5 text-zinc-400">
                                 {peer.platform}
                               </span>
                               {isSaved && (
-                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+                                <span className="text-xs font-medium px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
                                   Paired
                                 </span>
                               )}
                             </div>
-                            <div className="text-xs text-zinc-500 font-medium">
-                              {peer.addresses[0] || "127.0.0.1"}:{peer.port}
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs font-mono text-zinc-400 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md">
+                                {peer.addresses[0] || "127.0.0.1"}:{peer.port}
+                              </span>
+                              <span className="text-xs text-zinc-500 font-normal">
+                                • Local network
+                              </span>
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           {isCurrent ? (
-                            <span className="flex items-center gap-1.5 text-xs font-medium text-brand-light px-3 py-1.5 rounded-lg bg-brand/10 border border-brand/20">
-                              <Check size={13} strokeWidth={2.5} />
+                            <span className="flex items-center gap-1.5 rounded-lg border border-brand/30 bg-brand/10 px-3.5 py-2 text-xs font-medium text-brand-light">
+                              <Check size={14} strokeWidth={2.5} />
                               Controlling
                             </span>
                           ) : isSaved ? (
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-2">
                               <button
                                 type="button"
                                 onClick={() => void connectWithSavedToken(peer)}
-                                className="rounded-xl bg-brand hover:bg-brand-light px-4 py-1.5 text-xs font-medium text-zinc-200 shadow-md shadow-brand-glow transition-all cursor-pointer"
+                                className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-light shadow shadow-brand-glow transition-all cursor-pointer"
                               >
                                 Connect
                               </button>
                               <button
                                 type="button"
                                 onClick={() => openPairingModal(peer)}
-                                className="rounded-xl bg-black/40 hover:bg-black/70 border border-white/10 p-1.5 text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                                className="rounded-lg border border-white/10 bg-white/5 p-2 text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors cursor-pointer"
                                 title="Re-pair with new PIN"
                               >
-                                <Key size={13} />
+                                <Key size={14} />
                               </button>
                             </div>
                           ) : (
                             <button
                               type="button"
                               onClick={() => openPairingModal(peer)}
-                              className="rounded-xl bg-brand hover:bg-brand-light px-4 py-1.5 text-xs font-medium text-zinc-200 shadow-md shadow-brand-glow transition-all cursor-pointer"
+                              className="rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-light shadow shadow-brand-glow transition-all cursor-pointer"
                             >
                               Pair with PIN
                             </button>
@@ -281,48 +289,61 @@ export function ConnectModal() {
               )}
             </div>
 
-            {/* Section 3: Paired Devices & Permissions */}
+            {/* Section 3: Paired & Trusted Devices */}
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-zinc-300 flex items-center gap-2">
-                <Shield size={15} className="text-brand-light" />
-                Paired & Trusted Devices ({pairedDevices.length})
+                <Shield size={16} className="text-brand-light" />
+                <span>Paired & trusted devices</span>
+                <span className="text-xs text-zinc-500 font-normal">
+                  ({pairedDevices.length})
+                </span>
               </h3>
 
               {pairedDevices.length === 0 ? (
-                <div className="rounded-xl bg-black/20 border border-white/5 p-4 text-center text-xs text-zinc-500 font-medium">
-                  No devices have paired with this machine yet.
+                <div className="rounded-xl border border-dashed border-white/10 p-6 text-center text-sm text-zinc-500">
+                  <p>No devices have paired with this computer yet.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
                   {pairedDevices.map((device) => (
                     <div
                       key={device.id}
-                      className="rounded-xl bg-black/30 border border-white/5 p-4 space-y-3"
+                      className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-4"
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-1.5 rounded-lg bg-white/5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-400">
                             {getDeviceIcon(device.deviceType)}
                           </div>
-                          <span className="text-sm font-medium text-zinc-200">
-                            {device.name}
-                          </span>
+                          <div>
+                            <p className="text-sm font-medium text-zinc-200">
+                              {device.name}
+                            </p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-xs font-mono text-zinc-400 bg-white/5 border border-white/5 px-2 py-0.5 rounded-md">
+                                ID: {device.id.slice(0, 8)}
+                              </span>
+                              <span className="text-xs text-zinc-500 font-normal">
+                                • Trusted device
+                              </span>
+                            </div>
+                          </div>
                         </div>
+
                         <button
                           type="button"
                           onClick={() => void revokeDevice(device.id)}
-                          className="flex items-center gap-1 text-xs text-zinc-400 hover:text-red-400 hover:bg-red-950/30 px-2 py-1 rounded-lg transition-colors cursor-pointer"
-                          title="Revoke device access"
+                          className="flex items-center gap-1.5 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/20 transition-colors cursor-pointer"
                         >
                           <Trash2 size={13} />
                           <span>Revoke</span>
                         </button>
                       </div>
 
-                      {/* Permission Toggles with Navio Switch */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/5 pt-3">
-                        <div className="flex items-center justify-between text-xs text-zinc-300 font-medium">
-                          <span>Playback Control</span>
+                      {/* Permission Toggles */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-3 border-t border-white/5">
+                        <div className="flex items-center justify-between text-sm text-zinc-300 font-medium">
+                          <span>Playback control</span>
                           <Switch
                             checked={device.permissions.allowPlaybackControl}
                             onChange={(checked) =>
@@ -333,8 +354,8 @@ export function ConnectModal() {
                             }
                           />
                         </div>
-                        <div className="flex items-center justify-between text-xs text-zinc-300 font-medium">
-                          <span>Media Streaming</span>
+                        <div className="flex items-center justify-between text-sm text-zinc-300 font-medium">
+                          <span>Media streaming</span>
                           <Switch
                             checked={device.permissions.allowStreaming}
                             onChange={(checked) =>
@@ -345,8 +366,8 @@ export function ConnectModal() {
                             }
                           />
                         </div>
-                        <div className="flex items-center justify-between text-xs text-zinc-300 font-medium">
-                          <span>Browse Library</span>
+                        <div className="flex items-center justify-between text-sm text-zinc-300 font-medium">
+                          <span>Browse library</span>
                           <Switch
                             checked={device.permissions.allowViewLibrary}
                             onChange={(checked) =>
@@ -357,8 +378,8 @@ export function ConnectModal() {
                             }
                           />
                         </div>
-                        <div className="flex items-center justify-between text-xs text-zinc-300 font-medium">
-                          <span>Remote Downloads</span>
+                        <div className="flex items-center justify-between text-sm text-zinc-300 font-medium">
+                          <span>Remote downloads</span>
                           <Switch
                             checked={device.permissions.allowRemoteDownload}
                             onChange={(checked) =>

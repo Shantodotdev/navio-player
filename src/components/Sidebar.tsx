@@ -64,7 +64,8 @@ export function Sidebar() {
 }
 
 function ConnectSidebarButton() {
-  const { openConnectModal, activeRemoteHost, discoveredPeers } = useConnectStore();
+  const { openConnectModal, activeRemoteHost, discoveredPeers } =
+    useConnectStore();
 
   return (
     <button
@@ -77,7 +78,9 @@ function ConnectSidebarButton() {
       title="Open Navio Connect devices"
     >
       <div className="flex items-center gap-2.5 truncate">
-        <Wifi className={`w-4 h-4 shrink-0 ${activeRemoteHost ? "text-emerald-400" : "text-cyan-400"}`} />
+        <Wifi
+          className={`w-4 h-4 shrink-0 ${activeRemoteHost ? "text-emerald-400" : "text-brand-light"}`}
+        />
         <span className="truncate">
           {activeRemoteHost ? activeRemoteHost.hostName : "Connect"}
         </span>
