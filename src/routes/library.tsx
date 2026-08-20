@@ -15,6 +15,7 @@ import {
   Grid2X2,
   List,
   LoaderCircle,
+  Wifi,
 } from "lucide-react";
 import { buildStreamUrl } from "../lib/theaterMedia";
 import { getTrackDisplayName } from "../lib/mediaLabels";
@@ -175,6 +176,8 @@ function LibraryView() {
   useEffect(() => {
     if (settingsLoaded) setViewMode(settings.library.viewMode);
   }, [settings.library.viewMode, settingsLoaded]);
+  const isRemote = selectedSource !== "local";
+  const selectedHost = savedHostTokens[selectedSource];
 
   const filteredTracks = activeSourceTracks.filter((t) => {
     const query = searchQuery.toLowerCase();
@@ -184,8 +187,9 @@ function LibraryView() {
       t.path.toLowerCase().includes(query);
 
     const matchesFilter = filterType === "all" || t.media_type === filterType;
-    const matchesDirectory =
-      !selectedDirectory || isPathWithinDirectory(t.path, selectedDirectory);
+    const matchesDirectory = isRemote
+      ? true
+      : !selectedDirectory || isPathWithinDirectory(t.path, selectedDirectory);
 
     return matchesSearch && matchesFilter && matchesDirectory;
   });
@@ -203,13 +207,18 @@ function LibraryView() {
     }
   }
 
+  const isLocalEmpty = !isRemote && visibleDirectories.length === 0;
+  const isRemoteEmpty = isRemote && activeSourceTracks.length === 0;
+
   return (
     <div className="space-y-6 max-w-6xl mx-auto font-medium select-none text-zinc-400 min-w-0">
       {/* Top Header Section */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8 sm:mb-12 md:mb-16">
         <div>
           <h1 className="text-2xl sm:text-3xl md:text-4xl font-medium text-zinc-200 tracking-tight">
-            Media library
+            {isRemote
+              ? `${selectedHost?.hostName || "Remote"}'s Library`
+              : "Media library"}
           </h1>
         </div>
 
@@ -227,7 +236,7 @@ function LibraryView() {
             </div>
           )}
 
-          {selectedSource === "local" && (
+          {!isRemote && (
             <button
               id="add-library-folder"
               type="button"
@@ -242,8 +251,8 @@ function LibraryView() {
         </div>
       </div>
 
-      {visibleDirectories.length === 0 ? (
-        // Large Elegant Empty State Panel
+      {isLocalEmpty ? (
+        // Large Elegant Empty State Panel for Local
         <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-6 sm:p-8">
           <div className="p-4 sm:p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
             <FolderPlus size={28} />
@@ -258,100 +267,119 @@ function LibraryView() {
             </p>
           </div>
         </div>
-      ) : (
-        // Normal Scanned folders list + Search & Filters + Tracks Table
-        <>
-          {/* Scanned Folder List card */}
-          <div className="bg-panel-bg/30 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/5 p-4 sm:p-5 md:p-6 mb-6 sm:mb-8 md:mb-10">
-            <h2 className="text-xs sm:text-base font-medium text-zinc-400 mb-3 sm:mb-3.5">
-              Scanned directories
-            </h2>
-            <div className="flex flex-wrap gap-2">
-              {visibleDirectories.map((dir) => {
-                const isRemoving = removingFolders.includes(dir);
-                const scan = scans.find((progress) =>
-                  pathsEqual(progress.root, dir),
-                );
-                const isPending = pendingScanRoots.some((root) =>
-                  pathsEqual(root, dir),
-                );
-                const isScanning = Boolean(scan || isPending);
-                return (
-                  <div
-                    key={dir}
-                    role="button"
-                    tabIndex={0}
-                    aria-busy={isRemoving || isScanning}
-                    onClick={() => {
-                      if (!isRemoving && !isScanning) setSelectedDirectory(dir);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        if (!isRemoving && !isScanning)
-                          setSelectedDirectory(dir);
-                      }
-                    }}
-                    className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group transition-colors max-w-full min-w-0 ${
-                      isRemoving || isScanning
-                        ? "cursor-wait"
-                        : "cursor-pointer"
-                    } ${
-                      selectedDirectory === dir
-                        ? "bg-brand/20 border-brand/50 text-zinc-200"
-                        : "bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200"
-                    }`}
-                  >
-                    <span className="truncate flex-1 min-w-0">{dir}</span>
-                    {isScanning ? (
-                      <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-brand-light sm:text-xs">
-                        <LoaderCircle size={13} className="animate-spin" />
-                        {formatDirectoryScanStatus(scan)}
-                      </span>
-                    ) : null}
-                    {scan ? (
-                      <button
-                        type="button"
-                        disabled={scan.phase === "cancelling"}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void handleCancelScan(scan.job_id);
-                        }}
-                        className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200 disabled:cursor-wait disabled:opacity-50"
-                        aria-label={`Cancel scan of ${dir}`}
-                        title="Cancel scan"
-                      >
-                        <X size={13} />
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={isRemoving || isScanning}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (selectedDirectory === dir) {
-                          setSelectedDirectory(null);
-                        }
-                        void handleDeleteFolder(dir);
-                      }}
-                      className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0 disabled:cursor-wait disabled:opacity-40"
-                      aria-label={`Remove ${dir} from library`}
-                    >
-                      {isRemoving ? (
-                        <LoaderCircle size={13} className="animate-spin" />
-                      ) : (
-                        <Trash2 size={13} />
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
+      ) : isRemoteEmpty ? (
+        // Empty State Panel for Remote Host
+        <div className="flex flex-col items-center justify-center py-16 sm:py-24 text-center space-y-5 bg-panel-bg/10 border border-white/5 rounded-2xl p-6 sm:p-8">
+          <div className="p-4 sm:p-5 bg-brand/5 border border-brand/10 rounded-full text-brand-light shadow-lg shadow-brand-glow">
+            <Wifi size={28} />
           </div>
+          <div className="space-y-2">
+            <h2 className="text-base sm:text-lg font-medium text-zinc-200">
+              No media found on {selectedHost?.hostName || "remote device"}
+            </h2>
+            <p className="text-xs sm:text-sm text-zinc-400 max-w-md leading-relaxed font-medium">
+              Ensure Navio has scanned media folders on{" "}
+              {selectedHost?.hostName || "that device"} and library viewing
+              permission is enabled.
+            </p>
+          </div>
+        </div>
+      ) : (
+        // Scanned folders list (local only) + Search & Filters + Tracks Table
+        <>
+          {/* Scanned Folder List card (Local Only) */}
+          {!isRemote && (
+            <div className="bg-panel-bg/30 backdrop-blur-md rounded-xl sm:rounded-2xl border border-white/5 p-4 sm:p-5 md:p-6 mb-6 sm:mb-8 md:mb-10">
+              <h2 className="text-xs sm:text-base font-medium text-zinc-400 mb-3 sm:mb-3.5">
+                Scanned directories
+              </h2>
+              <div className="flex flex-wrap gap-2">
+                {visibleDirectories.map((dir) => {
+                  const isRemoving = removingFolders.includes(dir);
+                  const scan = scans.find((progress) =>
+                    pathsEqual(progress.root, dir),
+                  );
+                  const isPending = pendingScanRoots.some((root) =>
+                    pathsEqual(root, dir),
+                  );
+                  const isScanning = Boolean(scan || isPending);
+                  return (
+                    <div
+                      key={dir}
+                      role="button"
+                      tabIndex={0}
+                      aria-busy={isRemoving || isScanning}
+                      onClick={() => {
+                        if (!isRemoving && !isScanning) setSelectedDirectory(dir);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          if (!isRemoving && !isScanning)
+                            setSelectedDirectory(dir);
+                        }
+                      }}
+                      className={`flex items-center gap-2 border px-2.5 py-1.5 sm:px-3 sm:py-2 rounded-lg text-xs sm:text-sm font-medium group transition-colors max-w-full min-w-0 ${
+                        isRemoving || isScanning
+                          ? "cursor-wait"
+                          : "cursor-pointer"
+                      } ${
+                        selectedDirectory === dir
+                          ? "bg-brand/20 border-brand/50 text-zinc-200"
+                          : "bg-black/40 border-white/5 text-zinc-400 hover:border-brand/30 hover:text-zinc-200"
+                      }`}
+                    >
+                      <span className="truncate flex-1 min-w-0">{dir}</span>
+                      {isScanning ? (
+                        <span className="flex shrink-0 items-center gap-1.5 text-[10px] text-brand-light sm:text-xs">
+                          <LoaderCircle size={13} className="animate-spin" />
+                          {formatDirectoryScanStatus(scan)}
+                        </span>
+                      ) : null}
+                      {scan ? (
+                        <button
+                          type="button"
+                          disabled={scan.phase === "cancelling"}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleCancelScan(scan.job_id);
+                          }}
+                          className="shrink-0 text-zinc-500 transition-colors hover:text-zinc-200 disabled:cursor-wait disabled:opacity-50"
+                          aria-label={`Cancel scan for ${dir}`}
+                        >
+                          <X size={13} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={isRemoving || isScanning}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (selectedDirectory === dir) {
+                              setSelectedDirectory(null);
+                            }
+                            void handleDeleteFolder(dir);
+                          }}
+                          className="text-zinc-500 hover:text-red-400 transition-colors cursor-pointer shrink-0 disabled:cursor-wait disabled:opacity-40"
+                          aria-label={`Remove ${dir} from library`}
+                        >
+                          {isRemoving ? (
+                            <LoaderCircle size={13} className="animate-spin" />
+                          ) : (
+                            <Trash2 size={13} />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Filters & Search */}
           <div className="flex flex-col md:flex-row gap-3 items-stretch md:items-center mb-4 min-w-0">
-            {selectedDirectory && (
+            {!isRemote && selectedDirectory && (
               <button
                 type="button"
                 onClick={() => setSelectedDirectory(null)}
