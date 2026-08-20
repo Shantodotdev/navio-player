@@ -166,8 +166,8 @@ pub struct ConnectPlayerState {
   pub thumbnail_url: Option<String>,
   /// Total tracks in the active queue.
   pub queue_length: usize,
-  /// Current active index in the queue.
-  pub queue_index: usize,
+  /// Current active index in the queue (-1 when no track selected).
+  pub queue_index: i64,
   /// Timestamp of when this state snapshot was captured.
   pub updated_at_ms: u64,
 }

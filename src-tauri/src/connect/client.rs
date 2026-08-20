@@ -42,6 +42,7 @@ pub struct ConnectedHostInfo {
   pub address: String,
   pub port: u16,
   pub permissions: ConnectPermissions,
+  pub token: Option<String>,
 }
 
 impl ConnectClientManager {
@@ -81,7 +82,10 @@ impl ConnectClientManager {
     let (mut sender, mut receiver) = ws_stream.split();
 
     // 2. Transmit the Auth frame
-    let auth_msg = ConnectMessage::Auth { token, client_id };
+    let auth_msg = ConnectMessage::Auth {
+      token: token.clone(),
+      client_id,
+    };
     let auth_text = serde_json::to_string(&auth_msg).map_err(|e| e.to_string())?;
     sender
       .send(Message::Text(auth_text))
@@ -116,6 +120,7 @@ impl ConnectClientManager {
       address,
       port,
       permissions,
+      token: Some(token),
     };
 
     *self.active_host.lock().unwrap() = Some(host_info.clone());
@@ -259,6 +264,7 @@ impl ConnectClientManager {
       address,
       port,
       permissions,
+      token: Some(token.clone()),
     };
 
     *self.active_host.lock().unwrap() = Some(host_info.clone());
