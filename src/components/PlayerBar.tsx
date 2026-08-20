@@ -18,6 +18,7 @@ import { usePlayerStore } from "../store/playerStore";
 import { useConnectStore } from "../store/connectStore";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
+import { ConnectDevicePickerPopover } from "./ConnectDevicePickerPopover";
 
 /// Global bottom player controller bar (full viewport width).
 export function PlayerBar() {
@@ -48,6 +49,7 @@ export function PlayerBar() {
     sendRemoteAction,
   } = useConnectStore();
 
+  const [isDevicePickerOpen, setIsDevicePickerOpen] = useState(false);
   const isRemoteControlling = Boolean(activeRemoteHost && remotePlayerState);
 
   const [coverUrl, setCoverUrl] = useState("");
@@ -71,13 +73,22 @@ export function PlayerBar() {
 
   // MouseDown handler to support smooth dragging/scrubbing on the timeline
   const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isRemoteControlling && remotePlayerState && remotePlayerState.durationMs > 0) {
+    if (
+      isRemoteControlling &&
+      remotePlayerState &&
+      remotePlayerState.durationMs > 0
+    ) {
       const timelineContainer = e.currentTarget;
       const rect = timelineContainer.getBoundingClientRect();
       const clickX = e.clientX - rect.left;
       const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
-      const targetPosMs = Math.round(clickPercent * remotePlayerState.durationMs);
-      void sendRemoteAction({ action: "seek", payload: { position_ms: targetPosMs } });
+      const targetPosMs = Math.round(
+        clickPercent * remotePlayerState.durationMs
+      );
+      void sendRemoteAction({
+        action: "seek",
+        payload: { position_ms: targetPosMs },
+      });
       return;
     }
 
@@ -120,7 +131,10 @@ export function PlayerBar() {
       const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
 
       if (isRemoteControlling) {
-        void sendRemoteAction({ action: "set_volume", payload: { volume: clickPercent } });
+        void sendRemoteAction({
+          action: "set_volume",
+          payload: { volume: clickPercent },
+        });
       } else {
         const targetVol = Math.round(clickPercent * 100);
         setVolume(targetVol);
@@ -169,12 +183,12 @@ export function PlayerBar() {
         : "Disable repeat";
 
   return (
-    <div className="w-full h-24 bg-[#050507]/98 backdrop-blur-2xl border-t border-white/5 px-4 md:px-8 flex items-center justify-between shadow-[0_-15px_30px_-15px_rgba(0,0,0,0.8)] z-50 shrink-0 select-none">
+    <div className="w-full h-24 bg-[#050507]/98 backdrop-blur-2xl border-t border-white/5 px-4 md:px-8 flex items-center justify-between shadow-[0_-15px_30px_-15px_rgba(0,0,0,0.8)] z-50 shrink-0 select-none relative">
       {/* Left: Active Track Details */}
       <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
         <div className="w-11 h-11 md:w-14 md:h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden group relative shrink-0">
           {isRemoteControlling ? (
-            <div className="w-full h-full grid place-items-center bg-cyan-950/40 text-cyan-400">
+            <div className="w-full h-full grid place-items-center bg-brand/10 text-brand-light">
               <Wifi size={20} />
             </div>
           ) : currentTrack?.media_type === "video" ? (
@@ -196,6 +210,7 @@ export function PlayerBar() {
           )}
           {!isRemoteControlling && currentTrack && (
             <button
+              type="button"
               onClick={toggleDrawer}
               className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
             >
@@ -206,7 +221,11 @@ export function PlayerBar() {
         <div
           className="flex flex-col truncate max-w-40 md:max-w-50 cursor-pointer"
           onClick={isRemoteControlling ? openConnectModal : toggleDrawer}
-          title={isRemoteControlling ? "Controlling remote device" : "Click to toggle Now Playing"}
+          title={
+            isRemoteControlling
+              ? "Controlling remote device"
+              : "Click to toggle Now Playing"
+          }
         >
           <span className="text-sm font-medium text-zinc-200 truncate hover:text-brand-light transition-colors">
             {isRemoteControlling
@@ -220,8 +239,8 @@ export function PlayerBar() {
           </span>
           <span className="text-xs text-zinc-400 truncate mt-0.5 font-medium flex items-center gap-1.5">
             {isRemoteControlling ? (
-              <span className="text-emerald-400 flex items-center gap-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span className="text-brand-light flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-light animate-pulse"></span>
                 Controlling: {activeRemoteHost?.hostName}
               </span>
             ) : currentTrack ? (
@@ -252,6 +271,7 @@ export function PlayerBar() {
             <Shuffle size={15} />
           </button>
           <button
+            type="button"
             onClick={() => {
               if (isRemoteControlling) {
                 void sendRemoteAction({ action: "previous_track" });
@@ -265,6 +285,7 @@ export function PlayerBar() {
             <SkipBack size={17} />
           </button>
           <button
+            type="button"
             onClick={() => {
               if (isRemoteControlling) {
                 void sendRemoteAction({ action: "toggle_play" });
@@ -282,6 +303,7 @@ export function PlayerBar() {
             )}
           </button>
           <button
+            type="button"
             onClick={() => {
               if (isRemoteControlling) {
                 void sendRemoteAction({ action: "next_track" });
@@ -323,7 +345,7 @@ export function PlayerBar() {
           >
             <div className="w-full h-1 bg-white/10 rounded-full relative">
               <div
-                className={`h-full ${isRemoteControlling ? "bg-cyan-400 group-hover:bg-cyan-300" : "bg-brand group-hover:bg-brand-light"} rounded-full relative transition-all duration-75`}
+                className="h-full bg-brand group-hover:bg-brand-light rounded-full relative transition-all duration-75"
                 style={{ width: `${effectiveProgressPercent}%` }}
               >
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md shadow-brand-glow"></div>
@@ -338,9 +360,13 @@ export function PlayerBar() {
       <div className="flex items-center justify-end gap-3 md:gap-4 flex-1 min-w-0">
         <div className="flex items-center gap-1.5 md:gap-3">
           <button
+            type="button"
             onClick={() => {
               if (isRemoteControlling) {
-                void sendRemoteAction({ action: "set_volume", payload: { volume: volume === 0 ? 0.8 : 0 } });
+                void sendRemoteAction({
+                  action: "set_volume",
+                  payload: { volume: volume === 0 ? 0.8 : 0 },
+                });
               } else {
                 setVolume(volume === 0 ? 80 : 0);
               }
@@ -362,21 +388,35 @@ export function PlayerBar() {
           </div>
         </div>
 
-        {/* Navio Connect Cast / Device Selector Button */}
-        <button
-          onClick={openConnectModal}
-          className={`p-2 rounded-lg border transition-all cursor-pointer ${
-            activeRemoteHost
-              ? "bg-emerald-950/50 border-emerald-500/30 text-emerald-400 shadow-inner"
-              : "bg-white/5 border-white/5 text-zinc-400 hover:text-zinc-200"
-          }`}
-          title={activeRemoteHost ? `Connected to ${activeRemoteHost.hostName}` : "Open Navio Connect"}
-        >
-          <Wifi size={15} />
-        </button>
+        {/* Navio Connect Device Switcher Popover Trigger */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => setIsDevicePickerOpen(!isDevicePickerOpen)}
+            className={`p-2 rounded-lg border transition-all cursor-pointer ${
+              activeRemoteHost
+                ? "bg-brand/15 border-brand/30 text-brand-light shadow-inner shadow-brand-glow"
+                : "bg-white/5 border-white/5 text-zinc-400 hover:text-zinc-200"
+            }`}
+            title={
+              activeRemoteHost
+                ? `Connected to ${activeRemoteHost.hostName}`
+                : "Connect to a device"
+            }
+          >
+            <Wifi size={15} />
+          </button>
+
+          {/* Floating Device Picker Popover */}
+          <ConnectDevicePickerPopover
+            isOpen={isDevicePickerOpen}
+            onClose={() => setIsDevicePickerOpen(false)}
+          />
+        </div>
 
         {/* Now Playing Right-Sidebar Toggle Button */}
         <button
+          type="button"
           onClick={toggleDrawer}
           className={`p-2 rounded-lg border transition-all cursor-pointer ${
             isDrawerOpen

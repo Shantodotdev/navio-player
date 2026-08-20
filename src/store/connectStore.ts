@@ -74,6 +74,7 @@ interface ConnectStoreState {
   ) => Promise<boolean>;
   revokeDevice: (deviceId: string) => Promise<boolean>;
   sendRemoteAction: (action: ConnectPlaybackAction) => Promise<boolean>;
+  sendRemoteDownload: (url: string, title?: string) => Promise<boolean>;
   disconnectRemote: () => Promise<void>;
   setRemotePlayerState: (state: ConnectPlayerState | null) => void;
 }
@@ -269,6 +270,10 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
 
   sendRemoteAction: async (action: ConnectPlaybackAction) => {
     return await connectApi.sendRemoteCommand(action);
+  },
+
+  sendRemoteDownload: async (url: string, title?: string) => {
+    return await connectApi.sendRemoteDownload(url, title);
   },
 
   disconnectRemote: async () => {

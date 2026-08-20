@@ -205,6 +205,23 @@ export async function disconnectRemote(): Promise<void> {
 }
 
 /**
+ * Dispatches a remote download request to the actively connected remote host.
+ */
+export async function sendRemoteDownload(
+  url: string,
+  title?: string
+): Promise<boolean> {
+  if (!isTauri()) return false;
+  try {
+    await invoke("connect_send_remote_download", { url, title });
+    return true;
+  } catch (error) {
+    console.error("[Navio Connect] Failed to send remote download:", error);
+    return false;
+  }
+}
+
+/**
  * Returns active remote host information if currently in controller mode.
  */
 export async function getActiveRemoteHost(): Promise<ConnectedHostInfo | null> {
