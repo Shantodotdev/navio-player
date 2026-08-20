@@ -6,8 +6,8 @@
 //! 1. It initiates an outbound WebSocket connection (`connect_async`) to `ws://<host-ip>:<port>/connect/ws`.
 //! 2. It performs either `Auth` (with an existing token) or `PairRequest` (with a PIN code).
 //! 3. It establishes two concurrent async loops:
-//!    - **Command Transmitter**: Reads outgoing user actions from an unbounded channel (`mpsc::unbounded_channel`)
-//!      and writes `ConnectMessage::Command` frames to the remote host.
+//!    - **Command Transmitter**: Reads outgoing messages from an unbounded channel (`mpsc::unbounded_channel`)
+//!      and writes `ConnectMessage` frames to the remote host.
 //!    - **State Receiver**: Listens for incoming `StateSync` and `RemoteDownloadProgress` frames from the host
 //!      and emits them to the local desktop WebView via Tauri events.
 
@@ -27,8 +27,8 @@ use tokio_tungstenite::tungstenite::Message;
 pub struct ConnectClientManager {
   /// Application handle for emitting events into the local WebView.
   app_handle: AppHandle,
-  /// Transmission channel for dispatching playback commands to the remote host.
-  command_tx: Arc<Mutex<Option<mpsc::UnboundedSender<ConnectPlaybackAction>>>>,
+  /// Transmission channel for dispatching commands and messages to the remote host.
+  message_tx: Arc<Mutex<Option<mpsc::UnboundedSender<ConnectMessage>>>>,
   /// Information regarding the currently connected remote host.
   active_host: Arc<Mutex<Option<ConnectedHostInfo>>>,
 }
@@ -50,7 +50,7 @@ impl ConnectClientManager {
   pub fn new(app_handle: AppHandle) -> Self {
     Self {
       app_handle,
-      command_tx: Arc::new(Mutex::new(None)),
+      message_tx: Arc::new(Mutex::new(None)),
       active_host: Arc::new(Mutex::new(None)),
     }
   }
@@ -125,17 +125,16 @@ impl ConnectClientManager {
 
     *self.active_host.lock().unwrap() = Some(host_info.clone());
 
-    // 4. Setup command transmission channel for sending Play/Pause/Seek commands
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ConnectPlaybackAction>();
-    *self.command_tx.lock().unwrap() = Some(cmd_tx);
+    // 4. Setup message transmission channel
+    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ConnectMessage>();
+    *self.message_tx.lock().unwrap() = Some(msg_tx);
 
     let app_handle = self.app_handle.clone();
     let active_host_ref = self.active_host.clone();
 
-    // Spawn async task to write outgoing commands to the WebSocket sink
+    // Spawn async task to write outgoing messages to the WebSocket sink
     let mut send_task = tokio::spawn(async move {
-      while let Some(action) = cmd_rx.recv().await {
-        let msg = ConnectMessage::Command { action };
+      while let Some(msg) = msg_rx.recv().await {
         if let Ok(text) = serde_json::to_string(&msg) {
           if sender.send(Message::Text(text)).await.is_err() {
             break;
@@ -269,16 +268,15 @@ impl ConnectClientManager {
 
     *self.active_host.lock().unwrap() = Some(host_info.clone());
 
-    // 4. Setup command channel
-    let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<ConnectPlaybackAction>();
-    *self.command_tx.lock().unwrap() = Some(cmd_tx);
+    // 4. Setup message channel
+    let (msg_tx, mut msg_rx) = mpsc::unbounded_channel::<ConnectMessage>();
+    *self.message_tx.lock().unwrap() = Some(msg_tx);
 
     let app_handle = self.app_handle.clone();
     let active_host_ref = self.active_host.clone();
 
     let mut send_task = tokio::spawn(async move {
-      while let Some(action) = cmd_rx.recv().await {
-        let msg = ConnectMessage::Command { action };
+      while let Some(msg) = msg_rx.recv().await {
         if let Ok(text) = serde_json::to_string(&msg) {
           if sender.send(Message::Text(text)).await.is_err() {
             break;
@@ -333,9 +331,14 @@ impl ConnectClientManager {
 
   /// Dispatches a playback command (Play, Pause, Seek, Volume) to the active remote host.
   pub fn send_command(&self, action: ConnectPlaybackAction) -> Result<(), String> {
-    if let Some(tx) = self.command_tx.lock().unwrap().as_ref() {
-      tx.send(action)
-        .map_err(|e| format!("Failed to send remote command: {e}"))?;
+    self.send_message(ConnectMessage::Command { action })
+  }
+
+  /// Dispatches a generic message (e.g. RemoteDownloadRequest) to the active remote host.
+  pub fn send_message(&self, message: ConnectMessage) -> Result<(), String> {
+    if let Some(tx) = self.message_tx.lock().unwrap().as_ref() {
+      tx.send(message)
+        .map_err(|e| format!("Failed to send remote message: {e}"))?;
       Ok(())
     } else {
       Err("No active remote connection".to_string())
@@ -344,7 +347,7 @@ impl ConnectClientManager {
 
   /// Disconnects from the remote host and closes the command channel.
   pub fn disconnect(&self) {
-    *self.command_tx.lock().unwrap() = None;
+    *self.message_tx.lock().unwrap() = None;
     *self.active_host.lock().unwrap() = None;
   }
 

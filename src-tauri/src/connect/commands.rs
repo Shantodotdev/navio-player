@@ -134,6 +134,18 @@ pub fn connect_disconnect_remote(state: State<'_, AppState>) -> Result<(), Strin
   Ok(())
 }
 
+/// Dispatches a remote download request to the active remote host.
+#[tauri::command]
+pub fn connect_send_remote_download(
+  state: State<'_, AppState>,
+  url: String,
+  title: Option<String>,
+) -> Result<(), String> {
+  state
+    .connect_client
+    .send_message(super::models::ConnectMessage::RemoteDownloadRequest { url, title })
+}
+
 /// Returns the currently active connected host info if controlling a remote machine.
 #[tauri::command]
 pub fn connect_get_active_remote_host(

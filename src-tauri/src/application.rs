@@ -185,6 +185,7 @@ pub fn run() {
       connect::commands::connect_pair_with_peer,
       connect::commands::connect_connect_to_peer,
       connect::commands::connect_send_remote_command,
+      connect::commands::connect_send_remote_download,
       connect::commands::connect_disconnect_remote,
       connect::commands::connect_get_active_remote_host,
     ])
