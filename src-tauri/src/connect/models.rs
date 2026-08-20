@@ -41,6 +41,18 @@ impl Platform {
       Platform::Unknown
     }
   }
+
+  pub fn as_str(&self) -> &'static str {
+    match self {
+      Platform::Windows => "windows",
+      Platform::MacOS => "macos",
+      Platform::Linux => "linux",
+      Platform::Ios => "ios",
+      Platform::Android => "android",
+      Platform::Web => "web",
+      Platform::Unknown => "unknown",
+    }
+  }
 }
 
 /// Granular permissions granted by a host to a specific paired device.
