@@ -82,4 +82,5 @@ export interface ConnectedHostInfo {
   address: string;
   port: number;
   permissions: ConnectPermissions;
+  token?: string | null;
 }

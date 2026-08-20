@@ -25,9 +25,11 @@ export function ConnectModal() {
   const discoveredPeers = useConnectStore((state) => state.discoveredPeers);
   const pairedDevices = useConnectStore((state) => state.pairedDevices);
   const activeRemoteHost = useConnectStore((state) => state.activeRemoteHost);
+  const savedHostTokens = useConnectStore((state) => state.savedHostTokens);
   const activePin = useConnectStore((state) => state.activePin);
   const generateNewPin = useConnectStore((state) => state.generateNewPin);
   const openPairingModal = useConnectStore((state) => state.openPairingModal);
+  const connectWithSavedToken = useConnectStore((state) => state.connectWithSavedToken);
   const updatePermissions = useConnectStore((state) => state.updatePermissions);
   const revokeDevice = useConnectStore((state) => state.revokeDevice);
   const disconnectRemote = useConnectStore((state) => state.disconnectRemote);
@@ -189,7 +191,7 @@ export function ConnectModal() {
               ) : (
                 <div className="space-y-2">
                   {discoveredPeers.map((peer) => {
-                    const isPaired = pairedDevices.some((p) => p.id === peer.id);
+                    const isSaved = Boolean(savedHostTokens[peer.id]);
                     const isCurrent = activeRemoteHost?.hostId === peer.id;
 
                     return (
@@ -207,6 +209,11 @@ export function ConnectModal() {
                               <span className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400">
                                 {peer.platform}
                               </span>
+                              {isSaved && (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-500/30">
+                                  Paired
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-neutral-500">
                               {peer.addresses[0] || "127.0.0.1"}:{peer.port}
@@ -214,18 +221,34 @@ export function ConnectModal() {
                           </div>
                         </div>
 
-                        <div>
+                        <div className="flex items-center gap-2">
                           {isCurrent ? (
                             <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 px-3 py-1.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20">
                               <CheckCircle2 className="h-3.5 w-3.5" />
                               Controlling
                             </span>
+                          ) : isSaved ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => void connectWithSavedToken(peer)}
+                                className="rounded-xl bg-emerald-500 hover:bg-emerald-400 px-4 py-1.5 text-xs font-semibold text-neutral-950 transition shadow-sm"
+                              >
+                                Connect
+                              </button>
+                              <button
+                                onClick={() => openPairingModal(peer)}
+                                className="rounded-xl bg-neutral-800 hover:bg-neutral-700 p-1.5 text-neutral-400 hover:text-neutral-200 transition"
+                                title="Re-pair with new PIN"
+                              >
+                                <Key className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           ) : (
                             <button
                               onClick={() => openPairingModal(peer)}
                               className="rounded-xl bg-cyan-500 hover:bg-cyan-400 px-4 py-1.5 text-xs font-semibold text-neutral-950 transition"
                             >
-                              {isPaired ? "Connect" : "Pair with PIN"}
+                              Pair with PIN
                             </button>
                           )}
                         </div>

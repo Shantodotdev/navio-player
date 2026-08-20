@@ -14,10 +14,39 @@ import type {
   PairedDevice,
 } from "../lib/connect/types";
 
+export interface SavedHostToken {
+  token: string;
+  hostName: string;
+  address: string;
+  port: number;
+}
+
+const SAVED_HOSTS_STORAGE_KEY = "navio_connect_saved_hosts";
+
+function loadSavedHostTokens(): Record<string, SavedHostToken> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(SAVED_HOSTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistSavedHostTokens(tokens: Record<string, SavedHostToken>) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(SAVED_HOSTS_STORAGE_KEY, JSON.stringify(tokens));
+  } catch (err) {
+    console.warn("Failed to persist saved host tokens:", err);
+  }
+}
+
 interface ConnectStoreState {
   localDevice: LocalDeviceInfo | null;
   discoveredPeers: DiscoveredPeer[];
   pairedDevices: PairedDevice[];
+  savedHostTokens: Record<string, SavedHostToken>;
   activeRemoteHost: ConnectedHostInfo | null;
   remotePlayerState: ConnectPlayerState | null;
   activePin: string | null;
@@ -37,6 +66,8 @@ interface ConnectStoreState {
   openPairingModal: (peer: DiscoveredPeer) => void;
   closePairingModal: () => void;
   pairWithPeer: (peer: DiscoveredPeer, pin: string) => Promise<boolean>;
+  connectWithSavedToken: (peer: DiscoveredPeer) => Promise<boolean>;
+  forgetSavedHost: (hostId: string) => void;
   updatePermissions: (
     deviceId: string,
     permissions: ConnectPermissions
@@ -51,6 +82,7 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
   localDevice: null,
   discoveredPeers: [],
   pairedDevices: [],
+  savedHostTokens: loadSavedHostTokens(),
   activeRemoteHost: null,
   remotePlayerState: null,
   activePin: null,
@@ -67,6 +99,7 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
       const pairedDevices = await connectApi.getPairedDevices();
       const activeRemoteHost = await connectApi.getActiveRemoteHost();
       const activePin = await connectApi.getActivePin();
+      const savedHostTokens = loadSavedHostTokens();
 
       set({
         localDevice,
@@ -74,6 +107,7 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
         pairedDevices,
         activeRemoteHost,
         activePin,
+        savedHostTokens,
       });
     } catch (err) {
       console.error("[Navio Connect Store] Initialization failed:", err);
@@ -133,6 +167,21 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
         pin
       );
       if (hostInfo) {
+        // Save the auth token for future instant 1-click reconnects without PIN
+        if (hostInfo.token) {
+          const updatedTokens = {
+            ...get().savedHostTokens,
+            [peer.id]: {
+              token: hostInfo.token,
+              hostName: hostInfo.hostName,
+              address,
+              port: peer.port,
+            },
+          };
+          persistSavedHostTokens(updatedTokens);
+          set({ savedHostTokens: updatedTokens });
+        }
+
         set({
           activeRemoteHost: hostInfo,
           isPairingModalOpen: false,
@@ -149,6 +198,51 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
       set({ isLoading: false, error: message });
       return false;
     }
+  },
+
+  connectWithSavedToken: async (peer: DiscoveredPeer) => {
+    const saved = get().savedHostTokens[peer.id];
+    if (!saved || !saved.token) {
+      get().openPairingModal(peer);
+      return false;
+    }
+
+    set({ isLoading: true, error: null });
+    try {
+      const address = peer.addresses[0] || saved.address || "127.0.0.1";
+      const hostInfo = await connectApi.connectToPeer(
+        peer.id,
+        address,
+        peer.port,
+        saved.token
+      );
+      if (hostInfo) {
+        set({
+          activeRemoteHost: hostInfo,
+          isLoading: false,
+          isConnectModalOpen: false,
+        });
+        return true;
+      }
+      // If token expired or was revoked on host, remove it and open PIN dialog
+      get().forgetSavedHost(peer.id);
+      get().openPairingModal(peer);
+      set({ isLoading: false });
+      return false;
+    } catch (err) {
+      console.warn("Connect with saved token failed, opening PIN modal:", err);
+      get().forgetSavedHost(peer.id);
+      get().openPairingModal(peer);
+      set({ isLoading: false });
+      return false;
+    }
+  },
+
+  forgetSavedHost: (hostId: string) => {
+    const updated = { ...get().savedHostTokens };
+    delete updated[hostId];
+    persistSavedHostTokens(updated);
+    set({ savedHostTokens: updated });
   },
 
   updatePermissions: async (
