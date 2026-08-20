@@ -1,4 +1,10 @@
-//! Central coordinator for Navio Connect session management, pairing, and broadcasting.
+//! Central coordinator for Navio Connect session management, pairing, and state broadcasting.
+//!
+//! The `ConnectHub` serves as the single source of truth on the host machine. It manages:
+//! - Persistent paired devices and authentication tokens.
+//! - Transient 4-digit pairing PIN codes.
+//! - Multi-client async WebSocket broadcasting via `tokio::sync::broadcast`.
+//! - Cached playback state mirror and permission validation.
 
 use super::discovery::DiscoveryManager;
 use super::models::{
@@ -11,21 +17,38 @@ use std::sync::{Arc, RwLock};
 use tauri::AppHandle;
 use tokio::sync::broadcast;
 
-/// Manages active paired devices, pairing PINs, discovery, and message routing.
+/// Central thread-safe state container and message router for Navio Connect.
+///
+/// Implements `Clone` cheaply because all internal fields are wrapped in `Arc`
+/// (Atomic Reference Counting) smart pointers, allowing it to be shared across
+/// Axum request tasks, Tauri commands, and mDNS discovery threads.
 #[derive(Clone)]
 pub struct ConnectHub {
+  /// Tauri application handle, used to emit events to the local frontend WebView.
   app_handle: AppHandle,
+  /// Cached local machine identity (ID, OS, hostname, LAN IPs, port).
   local_info: Arc<RwLock<LocalDeviceInfo>>,
+  /// Map of paired client device ID -> PairedDevice metadata and auth tokens.
   paired_devices: Arc<RwLock<HashMap<String, PairedDevice>>>,
+  /// Ephemeral 4-digit PIN generated when a new pairing session is initiated.
   active_pin: Arc<RwLock<Option<String>>>,
+  /// Cached latest playback state snapshot (track, duration, position, is_playing).
   player_state: Arc<RwLock<ConnectPlayerState>>,
+  /// Multi-Producer Multi-Consumer (MPMC) broadcast channel.
+  /// When a message is sent here, every active WebSocket client receives a copy.
   broadcast_tx: broadcast::Sender<ConnectMessage>,
+  /// Handle to the background mDNS discovery manager.
   discovery: Arc<RwLock<Option<DiscoveryManager>>>,
 }
 
 impl ConnectHub {
-  /// Initializes the hub, loading persistent storage and detecting network interfaces.
+  /// Initializes the ConnectHub, loads saved devices from disk, and starts mDNS discovery.
+  ///
+  /// # Arguments
+  /// * `app_handle` - The Tauri application handle.
+  /// * `port` - The TCP port on which the Axum HTTP & WebSocket server is listening.
   pub fn new(app_handle: AppHandle, port: u16) -> Self {
+    // Load existing paired devices from connect-devices.json
     let storage = load_storage(&app_handle).unwrap_or_default();
     let local_ips = detect_local_ip_addresses();
     let machine_name = hostname::get()
@@ -47,6 +70,8 @@ impl ConnectHub {
       local_info.id, local_info.name, port, local_info.local_ips
     );
 
+    // Initialize the broadcast channel with a buffer capacity of 128 messages.
+    // If a client is slightly slow, messages are buffered in memory without blocking the host.
     let (broadcast_tx, _) = broadcast::channel(128);
 
     let hub = Self {
@@ -59,7 +84,7 @@ impl ConnectHub {
       discovery: Arc::new(RwLock::new(None)),
     };
 
-    // Start mDNS discovery
+    // Launch background mDNS announcement and listener
     let discovery_mgr =
       DiscoveryManager::start(storage.local_device_id, machine_name, port, local_ips);
     match discovery_mgr {
@@ -76,12 +101,12 @@ impl ConnectHub {
     hub
   }
 
-  /// Returns metadata describing this local Navio instance.
+  /// Returns metadata describing this local Navio instance (name, port, IPs, OS).
   pub fn get_local_info(&self) -> LocalDeviceInfo {
     self.local_info.read().unwrap().clone()
   }
 
-  /// Returns the list of active peers discovered on the local network.
+  /// Returns the list of active Navio peers discovered on the local Wi-Fi.
   pub fn get_discovered_peers(&self) -> Vec<DiscoveredPeer> {
     if let Ok(lock) = self.discovery.read() {
       if let Some(ref dm) = *lock {
@@ -91,13 +116,16 @@ impl ConnectHub {
     Vec::new()
   }
 
-  /// Generates a random 4-digit pairing PIN code valid for incoming pairing requests.
+  /// Generates a secure random 4-digit pairing PIN code (e.g. `4829`) and stores it in memory.
+  ///
+  /// The PIN is displayed on the host screen for the user to type on their remote controller.
   pub fn generate_pairing_pin(&self) -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let seed = SystemTime::now()
       .duration_since(UNIX_EPOCH)
       .unwrap_or_default()
       .subsec_nanos();
+    // Generates a 4-digit number between 1000 and 9999
     let pin = format!("{:04}", (seed % 9000) + 1000);
     if let Ok(mut lock) = self.active_pin.write() {
       *lock = Some(pin.clone());
@@ -106,12 +134,14 @@ impl ConnectHub {
     pin
   }
 
-  /// Retrieves the currently active pairing PIN if set.
+  /// Retrieves the currently active pairing PIN if one was generated and has not expired/used.
   pub fn get_active_pin(&self) -> Option<String> {
     self.active_pin.read().ok().and_then(|p| p.clone())
   }
 
-  /// Validates a submitted PIN against the active pairing PIN.
+  /// Validates a submitted PIN against the currently active pairing PIN.
+  ///
+  /// If valid, the PIN is immediately consumed and cleared from memory (single-use security).
   pub fn verify_pin(&self, candidate_pin: &str) -> bool {
     let is_valid = self
       .active_pin
@@ -121,7 +151,7 @@ impl ConnectHub {
       .unwrap_or(false);
 
     if is_valid {
-      // Clear PIN once used
+      // Clear the single-use PIN immediately upon successful verification
       if let Ok(mut lock) = self.active_pin.write() {
         *lock = None;
       }
@@ -129,7 +159,9 @@ impl ConnectHub {
     is_valid
   }
 
-  /// Validates a device token and client ID, returning the paired device if authorized.
+  /// Validates an incoming client auth token against the saved trusted devices registry.
+  ///
+  /// Returns `Some(PairedDevice)` with its configured permissions if authorized, or `None`.
   pub fn validate_token(&self, token: &str, client_id: &str) -> Option<PairedDevice> {
     let devices = self.paired_devices.read().ok()?;
     if let Some(device) = devices.get(client_id) {
@@ -140,7 +172,10 @@ impl ConnectHub {
     None
   }
 
-  /// Registers a newly paired device and persists it.
+  /// Registers a newly paired device, generates a permanent auth token, and persists to disk.
+  ///
+  /// # Returns
+  /// A tuple containing `(PairedDevice, authTokenString)`.
   pub fn add_paired_device(
     &self,
     client_id: String,
@@ -165,6 +200,7 @@ impl ConnectHub {
       last_seen_ms: now,
     };
 
+    // Save into in-memory hashmap and persist atomically to connect-devices.json
     if let Ok(mut lock) = self.paired_devices.write() {
       lock.insert(client_id.clone(), paired.clone());
       let storage = ConnectStorage {
@@ -183,7 +219,7 @@ impl ConnectHub {
     (paired, token)
   }
 
-  /// Returns all currently paired devices.
+  /// Returns all currently paired and trusted devices.
   pub fn get_paired_devices(&self) -> Vec<PairedDevice> {
     if let Ok(lock) = self.paired_devices.read() {
       lock.values().cloned().collect()
@@ -192,7 +228,7 @@ impl ConnectHub {
     }
   }
 
-  /// Updates permissions for a paired device.
+  /// Updates permission flags (streaming, control, downloads) for a paired device.
   pub fn update_permissions(
     &self,
     device_id: &str,
@@ -217,7 +253,7 @@ impl ConnectHub {
     Err("Device not found".to_string())
   }
 
-  /// Revokes and removes a paired device.
+  /// Revokes and removes a device from the trusted registry.
   pub fn revoke_device(&self, device_id: &str) -> Result<(), String> {
     if let Ok(mut lock) = self.paired_devices.write() {
       if lock.remove(device_id).is_some() {
@@ -234,17 +270,17 @@ impl ConnectHub {
     Err("Device not found".to_string())
   }
 
-  /// Broadcasts a message to all connected WebSocket clients.
+  /// Sends a message into the broadcast channel to distribute it to all active WebSockets.
   pub fn broadcast_message(&self, message: ConnectMessage) {
     let _ = self.broadcast_tx.send(message);
   }
 
-  /// Subscribes to the broadcast channel for real-time WebSocket distribution.
+  /// Creates a new broadcast receiver subscription for a newly connected WebSocket client.
   pub fn subscribe_broadcast(&self) -> broadcast::Receiver<ConnectMessage> {
     self.broadcast_tx.subscribe()
   }
 
-  /// Updates the current cached playback state and broadcasts it.
+  /// Updates the cached playback state and broadcasts a `StateSync` frame to all clients.
   pub fn update_and_broadcast_player_state(&self, state: ConnectPlayerState) {
     if let Ok(mut lock) = self.player_state.write() {
       *lock = state.clone();
@@ -252,7 +288,7 @@ impl ConnectHub {
     self.broadcast_message(ConnectMessage::StateSync { state });
   }
 
-  /// Returns the current playback state snapshot.
+  /// Returns the latest cached playback state snapshot.
   pub fn get_current_player_state(&self) -> ConnectPlayerState {
     self.player_state.read().unwrap().clone()
   }
@@ -270,7 +306,7 @@ impl ConnectHub {
       .map_err(|e| e.to_string())
   }
 
-  /// Graceful shutdown hook.
+  /// Gracefully unregisters mDNS services on application exit.
   pub fn shutdown(&self) {
     if let Ok(lock) = self.discovery.read() {
       if let Some(ref dm) = *lock {
@@ -280,7 +316,7 @@ impl ConnectHub {
   }
 }
 
-/// Helper function to detect local network IPv4 addresses.
+/// Helper function to detect local network IPv4 addresses using OS interface queries.
 fn detect_local_ip_addresses() -> Vec<String> {
   let mut ips = Vec::new();
   if let Ok(ip) = local_ip_address::local_ip() {

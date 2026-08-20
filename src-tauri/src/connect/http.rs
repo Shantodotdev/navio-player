@@ -1,4 +1,25 @@
 //! Axum HTTP routes and WebSocket connection upgrade handlers for Navio Connect.
+//!
+//! # Protocol Lifecycle over `/connect/ws`
+//!
+//! 1. **Handshake & Upgrade**:
+//!    - The remote client connects via HTTP GET with WebSocket upgrade headers.
+//!    - Axum upgrades the TCP stream to full-duplex WebSocket framing.
+//!
+//! 2. **Authentication / Pairing Phase**:
+//!    - The connection initially enters an unauthenticated staging loop.
+//!    - If the client sends `Auth { token, client_id }`, the hub checks the saved token.
+//!    - If the client sends `PairRequest { pin, ... }`, the hub verifies the 4-digit PIN.
+//!    - On success, the server replies with `AuthResult` / `PairResponse` and immediately
+//!      sends the first `StateSync` snapshot.
+//!    - On failure, the server sends an error message and terminates the connection.
+//!
+//! 3. **Bidirectional Communication Phase**:
+//!    - The socket is split into `(sender, receiver)`:
+//!      - **Sender Task**: Listens to the `hub.subscribe_broadcast()` channel and forwards
+//!        live player updates (`StateSync`, `RemoteDownloadProgress`) to the client.
+//!      - **Receiver Task**: Reads incoming commands (`Play`, `Pause`, `Seek`, `Download`)
+//!        from the client, validates permissions, and dispatches events to the Tauri renderer.
 
 use super::hub::ConnectHub;
 use super::models::ConnectMessage;
@@ -16,7 +37,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use std::sync::Arc;
 
-/// Builds the Axum router for all Navio Connect endpoints.
+/// Builds the Axum router for all Navio Connect network endpoints.
+///
+/// Merged into the main server router in `src/server/startup.rs`.
 pub fn connect_router(hub: Arc<std::sync::RwLock<Option<ConnectHub>>>) -> Router {
   Router::new()
     .route("/connect/status", get(get_status))
@@ -24,7 +47,9 @@ pub fn connect_router(hub: Arc<std::sync::RwLock<Option<ConnectHub>>>) -> Router
     .with_state(hub)
 }
 
-/// Endpoint returning public status and identity of this Navio host.
+/// Endpoint returning public status and machine identity of this Navio host.
+///
+/// Used by remote clients for pre-flight connectivity checks before opening WebSockets.
 async fn get_status(
   State(hub_lock): State<Arc<std::sync::RwLock<Option<ConnectHub>>>>,
 ) -> impl IntoResponse {
@@ -37,6 +62,8 @@ async fn get_status(
 }
 
 /// WebSocket upgrade handler.
+///
+/// Validates the HTTP upgrade request and spawns the full-duplex socket handler task.
 async fn ws_handler(
   ws: WebSocketUpgrade,
   State(hub_lock): State<Arc<std::sync::RwLock<Option<ConnectHub>>>>,
@@ -49,8 +76,10 @@ async fn ws_handler(
   }
 }
 
-/// Manages an active WebSocket connection with a remote client.
+/// Manages an active WebSocket connection with a remote client (Mac, Linux, iPhone, or PWA).
 async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
+  // Split the duplex WebSocket into independent Send and Receive halves.
+  // This allows concurrent reading and writing without mutex contention.
   let (mut sender, mut receiver) = socket.split();
 
   println!("[Navio Connect] New WebSocket connection established");
@@ -58,17 +87,19 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
   let mut authenticated_peer_id: Option<String> = None;
   let mut peer_permissions = None;
 
-  // We loop to receive initial handshake (Auth or PairRequest)
+  // Phase 1: Authentication / Pairing Loop
+  // The client must prove its identity before receiving state broadcasts or dispatching commands.
   while let Some(Ok(msg)) = receiver.next().await {
     if let Message::Text(text) = msg {
       if let Ok(connect_msg) = serde_json::from_str::<ConnectMessage>(&text) {
         match connect_msg {
+          // Keep-alive ping from client
           ConnectMessage::Ping => {
             let pong = serde_json::to_string(&ConnectMessage::Pong).unwrap();
             let _ = sender.send(Message::Text(pong)).await;
           }
 
-          // Case 1: Client has an existing auth token
+          // Case A: Client possesses an existing auth token (reconnection)
           ConnectMessage::Auth { token, client_id } => {
             if let Some(paired_device) = hub.validate_token(&token, &client_id) {
               println!(
@@ -87,7 +118,7 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
               let resp_text = serde_json::to_string(&auth_response).unwrap();
               let _ = sender.send(Message::Text(resp_text)).await;
 
-              // Send initial state sync snapshot
+              // Send immediate playback state sync so the remote UI updates instantly
               let state = hub.get_current_player_state();
               let state_msg = serde_json::to_string(&ConnectMessage::StateSync { state }).unwrap();
               let _ = sender.send(Message::Text(state_msg)).await;
@@ -108,7 +139,7 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
             }
           }
 
-          // Case 2: New client attempting to pair with PIN
+          // Case B: New client pairing with 4-digit PIN code
           ConnectMessage::PairRequest {
             client_id,
             client_name,
@@ -136,7 +167,7 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
               let resp_text = serde_json::to_string(&pair_response).unwrap();
               let _ = sender.send(Message::Text(resp_text)).await;
 
-              // Send initial state sync snapshot
+              // Send immediate playback state sync
               let state = hub.get_current_player_state();
               let state_msg = serde_json::to_string(&ConnectMessage::StateSync { state }).unwrap();
               let _ = sender.send(Message::Text(state_msg)).await;
@@ -164,7 +195,7 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
     }
   }
 
-  // If not authenticated, close connection
+  // If the loop finished without authenticating (e.g. client disconnected or failed auth), exit
   let peer_id = match authenticated_peer_id {
     Some(id) => id,
     None => {
@@ -173,7 +204,8 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
     }
   };
 
-  // Broadcast receiver task (Host -> Client)
+  // Phase 2: Full-Duplex Real-Time Operation
+  // Task 1: Outgoing Broadcast Forwarder (Host -> Client)
   let mut broadcast_rx = hub.subscribe_broadcast();
   let mut send_task = tokio::spawn(async move {
     while let Ok(msg) = broadcast_rx.recv().await {
@@ -185,7 +217,7 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
     }
   });
 
-  // Client message receiver loop (Client -> Host)
+  // Task 2: Incoming Command Receiver (Client -> Host)
   let hub_clone = hub.clone();
   let peer_id_clone = peer_id.clone();
 
@@ -198,8 +230,9 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
               hub_clone.broadcast_message(ConnectMessage::Pong);
             }
 
+            // Client sent playback command (Play, Pause, Seek, Volume, Next/Previous)
             ConnectMessage::Command { action } => {
-              // Check if permissions allow playback control
+              // Permission check: ensure playback control is allowed for this peer
               if let Some(perms) = &peer_permissions {
                 if !perms.allow_playback_control {
                   println!(
@@ -219,8 +252,9 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
               let _ = hub_clone.emit_event("navio-connect://playback-command", action);
             }
 
+            // Client requested a remote media download on this host
             ConnectMessage::RemoteDownloadRequest { url, title } => {
-              // Check if permissions allow remote downloads
+              // Permission check: ensure remote downloader is allowed for this peer
               if let Some(perms) = &peer_permissions {
                 if !perms.allow_remote_download {
                   println!(
@@ -251,7 +285,8 @@ async fn handle_socket(socket: WebSocket, hub: Arc<ConnectHub>) {
     }
   });
 
-  // Wait for either send or receive to end
+  // Wait for either sending or receiving task to finish (e.g. client disconnects or socket breaks)
+  // `tokio::select!` cancels the other task cleanly to prevent zombie coroutines.
   tokio::select! {
     _ = (&mut send_task) => recv_task.abort(),
     _ = (&mut recv_task) => send_task.abort(),
