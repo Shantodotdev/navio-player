@@ -33,6 +33,7 @@ import {
 import { getMediaDisplayName } from "../lib/mediaLabels";
 import { getErrorMessage } from "../lib/errorMessage";
 import { useSettingsStore } from "../store/settingsStore";
+import { useConnectStore } from "../store/connectStore";
 import { toast } from "../store/toastStore";
 
 export const Route = createFileRoute("/downloader")({
@@ -51,6 +52,9 @@ interface PendingDownload {
 /** Renders Navio's persistent remote-download queue and controls. */
 function DownloaderView() {
   const { settings } = useSettingsStore();
+  const activeRemoteHost = useConnectStore((state) => state.activeRemoteHost);
+  const sendRemoteDownload = useConnectStore((state) => state.sendRemoteDownload);
+  const [targetDevice, setTargetDevice] = useState<string>("local");
   const [url, setUrl] = useState("");
   const [format, setFormat] = useState<DownloadJob["format"]>("best");
   const [quality, setQuality] = useState<DownloadQuality>(
@@ -173,6 +177,27 @@ function DownloaderView() {
     };
     setIsChecking(true);
     setFormError(null);
+
+    // If a remote target machine is selected, dispatch over Navio Connect P2P
+    if (targetDevice !== "local" && activeRemoteHost) {
+      try {
+        const success = await sendRemoteDownload(targetUrl);
+        if (success) {
+          toast.success(`Download sent to ${activeRemoteHost.hostName}`);
+          setUrl("");
+        } else {
+          setFormError(`Failed to send download to ${activeRemoteHost.hostName}.`);
+        }
+      } catch (err) {
+        setFormError(
+          getErrorMessage(err, "Failed to send download to remote machine.")
+        );
+      } finally {
+        setIsChecking(false);
+      }
+      return;
+    }
+
     try {
       const inspection = await inspectDownloadUrl(targetUrl);
       if (inspection.is_collection) {
@@ -314,7 +339,7 @@ function DownloaderView() {
               placeholder="Paste a public media or collection URL..."
               className="flex-1 bg-black/40 border border-white/5 rounded-lg px-3 py-2 md:px-4 md:py-2.5 text-xs sm:text-sm text-zinc-200 focus:outline-none focus:border-brand/40 placeholder-zinc-600 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             />
-            <div className="w-full md:w-64 shrink-0">
+            <div className="w-full md:w-48 shrink-0">
               <Select
                 options={[
                   { value: "best", label: "Video" },
@@ -325,6 +350,22 @@ function DownloaderView() {
                 disabled={isChecking}
               />
             </div>
+            {activeRemoteHost && (
+              <div className="w-full md:w-52 shrink-0">
+                <Select
+                  options={[
+                    { value: "local", label: "💻 This PC" },
+                    {
+                      value: activeRemoteHost.hostId,
+                      label: `🌐 ${activeRemoteHost.hostName}`,
+                    },
+                  ]}
+                  value={targetDevice}
+                  onChange={(value) => setTargetDevice(value)}
+                  disabled={isChecking}
+                />
+              </div>
+            )}
             <button
               type="submit"
               disabled={isChecking}
