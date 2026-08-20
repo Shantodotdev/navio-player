@@ -13,6 +13,7 @@ import type {
   LocalDeviceInfo,
   PairedDevice,
 } from "../lib/connect/types";
+import type { Track } from "./playerStore";
 
 export interface SavedHostToken {
   token: string;
@@ -49,6 +50,7 @@ interface ConnectStoreState {
   savedHostTokens: Record<string, SavedHostToken>;
   activeRemoteHost: ConnectedHostInfo | null;
   remotePlayerState: ConnectPlayerState | null;
+  remoteLibraryTracks: Record<string, Track[]>;
   activePin: string | null;
   isConnectModalOpen: boolean;
   isPairingModalOpen: boolean;
@@ -60,6 +62,7 @@ interface ConnectStoreState {
   initialize: () => Promise<void>;
   refreshDiscoveredPeers: () => Promise<void>;
   refreshPairedDevices: () => Promise<void>;
+  fetchRemoteLibrary: (peerId: string) => Promise<Track[]>;
   generateNewPin: () => Promise<string | null>;
   openConnectModal: () => void;
   closeConnectModal: () => void;
@@ -86,6 +89,7 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
   savedHostTokens: loadSavedHostTokens(),
   activeRemoteHost: null,
   remotePlayerState: null,
+  remoteLibraryTracks: {},
   activePin: null,
   isConnectModalOpen: false,
   isPairingModalOpen: false,
@@ -123,6 +127,28 @@ export const useConnectStore = create<ConnectStoreState>((set, get) => ({
   refreshPairedDevices: async () => {
     const paired = await connectApi.getPairedDevices();
     set({ pairedDevices: paired });
+  },
+
+  fetchRemoteLibrary: async (peerId: string) => {
+    const saved = get().savedHostTokens[peerId];
+    if (!saved || !saved.token) return [];
+    try {
+      const { tracks } = await connectApi.fetchRemoteLibrary(
+        saved.address,
+        saved.port,
+        saved.token
+      );
+      set((state) => ({
+        remoteLibraryTracks: {
+          ...state.remoteLibraryTracks,
+          [peerId]: tracks,
+        },
+      }));
+      return tracks;
+    } catch (err) {
+      console.error("[Navio Connect] Failed to fetch remote library:", err);
+      return [];
+    }
   },
 
   generateNewPin: async () => {

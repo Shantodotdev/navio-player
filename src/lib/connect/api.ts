@@ -12,6 +12,7 @@ import type {
   LocalDeviceInfo,
   PairedDevice,
 } from "./types";
+import type { Track } from "../../store/playerStore";
 
 /**
  * Checks if running inside the native Tauri runtime shell.
@@ -233,5 +234,27 @@ export async function getActiveRemoteHost(): Promise<ConnectedHostInfo | null> {
   } catch (error) {
     console.error("[Navio Connect] Failed to get active remote host:", error);
     return null;
+  }
+}
+
+/**
+ * Fetches media tracks from an authorized connected remote host's library over LAN HTTP.
+ */
+export async function fetchRemoteLibrary(
+  address: string,
+  port: number,
+  token: string
+): Promise<{ tracks: Track[]; scannedDirectories: string[] }> {
+  try {
+    const res = await fetch(
+      `http://${address}:${port}/connect/library?token=${encodeURIComponent(token)}`
+    );
+    if (!res.ok) {
+      throw new Error(`Failed to fetch remote library: ${res.statusText}`);
+    }
+    return await res.json();
+  } catch (err) {
+    console.error("[Navio Connect] Failed to fetch remote library:", err);
+    return { tracks: [], scannedDirectories: [] };
   }
 }

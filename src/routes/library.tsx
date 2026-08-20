@@ -23,6 +23,7 @@ import { toast } from "../store/toastStore";
 import { getErrorMessage } from "../lib/errorMessage";
 import { Select } from "../components/Select";
 import { PlayingIndicator } from "../components/PlayingIndicator";
+import { useConnectStore } from "../store/connectStore";
 import {
   LIBRARY_SORT_OPTIONS,
   sortLibraryTracks,
@@ -61,6 +62,15 @@ function LibraryView() {
     updateSettings,
   } = useSettingsStore();
 
+  const savedHostTokens = useConnectStore((state) => state.savedHostTokens);
+  const remoteLibraryTracks = useConnectStore(
+    (state) => state.remoteLibraryTracks
+  );
+  const fetchRemoteLibrary = useConnectStore(
+    (state) => state.fetchRemoteLibrary
+  );
+
+  const [selectedSource, setSelectedSource] = useState<string>("local");
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "audio" | "video">(
     "all",
@@ -72,6 +82,51 @@ function LibraryView() {
     settings.library.viewMode,
   );
   const [sortMode, setSortMode] = useState<LibrarySortMode>("name-asc");
+
+  useEffect(() => {
+    if (selectedSource !== "local") {
+      void fetchRemoteLibrary(selectedSource);
+    }
+  }, [selectedSource, fetchRemoteLibrary]);
+
+  const pairedHosts = Object.entries(savedHostTokens).map(([id, host]) => ({
+    value: id,
+    label: `🌐 ${host.hostName} (Remote)`,
+  }));
+
+  const activeSourceTracks =
+    selectedSource === "local"
+      ? tracks
+      : remoteLibraryTracks[selectedSource] || [];
+
+  /** Plays local or remote media tracks. */
+  const handlePlayTrack = (track: Track, list: Track[]) => {
+    if (selectedSource === "local") {
+      playTrack(track, list);
+      return;
+    }
+
+    const savedHost = savedHostTokens[selectedSource];
+    if (!savedHost) {
+      playTrack(track, list);
+      return;
+    }
+
+    const toRemoteStreamTrack = (t: Track): Track => {
+      const streamUrl = buildStreamUrl(
+        savedHost.port,
+        savedHost.token,
+        t.path,
+        savedHost.address
+      );
+      return {
+        ...t,
+        path: streamUrl,
+      };
+    };
+
+    playTrack(toRemoteStreamTrack(track), list.map(toRemoteStreamTrack));
+  };
 
   /** Scans a selected folder and exposes a retry only when the operation fails. */
   async function handleAddFolder() {
@@ -121,7 +176,7 @@ function LibraryView() {
     if (settingsLoaded) setViewMode(settings.library.viewMode);
   }, [settings.library.viewMode, settingsLoaded]);
 
-  const filteredTracks = tracks.filter((t) => {
+  const filteredTracks = activeSourceTracks.filter((t) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
       t.name.toLowerCase().includes(query) ||
@@ -158,17 +213,32 @@ function LibraryView() {
           </h1>
         </div>
 
-        <div className="flex gap-2 shrink-0">
-          <button
-            id="add-library-folder"
-            type="button"
-            onClick={() => void handleAddFolder()}
-            disabled={isFolderPickerOpen}
-            className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:cursor-wait disabled:opacity-65"
-          >
-            <FolderPlus size={15} />
-            <span>Add folder</span>
-          </button>
+        <div className="flex items-center gap-3 shrink-0">
+          {pairedHosts.length > 0 && (
+            <div className="w-52 sm:w-60">
+              <Select
+                options={[
+                  { value: "local", label: "📁 Local Library (This PC)" },
+                  ...pairedHosts,
+                ]}
+                value={selectedSource}
+                onChange={(val) => setSelectedSource(val)}
+              />
+            </div>
+          )}
+
+          {selectedSource === "local" && (
+            <button
+              id="add-library-folder"
+              type="button"
+              onClick={() => void handleAddFolder()}
+              disabled={isFolderPickerOpen}
+              className="flex items-center gap-2 px-3.5 py-2 sm:px-4.5 sm:py-2.5 bg-brand hover:bg-brand-light text-zinc-200 rounded-lg sm:rounded-xl text-xs sm:text-sm transition-all font-medium shadow-lg shadow-brand-glow cursor-pointer disabled:cursor-wait disabled:opacity-65"
+            >
+              <FolderPlus size={15} />
+              <span>Add folder</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -386,7 +456,7 @@ function LibraryView() {
                       setIsPlaying(!isPlaying);
                       return;
                     }
-                    playTrack(track, visibleTracks);
+                    handlePlayTrack(track, visibleTracks);
                   }}
                 />
               ))}
@@ -423,7 +493,7 @@ function LibraryView() {
                               setIsPlaying(!isPlaying);
                               return;
                             }
-                            playTrack(track, visibleTracks);
+                            handlePlayTrack(track, visibleTracks);
                           }}
                         >
                           <td className="p-2 sm:p-3 text-center">
@@ -434,7 +504,7 @@ function LibraryView() {
                                   setIsPlaying(!isPlaying);
                                   return;
                                 }
-                                playTrack(track, visibleTracks);
+                                handlePlayTrack(track, visibleTracks);
                               }}
                               className={`w-6 h-6 sm:w-7.5 sm:h-7.5 rounded-full flex items-center justify-center transition-all shadow active:scale-90 cursor-pointer ${
                                 isCurrent

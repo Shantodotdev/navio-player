@@ -24,7 +24,18 @@ pub(super) async fn stream_file(
 ) -> Result<Response, StatusCode> {
   println!("[Navio Server] stream request received");
 
-  if query.token != state.stream_token {
+  let is_token_valid = if query.token == state.stream_token {
+    true
+  } else if let Some(hub) = state.connect_hub.read().unwrap().as_ref() {
+    hub
+      .validate_token_any(&query.token)
+      .map(|dev| dev.permissions.allow_streaming)
+      .unwrap_or(false)
+  } else {
+    false
+  };
+
+  if !is_token_valid {
     println!("[Navio Server] stream request rejected: invalid token");
     return Err(StatusCode::FORBIDDEN);
   }

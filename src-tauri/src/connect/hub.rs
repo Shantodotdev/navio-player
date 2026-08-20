@@ -101,6 +101,11 @@ impl ConnectHub {
     hub
   }
 
+  /// Returns a reference to the Tauri application handle.
+  pub fn get_app_handle(&self) -> &AppHandle {
+    &self.app_handle
+  }
+
   /// Returns metadata describing this local Navio instance (name, port, IPs, OS).
   pub fn get_local_info(&self) -> LocalDeviceInfo {
     self.local_info.read().unwrap().clone()
@@ -165,6 +170,17 @@ impl ConnectHub {
   pub fn validate_token(&self, token: &str, client_id: &str) -> Option<PairedDevice> {
     let devices = self.paired_devices.read().ok()?;
     if let Some(device) = devices.get(client_id) {
+      if device.token == token {
+        return Some(device.clone());
+      }
+    }
+    None
+  }
+
+  /// Validates an incoming client auth token across all paired devices.
+  pub fn validate_token_any(&self, token: &str) -> Option<PairedDevice> {
+    let devices = self.paired_devices.read().ok()?;
+    for device in devices.values() {
       if device.token == token {
         return Some(device.clone());
       }

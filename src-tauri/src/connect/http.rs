@@ -26,7 +26,7 @@ use super::models::ConnectMessage;
 use axum::{
   extract::{
     ws::{Message, WebSocket, WebSocketUpgrade},
-    State,
+    Query, State,
   },
   http::StatusCode,
   response::{IntoResponse, Json},
@@ -34,6 +34,7 @@ use axum::{
   Router,
 };
 use futures_util::{SinkExt, StreamExt};
+use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -43,8 +44,48 @@ use std::sync::Arc;
 pub fn connect_router(hub: Arc<std::sync::RwLock<Option<ConnectHub>>>) -> Router {
   Router::new()
     .route("/connect/status", get(get_status))
+    .route("/connect/library", get(get_library))
     .route("/connect/ws", get(ws_handler))
     .with_state(hub)
+}
+
+#[derive(Deserialize)]
+struct LibraryQuery {
+  token: String,
+}
+
+/// Endpoint returning the host's media catalog to authorized paired peers.
+async fn get_library(
+  Query(query): Query<LibraryQuery>,
+  State(hub_lock): State<Arc<std::sync::RwLock<Option<ConnectHub>>>>,
+) -> Result<Json<serde_json::Value>, StatusCode> {
+  let hub = hub_lock
+    .read()
+    .unwrap()
+    .as_ref()
+    .cloned()
+    .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+  let dev = hub
+    .validate_token_any(&query.token)
+    .ok_or(StatusCode::UNAUTHORIZED)?;
+
+  if !dev.permissions.allow_view_library && !dev.permissions.allow_streaming {
+    return Err(StatusCode::FORBIDDEN);
+  }
+
+  let app_handle = hub.get_app_handle();
+  let db = crate::library::load_db(app_handle).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+  let index = crate::library::LibraryIndex::open_for_app(app_handle)
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+  let tracks = index
+    .load_all()
+    .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+  Ok(Json(json!({
+    "tracks": tracks,
+    "scannedDirectories": db.scanned_directories,
+  })))
 }
 
 /// Endpoint returning public status and machine identity of this Navio host.

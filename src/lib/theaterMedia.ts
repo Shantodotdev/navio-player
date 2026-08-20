@@ -74,13 +74,17 @@ type TheaterStateUpdate = {
   savePreferences: boolean;
 };
 
-/** Builds a token-authenticated URL for the local streaming server. */
+/** Builds a token-authenticated URL for local or remote LAN streaming. */
 export function buildStreamUrl(
   port: number,
   token: string,
   path: string,
+  host: string = "127.0.0.1",
 ): string {
-  return `http://127.0.0.1:${port}/stream/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`;
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return `http://${host}:${port}/stream/${encodeURIComponent(path)}?token=${encodeURIComponent(token)}`;
 }
 
 /** Creates a unique ID used to join or cancel a backend preparation request. */
