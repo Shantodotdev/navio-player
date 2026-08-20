@@ -39,10 +39,10 @@ export function useConnectSync() {
 
     void initialize();
 
-    // Refresh discovered peers every 5 seconds while active
+    // Refresh discovered peers every 2.5 seconds while active
     const interval = setInterval(() => {
       void refreshDiscoveredPeers();
-    }, 5000);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [initialize, refreshDiscoveredPeers]);

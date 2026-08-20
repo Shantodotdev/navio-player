@@ -155,6 +155,11 @@ impl DiscoveryManager {
                 .map(|ip| ip.to_string())
                 .collect();
 
+              let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
               let peer = DiscoveredPeer {
                 id: peer_id.clone(),
                 name: peer_name.clone(),
@@ -166,10 +171,7 @@ impl DiscoveryManager {
                   .get_property_val_str("version")
                   .unwrap_or("1.0.0")
                   .to_string(),
-                last_seen_ms: std::time::SystemTime::now()
-                  .duration_since(std::time::UNIX_EPOCH)
-                  .unwrap_or_default()
-                  .as_millis() as u64,
+                last_seen_ms: now_ms,
               };
 
               // Insert or update in the peers store
@@ -188,18 +190,24 @@ impl DiscoveryManager {
               }
             }
 
-            // An mDNS record timed out, removed, or goodbye packet received
+            // An mDNS record timed out or goodbye packet received
             ServiceEvent::ServiceRemoved(_service_type, fullname) => {
               // Ignore removals of our own local service instance
               if fullname.contains(&self_instance_prefix) || fullname.contains(&self_id) {
                 continue;
               }
 
+              let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as u64;
+
               if let Ok(mut lock) = peers_store.write() {
                 let prev_count = lock.len();
                 let mut removed_name: Option<String> = None;
 
                 // Match against known peer ID, name, or short ID prefix
+                // Only prune if the peer has not been seen for > 15 seconds to avoid transient mDNS cache drops
                 lock.retain(|peer_id, peer| {
                   let short_id_match = if peer_id.len() >= 8 {
                     fullname.contains(&format!("navio-{}", &peer_id[..8]))
@@ -210,7 +218,7 @@ impl DiscoveryManager {
                   let is_match =
                     fullname.contains(peer_id) || fullname.contains(&peer.name) || short_id_match;
 
-                  if is_match {
+                  if is_match && now_ms.saturating_sub(peer.last_seen_ms) > 15_000 {
                     removed_name = Some(peer.name.clone());
                     false
                   } else {
@@ -241,7 +249,7 @@ impl DiscoveryManager {
 
   /// Returns a snapshot list of all currently active discovered peers on the local network.
   ///
-  /// Prunes stale peers that haven't been seen for more than 120 seconds.
+  /// Prunes stale peers that haven't been seen for more than 60 seconds.
   pub fn get_discovered_peers(&self) -> Vec<DiscoveredPeer> {
     let now = std::time::SystemTime::now()
       .duration_since(std::time::UNIX_EPOCH)
@@ -249,8 +257,8 @@ impl DiscoveryManager {
       .as_millis() as u64;
 
     if let Ok(mut lock) = self.discovered_peers.write() {
-      // Clean up stale peers that haven't sent heartbeats in 120 seconds
-      lock.retain(|_, peer| now.saturating_sub(peer.last_seen_ms) < 120_000);
+      // Retain peers seen within the last 60 seconds
+      lock.retain(|_, peer| now.saturating_sub(peer.last_seen_ms) < 60_000);
       lock.values().cloned().collect()
     } else {
       Vec::new()
