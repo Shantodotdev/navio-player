@@ -18,6 +18,8 @@ import { useSettingsStore } from "../store/settingsStore";
 import { useLibrarySync } from "../hooks/useLibrarySync";
 import { useMcpControl } from "../hooks/useMcpControl";
 import { usePlaybackActivity } from "../hooks/usePlaybackActivity";
+import { useConnectSync } from "../hooks/useConnectSync";
+import { ConnectModal } from "../components/ConnectModal";
 import { WatchView } from "./watch";
 import "../styles.css";
 
@@ -33,6 +35,7 @@ export default function Root() {
   useLibrarySync();
   useMcpControl();
   usePlaybackActivity();
+  useConnectSync();
   const isWatchRoute = useRouterState({
     select: (state) => state.location.pathname === "/watch",
   });
@@ -133,6 +136,7 @@ export default function Root() {
           </div>
           <WatchView isActive={isWatchRoute} />
         </div>
+        <ConnectModal />
         <ToastViewport />
         <KeyboardShortcuts />
         <Scripts />

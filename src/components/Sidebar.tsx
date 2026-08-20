@@ -6,7 +6,9 @@ import {
   Download,
   ListMusic,
   Settings as SettingsIcon,
+  Wifi,
 } from "lucide-react";
+import { useConnectStore } from "../store/connectStore";
 
 /// Sidebar wrapper component displaying navigation links.
 export function Sidebar() {
@@ -52,7 +54,41 @@ export function Sidebar() {
           label="Settings"
         />
       </nav>
+
+      {/* Navio Connect Hub trigger button at bottom of sidebar */}
+      <div className="mt-auto pt-4 border-t border-white/5">
+        <ConnectSidebarButton />
+      </div>
     </aside>
+  );
+}
+
+function ConnectSidebarButton() {
+  const { openConnectModal, activeRemoteHost, discoveredPeers } = useConnectStore();
+
+  return (
+    <button
+      onClick={openConnectModal}
+      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all duration-200 text-xs md:text-sm font-medium ${
+        activeRemoteHost
+          ? "bg-emerald-950/40 border-emerald-500/30 text-emerald-300"
+          : "bg-white/5 hover:bg-white/10 border-white/5 text-zinc-300 hover:text-white"
+      }`}
+      title="Open Navio Connect devices"
+    >
+      <div className="flex items-center gap-2.5 truncate">
+        <Wifi className={`w-4 h-4 shrink-0 ${activeRemoteHost ? "text-emerald-400" : "text-cyan-400"}`} />
+        <span className="truncate">
+          {activeRemoteHost ? activeRemoteHost.hostName : "Connect"}
+        </span>
+      </div>
+      {discoveredPeers.length > 0 && !activeRemoteHost && (
+        <span className="flex h-2 w-2 relative shrink-0">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+        </span>
+      )}
+    </button>
   );
 }
 

@@ -11,9 +11,11 @@ import {
   Film,
   Maximize2,
   PanelRight,
+  Wifi,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePlayerStore } from "../store/playerStore";
+import { useConnectStore } from "../store/connectStore";
 import { getTrackDisplayName } from "../lib/mediaLabels";
 import { useSettingsStore } from "../store/settingsStore";
 
@@ -39,6 +41,15 @@ export function PlayerBar() {
     cycleRepeatMode,
   } = usePlayerStore();
 
+  const {
+    activeRemoteHost,
+    remotePlayerState,
+    openConnectModal,
+    sendRemoteAction,
+  } = useConnectStore();
+
+  const isRemoteControlling = Boolean(activeRemoteHost && remotePlayerState);
+
   const [coverUrl, setCoverUrl] = useState("");
 
   // Resolve local cached cover art files using Tauri convertFileSrc (safe for browser rendering)
@@ -52,7 +63,7 @@ export function PlayerBar() {
           setCoverUrl("");
         }
       };
-      convertPath();
+      void convertPath();
     } else {
       setCoverUrl("");
     }
@@ -60,6 +71,16 @@ export function PlayerBar() {
 
   // MouseDown handler to support smooth dragging/scrubbing on the timeline
   const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (isRemoteControlling && remotePlayerState && remotePlayerState.durationMs > 0) {
+      const timelineContainer = e.currentTarget;
+      const rect = timelineContainer.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
+      const targetPosMs = Math.round(clickPercent * remotePlayerState.durationMs);
+      void sendRemoteAction({ action: "seek", payload: { position_ms: targetPosMs } });
+      return;
+    }
+
     if (!currentTrack || !mediaElement || currentTrack.duration_secs <= 0)
       return;
 
@@ -97,9 +118,13 @@ export function PlayerBar() {
       const rect = volumeContainer.getBoundingClientRect();
       const clickX = moveEvent.clientX - rect.left;
       const clickPercent = Math.max(0, Math.min(1, clickX / rect.width));
-      const targetVol = Math.round(clickPercent * 100);
 
-      setVolume(targetVol);
+      if (isRemoteControlling) {
+        void sendRemoteAction({ action: "set_volume", payload: { volume: clickPercent } });
+      } else {
+        const targetVol = Math.round(clickPercent * 100);
+        setVolume(targetVol);
+      }
     };
 
     const handleMouseUp = () => {
@@ -114,10 +139,27 @@ export function PlayerBar() {
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  const progressPercent =
-    currentTrack && currentTrack.duration_secs > 0
+  // Effective progress calculations
+  const effectiveProgressPercent = isRemoteControlling
+    ? remotePlayerState && remotePlayerState.durationMs > 0
+      ? (remotePlayerState.positionMs / remotePlayerState.durationMs) * 100
+      : 0
+    : currentTrack && currentTrack.duration_secs > 0
       ? (currentTime / currentTrack.duration_secs) * 100
       : 0;
+
+  const effectiveCurrentTimeSecs = isRemoteControlling
+    ? (remotePlayerState?.positionMs || 0) / 1000
+    : currentTime;
+
+  const effectiveDurationSecs = isRemoteControlling
+    ? (remotePlayerState?.durationMs || 0) / 1000
+    : currentTrack?.duration_secs || 0;
+
+  const effectiveIsPlaying = isRemoteControlling
+    ? Boolean(remotePlayerState?.isPlaying)
+    : isPlaying;
+
   const shuffleLabel = shuffleEnabled ? "Disable shuffle" : "Enable shuffle";
   const repeatLabel =
     repeatMode === "off"
@@ -131,7 +173,11 @@ export function PlayerBar() {
       {/* Left: Active Track Details */}
       <div className="flex items-center gap-3 md:gap-4 flex-1 min-w-0">
         <div className="w-11 h-11 md:w-14 md:h-14 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden group relative shrink-0">
-          {currentTrack?.media_type === "video" ? (
+          {isRemoteControlling ? (
+            <div className="w-full h-full grid place-items-center bg-cyan-950/40 text-cyan-400">
+              <Wifi size={20} />
+            </div>
+          ) : currentTrack?.media_type === "video" ? (
             <div
               aria-label="Video now playing"
               className="w-full h-full grid place-items-center bg-brand/10 text-purple-400"
@@ -148,7 +194,7 @@ export function PlayerBar() {
           ) : (
             <Music size={20} className="text-emerald-400" />
           )}
-          {currentTrack && (
+          {!isRemoteControlling && currentTrack && (
             <button
               onClick={toggleDrawer}
               className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
@@ -159,19 +205,30 @@ export function PlayerBar() {
         </div>
         <div
           className="flex flex-col truncate max-w-40 md:max-w-50 cursor-pointer"
-          onClick={toggleDrawer}
-          title="Click to toggle Now Playing"
+          onClick={isRemoteControlling ? openConnectModal : toggleDrawer}
+          title={isRemoteControlling ? "Controlling remote device" : "Click to toggle Now Playing"}
         >
           <span className="text-sm font-medium text-zinc-200 truncate hover:text-brand-light transition-colors">
-            {currentTrack
-              ? getTrackDisplayName(
-                  currentTrack,
-                  settings.library.showFileExtensions,
-                )
-              : "No track playing"}
+            {isRemoteControlling
+              ? remotePlayerState?.title || "Remote Device"
+              : currentTrack
+                ? getTrackDisplayName(
+                    currentTrack,
+                    settings.library.showFileExtensions
+                  )
+                : "No track playing"}
           </span>
-          <span className="text-xs text-zinc-400 truncate mt-0.5 font-medium">
-            {currentTrack ? currentTrack.media_type : "Select a file to play"}
+          <span className="text-xs text-zinc-400 truncate mt-0.5 font-medium flex items-center gap-1.5">
+            {isRemoteControlling ? (
+              <span className="text-emerald-400 flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                Controlling: {activeRemoteHost?.hostName}
+              </span>
+            ) : currentTrack ? (
+              currentTrack.media_type
+            ) : (
+              "Select a file to play"
+            )}
           </span>
         </div>
       </div>
@@ -182,7 +239,7 @@ export function PlayerBar() {
           <button
             type="button"
             onClick={toggleShuffle}
-            disabled={!currentTrack}
+            disabled={isRemoteControlling || !currentTrack}
             aria-label={shuffleLabel}
             aria-pressed={shuffleEnabled}
             title={shuffleLabel}
@@ -195,26 +252,44 @@ export function PlayerBar() {
             <Shuffle size={15} />
           </button>
           <button
-            onClick={prevTrack}
-            disabled={!currentTrack}
+            onClick={() => {
+              if (isRemoteControlling) {
+                void sendRemoteAction({ action: "previous_track" });
+              } else {
+                prevTrack();
+              }
+            }}
+            disabled={!isRemoteControlling && !currentTrack}
             className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <SkipBack size={17} />
           </button>
           <button
-            onClick={() => setIsPlaying(!isPlaying)}
-            disabled={!currentTrack}
+            onClick={() => {
+              if (isRemoteControlling) {
+                void sendRemoteAction({ action: "toggle_play" });
+              } else {
+                setIsPlaying(!isPlaying);
+              }
+            }}
+            disabled={!isRemoteControlling && !currentTrack}
             className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-brand hover:bg-brand-light flex items-center justify-center text-zinc-200 transition-all shadow-md shadow-brand-glow transform active:scale-95 animate-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {isPlaying ? (
+            {effectiveIsPlaying ? (
               <Pause size={17} fill="currentColor" />
             ) : (
               <Play size={17} className="translate-x-px" fill="currentColor" />
             )}
           </button>
           <button
-            onClick={nextTrack}
-            disabled={!currentTrack}
+            onClick={() => {
+              if (isRemoteControlling) {
+                void sendRemoteAction({ action: "next_track" });
+              } else {
+                nextTrack();
+              }
+            }}
+            disabled={!isRemoteControlling && !currentTrack}
             className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
           >
             <SkipForward size={17} />
@@ -222,7 +297,7 @@ export function PlayerBar() {
           <button
             type="button"
             onClick={cycleRepeatMode}
-            disabled={!currentTrack}
+            disabled={isRemoteControlling || !currentTrack}
             aria-label={repeatLabel}
             title={repeatLabel}
             className={`transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
@@ -241,31 +316,35 @@ export function PlayerBar() {
 
         {/* Progress timeline bar */}
         <div className="w-full flex items-center gap-2 text-2xs text-zinc-500 font-medium">
-          <span>{formatTime(currentTime)}</span>
+          <span>{formatTime(effectiveCurrentTimeSecs)}</span>
           <div
             onMouseDown={handleTimelineMouseDown}
             className="flex-1 h-4 flex items-center cursor-pointer relative group"
           >
             <div className="w-full h-1 bg-white/10 rounded-full relative">
               <div
-                className="h-full bg-brand group-hover:bg-brand-light rounded-full relative transition-all duration-75"
-                style={{ width: `${progressPercent}%` }}
+                className={`h-full ${isRemoteControlling ? "bg-cyan-400 group-hover:bg-cyan-300" : "bg-brand group-hover:bg-brand-light"} rounded-full relative transition-all duration-75`}
+                style={{ width: `${effectiveProgressPercent}%` }}
               >
                 <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-md shadow-brand-glow"></div>
               </div>
             </div>
           </div>
-          <span>
-            {currentTrack ? formatTime(currentTrack.duration_secs) : "0:00"}
-          </span>
+          <span>{formatTime(effectiveDurationSecs)}</span>
         </div>
       </div>
 
-      {/* Right: Audio Volume Controller & Now Playing Sidebar Toggle */}
-      <div className="flex items-center justify-end gap-3 md:gap-5 flex-1 min-w-0">
+      {/* Right: Audio Volume Controller, Navio Connect & Now Playing Toggle */}
+      <div className="flex items-center justify-end gap-3 md:gap-4 flex-1 min-w-0">
         <div className="flex items-center gap-1.5 md:gap-3">
           <button
-            onClick={() => setVolume(volume === 0 ? 80 : 0)}
+            onClick={() => {
+              if (isRemoteControlling) {
+                void sendRemoteAction({ action: "set_volume", payload: { volume: volume === 0 ? 0.8 : 0 } });
+              } else {
+                setVolume(volume === 0 ? 80 : 0);
+              }
+            }}
             className="text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer shrink-0"
           >
             <Volume2 size={18} />
@@ -283,13 +362,26 @@ export function PlayerBar() {
           </div>
         </div>
 
+        {/* Navio Connect Cast / Device Selector Button */}
+        <button
+          onClick={openConnectModal}
+          className={`p-2 rounded-lg border transition-all cursor-pointer ${
+            activeRemoteHost
+              ? "bg-emerald-950/50 border-emerald-500/30 text-emerald-400 shadow-inner"
+              : "bg-white/5 border-white/5 text-zinc-400 hover:text-zinc-200"
+          }`}
+          title={activeRemoteHost ? `Connected to ${activeRemoteHost.hostName}` : "Open Navio Connect"}
+        >
+          <Wifi size={15} />
+        </button>
+
         {/* Now Playing Right-Sidebar Toggle Button */}
         <button
           onClick={toggleDrawer}
           className={`p-2 rounded-lg border transition-all cursor-pointer ${
             isDrawerOpen
               ? "bg-brand/10 border-brand/20 text-brand-light shadow-inner shadow-brand-glow"
-              : "bg-white/5 border-white/5 text-zinc-450 hover:text-zinc-200"
+              : "bg-white/5 border-white/5 text-zinc-400 hover:text-zinc-200"
           }`}
           title="Toggle Now Playing view"
         >
